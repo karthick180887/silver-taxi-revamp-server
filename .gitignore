@@ -11,6 +11,7 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+.env.copy
 
 # Build output
 dist/
@@ -38,3 +39,6 @@ Thumbs.db
 # Kubernetes Secrets
 k8s/secrets.yaml
 k8s/app-secret.yaml
+
+# Firebase config (contains secrets)
+src/common/configs/firebase_config.json
