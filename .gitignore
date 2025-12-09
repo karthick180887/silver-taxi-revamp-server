@@ -34,3 +34,7 @@ Thumbs.db
 
 #cursor
 .cursorrules
+
+# Kubernetes Secrets
+k8s/secrets.yaml
+k8s/app-secret.yaml
