@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "baseUrl": "./src",
+    "paths": {
+      "@utils/*": ["./utils/*"],
+      "@models/*": ["./models/*"],
+      "@routes/*": ["./routes/*"],
+      "@controller/*": ["./controller/*"]
+    },
+    "outDir": "./dist",
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "allowJs": true 
+  },
+  "include": [
+    "src/**/*.ts", 
+    "src/**/*.json", 
+    "src/common/utils/firebase/helper.js",
+    "src/common/deps/nearestColor.js",
+    "src/**/*.ejs", 
+    "src/**/*.js", 
+    "src/tenant-tooling/router/auth", 
+    "src/v3/**/*" 
+  ],
+  "exclude": ["node_modules"]
+}

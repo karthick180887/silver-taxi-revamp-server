@@ -1,0 +1,625 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../models/trip_models.dart';
+import '../widgets/trip_overlay_notification.dart';
+import 'socket_service.dart';
+import 'trip_service.dart';
+import 'native_overlay_service.dart';
+
+/// Service to show overlay notifications for trip offers
+/// These appear on top of other apps (like Uber Driver)
+class OverlayNotificationService {
+  static final OverlayNotificationService _instance = OverlayNotificationService._internal();
+  factory OverlayNotificationService() => _instance;
+  OverlayNotificationService._internal();
+
+  StreamSubscription? _socketSubscription;
+  StreamSubscription? _nativeAcceptSubscription;
+  String? _currentToken;
+  TripService? _tripService;
+  OverlayEntry? _currentOverlay;
+  final List<String> _shownTripIds = [];
+  BuildContext? _overlayContext;
+  String? _pendingAcceptTripId; // Track trip ID that's being accepted
+  Timer? _acceptTimeoutTimer; // Timeout for acceptance confirmation
+
+  /// Initialize the overlay notification service
+  void init(String token, TripService tripService, BuildContext context) {
+    debugPrint('[OverlayNotification] ========================================');
+    debugPrint('[OverlayNotification] 🚀 INITIALIZING OVERLAY NOTIFICATION SERVICE');
+    debugPrint('[OverlayNotification] Token: ${token.substring(0, 20)}...');
+    debugPrint('[OverlayNotification] TripService: set');
+    debugPrint('[OverlayNotification] Context: set');
+    debugPrint('[OverlayNotification] ========================================');
+    _currentToken = token;
+    _tripService = tripService;
+    _overlayContext = context;
+    _listenToSocketEvents();
+    _listenToNativeOverlayAccept();
+    debugPrint('[OverlayNotification] ✅ Initialization complete');
+  }
+
+  void _listenToNativeOverlayAccept() {
+    _nativeAcceptSubscription?.cancel();
+    _nativeAcceptSubscription = NativeOverlayService().onAccept.listen((tripId) {
+      debugPrint('[OverlayNotification] Native overlay accept received for: $tripId');
+      _acceptTrip(tripId);
+    });
+  }
+
+  /// Update the context (call this if the widget tree changes)
+  void updateContext(BuildContext context) {
+    debugPrint('[OverlayNotification] Updating context');
+    _overlayContext = context;
+  }
+
+  /// Test function to manually show overlay (for debugging)
+  void testShowOverlay() {
+    debugPrint('[OverlayNotification] Test: Manually triggering overlay');
+    final testTrip = TripModel(
+      id: 'test-trip-${DateTime.now().millisecondsSinceEpoch}',
+      status: 'new',
+      pickup: TripLocation(address: 'Test Pickup Location, Test City'),
+      drop: TripLocation(address: 'Test Drop Location, Test City'),
+      customerName: 'Test Customer',
+      fare: 250.0,
+      raw: {},
+    );
+    _showOverlayNotification(testTrip);
+  }
+
+  void _listenToSocketEvents() {
+    _socketSubscription?.cancel();
+    debugPrint('[OverlayNotification] ========================================');
+    debugPrint('[OverlayNotification] 🔵 Setting up socket event listener...');
+    final socketService = SocketService();
+    final isConnected = socketService.isConnected;
+    debugPrint('[OverlayNotification] Socket connected: $isConnected');
+    debugPrint('[OverlayNotification] Current token: ${_currentToken != null ? "SET" : "NULL"}');
+    debugPrint('[OverlayNotification] Trip service: ${_tripService != null ? "SET" : "NULL"}');
+    debugPrint('[OverlayNotification] ========================================');
+    
+    // If socket is not connected, wait for it to connect
+    if (!isConnected) {
+      debugPrint('[OverlayNotification] ⚠️ Socket not connected yet, will retry when connected');
+      // Set up a one-time listener for when socket connects
+      Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (socketService.isConnected) {
+          debugPrint('[OverlayNotification] ✅ Socket connected! Setting up listener now...');
+          timer.cancel();
+          _listenToSocketEvents(); // Recursively call to set up listener
+        } else if (timer.tick > 30) {
+          // Give up after 30 seconds
+          debugPrint('[OverlayNotification] ⚠️ Socket still not connected after 30s, giving up');
+          timer.cancel();
+        }
+      });
+      return;
+    }
+    
+    // Listen to booking update stream
+    _socketSubscription = socketService.bookingUpdateStream.listen(
+      (event) {
+        debugPrint('[OverlayNotification] ========================================');
+        debugPrint('[OverlayNotification] 📨 RECEIVED SOCKET EVENT');
+        debugPrint('[OverlayNotification] Full event: $event');
+        debugPrint('[OverlayNotification] ========================================');
+        
+        final type = event['type']?.toString() ?? '';
+        final eventData = event['data'] as Map<String, dynamic>? ?? {};
+
+        debugPrint('[OverlayNotification] Event type: "$type"');
+        debugPrint('[OverlayNotification] Event data keys: ${eventData.keys.toList()}');
+        debugPrint('[OverlayNotification] Event data sample: ${eventData.toString().substring(0, eventData.toString().length > 300 ? 300 : eventData.toString().length)}');
+
+        if (type == 'NEW_TRIP_OFFER') {
+          debugPrint('[OverlayNotification] ✅✅✅ NEW_TRIP_OFFER DETECTED! ✅✅✅');
+          
+          if (_currentToken == null) {
+            debugPrint('[OverlayNotification] ⚠️ No token available');
+            return;
+          }
+          
+          if (_tripService == null) {
+            debugPrint('[OverlayNotification] ⚠️ No trip service available');
+            return;
+          }
+          
+          debugPrint('[OverlayNotification] Processing new trip offer...');
+          
+          // Convert booking/trip data to TripModel
+          try {
+            debugPrint('[OverlayNotification] Full eventData structure: $eventData');
+            
+            // The booking data is directly in eventData (backend sends: {"type": "NEW_TRIP_OFFER", "data": booking})
+            // So eventData IS the booking object
+            final bookingData = eventData;
+            
+            debugPrint('[OverlayNotification] Booking data keys: ${bookingData.keys}');
+            debugPrint('[OverlayNotification] Booking data sample: ${bookingData.toString().substring(0, bookingData.toString().length > 200 ? 200 : bookingData.toString().length)}...');
+            
+            // Try multiple field name variations (Go struct vs JSON tags)
+            final tripId = bookingData['bookingId']?.toString() ?? 
+                          bookingData['BookingID']?.toString() ??
+                          bookingData['tripId']?.toString() ?? 
+                          bookingData['TripID']?.toString() ??
+                          bookingData['id']?.toString() ?? 
+                          bookingData['ID']?.toString() ?? '';
+            
+            debugPrint('[OverlayNotification] Extracted trip ID: "$tripId"');
+            
+            // Don't show duplicate notifications
+            if (tripId.isEmpty) {
+              debugPrint('[OverlayNotification] ❌ Trip ID is empty, cannot show overlay');
+              return;
+            }
+            
+            if (_shownTripIds.contains(tripId)) {
+              debugPrint('[OverlayNotification] ⚠️ Trip $tripId already shown, skipping');
+              return;
+            }
+
+            // Create TripModel from booking data
+            debugPrint('[OverlayNotification] 🔄 Attempting to create TripModel...');
+            final trip = _createTripModelFromEvent(bookingData);
+            if (trip != null) {
+              debugPrint('[OverlayNotification] ✅✅✅ Created TripModel successfully!');
+              debugPrint('[OverlayNotification] Trip details:');
+              debugPrint('[OverlayNotification]   - ID: ${trip.id}');
+              debugPrint('[OverlayNotification]   - Fare: ₹${trip.fare}');
+              debugPrint('[OverlayNotification]   - Pickup: ${trip.pickup.address}');
+              debugPrint('[OverlayNotification]   - Drop: ${trip.drop.address}');
+              debugPrint('[OverlayNotification]   - Customer: ${trip.customerName}');
+              debugPrint('[OverlayNotification] 🚀 Calling _showOverlayNotification()...');
+              _showOverlayNotification(trip);
+              _shownTripIds.add(tripId);
+              debugPrint('[OverlayNotification] ✅ Trip ID added to shown list: $tripId');
+              
+              // Remove from shown list after 5 minutes to allow re-showing if needed
+              Timer(const Duration(minutes: 5), () {
+                _shownTripIds.remove(tripId);
+                debugPrint('[OverlayNotification] ⏰ Removed trip $tripId from shown list (5 min timeout)');
+              });
+            } else {
+              debugPrint('[OverlayNotification] ❌❌❌ FAILED to create TripModel from event data');
+              debugPrint('[OverlayNotification] This usually means the data structure doesn\'t match expected format');
+              debugPrint('[OverlayNotification] Full bookingData for debugging:');
+              debugPrint('[OverlayNotification] $bookingData');
+            }
+          } catch (e, stackTrace) {
+            debugPrint('[OverlayNotification] ❌ Error processing trip offer: $e');
+            debugPrint('[OverlayNotification] Stack trace: $stackTrace');
+          }
+        } else if (type == 'TRIP_ACCEPTED') {
+          // Hide overlay when trip is accepted (either by this driver or another)
+          final tripId = eventData['tripId']?.toString() ?? 
+                        eventData['bookingId']?.toString() ?? '';
+          if (tripId.isNotEmpty) {
+            debugPrint('[OverlayNotification] ========================================');
+            debugPrint('[OverlayNotification] 🎉 TRIP_ACCEPTED event received for: $tripId');
+            debugPrint('[OverlayNotification] 📌 Pending accept trip ID: $_pendingAcceptTripId');
+            debugPrint('[OverlayNotification] ========================================');
+            
+            // Check if this is the trip we just accepted
+            if (_pendingAcceptTripId == tripId) {
+              debugPrint('[OverlayNotification] ✅ This is the trip we accepted - hiding overlay now');
+              _pendingAcceptTripId = null;
+              _acceptTimeoutTimer?.cancel();
+              
+              // Hide both native and in-app overlays
+              final nativeOverlay = NativeOverlayService();
+              nativeOverlay.hideOverlay();
+              _hideOverlay();
+            } else {
+              debugPrint('[OverlayNotification] ℹ️ Trip accepted by another driver or different trip: $tripId');
+              debugPrint('[OverlayNotification] 🚫 Hiding overlay anyway (trip no longer available)');
+              
+              // Hide both native and in-app overlays
+              final nativeOverlay = NativeOverlayService();
+              nativeOverlay.hideOverlay();
+              _hideOverlay();
+            }
+            
+            _shownTripIds.remove(tripId);
+            debugPrint('[OverlayNotification] ✅ Overlay hidden and trip removed from shown list');
+          }
+        } else {
+          debugPrint('[OverlayNotification] Event type "$type" not handled for overlay');
+        }
+      },
+      onError: (error) {
+        debugPrint('[OverlayNotification] ❌ Socket stream error: $error');
+      },
+      onDone: () {
+        debugPrint('[OverlayNotification] ⚠️ Socket stream closed');
+      },
+    );
+    
+    debugPrint('[OverlayNotification] ✅ Socket listener registered and active');
+    debugPrint('[OverlayNotification] Waiting for NEW_TRIP_OFFER events...');
+    
+    // Also listen to socket connection status and re-setup if needed
+    // This ensures we catch events even if socket connects after initialization
+    Timer.periodic(const Duration(seconds: 3), (timer) {
+      final isConnected = SocketService().isConnected;
+      if (!isConnected) {
+        debugPrint('[OverlayNotification] ⚠️ Socket not connected (checking every 3s)...');
+        return;
+      }
+      
+      debugPrint('[OverlayNotification] ✅ Socket is now connected!');
+      
+      // If subscription is null or cancelled, re-setup
+      if (_socketSubscription == null) {
+        debugPrint('[OverlayNotification] 🔄 Socket connected, re-setting up listener...');
+        _listenToSocketEvents();
+        timer.cancel(); // Cancel this periodic check once we've re-setup
+      } else {
+        debugPrint('[OverlayNotification] ✅ Listener already active, socket connected');
+        timer.cancel(); // Socket is connected and listener is active, no need to keep checking
+      }
+    });
+  }
+
+  TripModel? _createTripModelFromEvent(Map<String, dynamic> eventData) {
+    try {
+      debugPrint('[OverlayNotification] ========================================');
+      debugPrint('[OverlayNotification] 🔄 _createTripModelFromEvent() called');
+      debugPrint('[OverlayNotification] Event data keys: ${eventData.keys.toList()}');
+      debugPrint('[OverlayNotification] Event data type: ${eventData.runtimeType}');
+      debugPrint('[OverlayNotification] Full event data (first 500 chars): ${eventData.toString().substring(0, eventData.toString().length > 500 ? 500 : eventData.toString().length)}');
+      debugPrint('[OverlayNotification] ========================================');
+      
+      // Backend sends Go struct field names (BookingID, PickupLocation, etc.)
+      // Try both naming conventions
+      final bookingId = eventData['bookingId']?.toString() ?? 
+                       eventData['BookingID']?.toString() ?? 
+                       eventData['tripId']?.toString() ?? 
+                       eventData['TripID']?.toString() ?? 
+                       eventData['id']?.toString() ?? 
+                       DateTime.now().millisecondsSinceEpoch.toString();
+      
+      // Pickup location - try multiple field names and formats
+      dynamic pickupRaw = eventData['pickupLocation'] ?? 
+                         eventData['PickupLocation'] ?? 
+                         eventData['pickup'] ?? 
+                         eventData['pickup_location'] ?? {};
+      
+      // Drop location - try multiple field names and formats
+      dynamic dropRaw = eventData['dropLocation'] ?? 
+                       eventData['DropLocation'] ?? 
+                       eventData['drop'] ?? 
+                       eventData['drop_location'] ?? {};
+      
+      // Handle JSONB/Map conversion
+      Map<String, dynamic> pickupLoc = {};
+      if (pickupRaw is Map) {
+        pickupLoc = Map<String, dynamic>.from(pickupRaw);
+      } else if (pickupRaw is String) {
+        try {
+          pickupLoc = {'address': pickupRaw};
+        } catch (e) {
+          debugPrint('[OverlayNotification] Error parsing pickup location string: $e');
+        }
+      }
+      
+      Map<String, dynamic> dropLoc = {};
+      if (dropRaw is Map) {
+        dropLoc = Map<String, dynamic>.from(dropRaw);
+      } else if (dropRaw is String) {
+        try {
+          dropLoc = {'address': dropRaw};
+        } catch (e) {
+          debugPrint('[OverlayNotification] Error parsing drop location string: $e');
+        }
+      }
+      
+      // Extract addresses - try multiple field names
+      final pickupAddr = pickupLoc['address']?.toString() ?? 
+                        pickupLoc['Address']?.toString() ??
+                        pickupLoc['name']?.toString() ?? 
+                        pickupLoc['Name']?.toString() ??
+                        'Pickup location';
+      final dropAddr = dropLoc['address']?.toString() ?? 
+                      dropLoc['Address']?.toString() ??
+                      dropLoc['name']?.toString() ?? 
+                      dropLoc['Name']?.toString() ??
+                      'Drop location';
+
+      // Extract fare - try multiple field names
+      final fare = _toDouble(eventData['estimatedFare'] ?? 
+                             eventData['EstimatedFare'] ??
+                             eventData['fare'] ?? 
+                             eventData['Fare'] ??
+                             eventData['estimated_fare']);
+
+      // Extract status
+      final status = eventData['status']?.toString() ?? 
+                    eventData['Status']?.toString() ?? 
+                    'new';
+
+      // Extract customer name
+      final customerName = eventData['customerName']?.toString() ?? 
+                          eventData['CustomerName']?.toString() ??
+                          eventData['customer']?['name']?.toString() ??
+                          eventData['Customer']?['name']?.toString() ??
+                          eventData['customer_name']?.toString() ?? 
+                          'Customer';
+
+      debugPrint('[OverlayNotification] ✅ Parsed values:');
+      debugPrint('[OverlayNotification]   - Booking ID: $bookingId');
+      debugPrint('[OverlayNotification]   - Pickup: $pickupAddr');
+      debugPrint('[OverlayNotification]   - Drop: $dropAddr');
+      debugPrint('[OverlayNotification]   - Fare: $fare');
+      debugPrint('[OverlayNotification]   - Status: $status');
+      debugPrint('[OverlayNotification]   - Customer: $customerName');
+      
+      final tripModel = TripModel(
+        id: bookingId,
+        status: status,
+        pickup: TripLocation(
+          address: pickupAddr,
+          lat: _toDouble(pickupLoc['lat'] ?? pickupLoc['Lat'] ?? pickupLoc['latitude'] ?? pickupLoc['Latitude']),
+          lng: _toDouble(pickupLoc['lng'] ?? pickupLoc['Lng'] ?? pickupLoc['longitude'] ?? pickupLoc['Longitude']),
+        ),
+        drop: TripLocation(
+          address: dropAddr,
+          lat: _toDouble(dropLoc['lat'] ?? dropLoc['Lat'] ?? dropLoc['latitude'] ?? dropLoc['Latitude']),
+          lng: _toDouble(dropLoc['lng'] ?? dropLoc['Lng'] ?? dropLoc['longitude'] ?? dropLoc['Longitude']),
+        ),
+        customerName: customerName,
+        fare: fare,
+        raw: eventData,
+      );
+      
+      debugPrint('[OverlayNotification] ✅✅✅ TripModel created successfully!');
+      debugPrint('[OverlayNotification] ========================================');
+      return tripModel;
+    } catch (e, stackTrace) {
+      debugPrint('[OverlayNotification] ========================================');
+      debugPrint('[OverlayNotification] ❌❌❌ ERROR creating TripModel ❌❌❌');
+      debugPrint('[OverlayNotification] Error: $e');
+      debugPrint('[OverlayNotification] Stack trace: $stackTrace');
+      debugPrint('[OverlayNotification] ========================================');
+      return null;
+    }
+  }
+
+  double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  void _showOverlayNotification(TripModel trip) async {
+    debugPrint('[OverlayNotification] Attempting to show overlay for trip: ${trip.id}');
+    
+    // Hide any existing overlay first
+    _hideOverlay();
+
+    if (_currentToken == null) {
+      debugPrint('[OverlayNotification] Error: No token available');
+      return;
+    }
+    if (_tripService == null) {
+      debugPrint('[OverlayNotification] Error: No trip service available');
+      return;
+    }
+
+    // Try native overlay first (floating window over other apps)
+    final nativeOverlay = NativeOverlayService();
+    debugPrint('[OverlayNotification] ========================================');
+    debugPrint('[OverlayNotification] 🔍 STEP 1: Checking overlay permission...');
+    final hasPermission = await nativeOverlay.checkOverlayPermission();
+    debugPrint('[OverlayNotification] Permission status: $hasPermission');
+    debugPrint('[OverlayNotification] ========================================');
+    
+    if (hasPermission) {
+      // Use native floating overlay (like Uber Driver)
+      debugPrint('[OverlayNotification] ========================================');
+      debugPrint('[OverlayNotification] ✅ STEP 2: Permission granted!');
+      debugPrint('[OverlayNotification] Trip details:');
+      debugPrint('[OverlayNotification]   - ID: ${trip.id}');
+      debugPrint('[OverlayNotification]   - Fare: ₹${trip.fare}');
+      debugPrint('[OverlayNotification]   - Pickup: ${trip.pickup.address}');
+      debugPrint('[OverlayNotification]   - Drop: ${trip.drop.address}');
+      debugPrint('[OverlayNotification]   - Customer: ${trip.customerName}');
+      debugPrint('[OverlayNotification] ========================================');
+      debugPrint('[OverlayNotification] 🚀 STEP 3: Calling native overlay service...');
+      
+      final shownTripId = await nativeOverlay.showOverlay(
+        tripId: trip.id,
+        fare: trip.fare ?? 0.0,
+        pickup: trip.pickup.address,
+        drop: trip.drop.address,
+        customerName: trip.customerName,
+      );
+      
+      debugPrint('[OverlayNotification] ========================================');
+      debugPrint('[OverlayNotification] STEP 4: Native overlay response: $shownTripId');
+      debugPrint('[OverlayNotification] ========================================');
+      
+      if (shownTripId != null) {
+        debugPrint('[OverlayNotification] ✅✅✅ SUCCESS! Native overlay shown! Trip ID: $shownTripId');
+        // Store reference for later dismissal
+        _currentOverlay = null; // Native overlay doesn't use OverlayEntry
+        
+        // Listen for accept events from native overlay
+        _nativeAcceptSubscription?.cancel();
+        _nativeAcceptSubscription = nativeOverlay.onAccept.listen((tripId) {
+          debugPrint('[OverlayNotification] 🎯 Native overlay accept received for trip: $tripId');
+          // Accept the trip when button is clicked
+          _acceptTrip(tripId);
+        });
+        
+        // Auto-dismiss after 30 seconds UNLESS trip is pending acceptance
+        // If trip is being accepted, keep overlay visible until TRIP_ACCEPTED event
+        Timer(const Duration(seconds: 30), () {
+          if (_pendingAcceptTripId == null || _pendingAcceptTripId != shownTripId) {
+            debugPrint('[OverlayNotification] ⏰ Auto-dismissing native overlay after 30 seconds');
+            nativeOverlay.hideOverlay();
+          } else {
+            debugPrint('[OverlayNotification] ⏳ Trip $shownTripId is pending acceptance - keeping overlay visible');
+          }
+        });
+        return;
+      } else {
+        debugPrint('[OverlayNotification] ❌ Native overlay failed to show, falling back to in-app overlay');
+      }
+    } else {
+      debugPrint('[OverlayNotification] ⚠️ Overlay permission not granted, using in-app overlay');
+      debugPrint('[OverlayNotification] 💡 User needs to grant "Display over other apps" permission');
+    }
+
+    // Fallback to in-app overlay (only works when app is in foreground)
+    if (_overlayContext == null) {
+      debugPrint('[OverlayNotification] Error: No overlay context available for fallback');
+      return;
+    }
+
+    try {
+      final overlayState = Overlay.of(_overlayContext!);
+      debugPrint('[OverlayNotification] Creating in-app overlay entry...');
+      
+      // Create overlay entry
+      _currentOverlay = OverlayEntry(
+        builder: (context) => Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Material(
+            color: Colors.transparent,
+            child: SafeArea(
+              child: TripOverlayNotification(
+                trip: trip,
+                token: _currentToken!,
+                tripService: _tripService!,
+                onAccept: () {
+                  debugPrint('[OverlayNotification] Accept button pressed');
+                  _hideOverlay();
+                  _acceptTrip(trip.id);
+                },
+                onDismiss: () {
+                  debugPrint('[OverlayNotification] Dismiss button pressed');
+                  _hideOverlay();
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Insert overlay
+      overlayState.insert(_currentOverlay!);
+      debugPrint('[OverlayNotification] In-app overlay inserted successfully!');
+
+      // Auto-dismiss after 30 seconds UNLESS trip is pending acceptance
+      // If trip is being accepted, keep overlay visible until TRIP_ACCEPTED event
+      final currentTripId = trip.id; // Capture trip ID for timer closure
+      Timer(const Duration(seconds: 30), () {
+        if (_pendingAcceptTripId == null || _pendingAcceptTripId != currentTripId) {
+          debugPrint('[OverlayNotification] Auto-dismissing in-app overlay after 30 seconds');
+          _hideOverlay();
+        } else {
+          debugPrint('[OverlayNotification] ⏳ Trip $currentTripId is pending acceptance - keeping overlay visible');
+        }
+      });
+    } catch (e, stackTrace) {
+      debugPrint('[OverlayNotification] Error showing in-app overlay: $e');
+      debugPrint('[OverlayNotification] Stack trace: $stackTrace');
+    }
+  }
+
+  void _hideOverlay() {
+    debugPrint('[OverlayNotification] Hiding overlay...');
+    // Clear pending accept state when hiding overlay
+    if (_pendingAcceptTripId != null) {
+      debugPrint('[OverlayNotification] Clearing pending accept state for: $_pendingAcceptTripId');
+      _pendingAcceptTripId = null;
+      _acceptTimeoutTimer?.cancel();
+    }
+    
+    // Hide native overlay (but keep service running)
+    // Don't call hideOverlay() as it stops the service
+    // The service should stay alive for future notifications
+    // NativeOverlayService().hideOverlay();
+    
+    // Hide in-app overlay
+    if (_currentOverlay != null) {
+      _currentOverlay!.remove();
+      _currentOverlay = null;
+    }
+  }
+
+  Future<void> _acceptTrip(String tripId) async {
+    if (_currentToken == null || _tripService == null) {
+      debugPrint('[OverlayNotification] Cannot accept trip: missing token or service');
+      return;
+    }
+
+    try {
+      debugPrint('[OverlayNotification] ========================================');
+      debugPrint('[OverlayNotification] 🎯 ACCEPTING TRIP: $tripId');
+      debugPrint('[OverlayNotification] ========================================');
+      
+      // Mark this trip as pending acceptance - overlay will stay visible until TRIP_ACCEPTED event
+      _pendingAcceptTripId = tripId;
+      debugPrint('[OverlayNotification] 📌 Marked trip $tripId as pending acceptance - overlay will stay visible');
+      
+      // Set a timeout in case TRIP_ACCEPTED event doesn't arrive (30 seconds)
+      _acceptTimeoutTimer?.cancel();
+      _acceptTimeoutTimer = Timer(const Duration(seconds: 30), () {
+        if (_pendingAcceptTripId == tripId) {
+          debugPrint('[OverlayNotification] ⏱️ Timeout waiting for TRIP_ACCEPTED event for $tripId');
+          debugPrint('[OverlayNotification] ⚠️ Hiding overlay anyway after timeout');
+          _pendingAcceptTripId = null;
+          _hideOverlay();
+        }
+      });
+      
+      await _tripService!.acceptTrip(
+        token: _currentToken!,
+        tripId: tripId,
+      );
+      
+      debugPrint('[OverlayNotification] ========================================');
+      debugPrint('[OverlayNotification] ✅✅✅ TRIP ACCEPT API CALLED SUCCESSFULLY: $tripId');
+      debugPrint('[OverlayNotification] ⏳ Waiting for TRIP_ACCEPTED socket event to confirm...');
+      debugPrint('[OverlayNotification] 📌 Overlay will remain visible until confirmation received');
+      debugPrint('[OverlayNotification] ========================================');
+      
+      // DO NOT hide overlay here - wait for TRIP_ACCEPTED event
+      // The overlay will be hidden when TRIP_ACCEPTED event is received
+      
+    } catch (e, stackTrace) {
+      debugPrint('[OverlayNotification] ========================================');
+      debugPrint('[OverlayNotification] ❌❌❌ ERROR ACCEPTING TRIP ❌❌❌');
+      debugPrint('[OverlayNotification] Trip ID: $tripId');
+      debugPrint('[OverlayNotification] Error: $e');
+      debugPrint('[OverlayNotification] Stack trace: $stackTrace');
+      debugPrint('[OverlayNotification] ========================================');
+      
+      // On error, clear pending state and hide overlay
+      if (_pendingAcceptTripId == tripId) {
+        _pendingAcceptTripId = null;
+        _acceptTimeoutTimer?.cancel();
+        _hideOverlay();
+      }
+    }
+  }
+
+  void dispose() {
+    _socketSubscription?.cancel();
+    _nativeAcceptSubscription?.cancel();
+    _acceptTimeoutTimer?.cancel();
+    _hideOverlay();
+    _currentToken = null;
+    _tripService = null;
+    _overlayContext = null;
+    _shownTripIds.clear();
+    _pendingAcceptTripId = null;
+  }
+}
+

@@ -1,0 +1,13 @@
+name: shared
+description: Shared code for Silver Taxi apps
+version: 1.0.0
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+  shared_preferences: ^2.2.2

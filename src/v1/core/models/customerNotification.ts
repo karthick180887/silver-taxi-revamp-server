@@ -1,0 +1,160 @@
+import { DataTypes, Model, Optional } from "sequelize";
+import { sequelize } from "../../../common/db/postgres";
+import { Admin } from "./admin";
+
+// Define the attributes for the Enquiry model
+export interface CustomerNotificationAttributes {
+    id: number;
+    adminId: string;
+    customerId: string;
+    notifyId?: string;
+    title: string;
+    message: string;
+    route?: string;
+    type?: string;
+    read: boolean;
+    date: Date;
+    time?: string;
+    templateId?: string;
+    imageUrl?: string;
+}
+
+// Define the creation attributes for the Enquiry model
+interface CustomerNotificationCreationAttributes extends Optional<CustomerNotificationAttributes, 'id'> { }
+
+// Create the Enquiry model class
+class CustomerNotification
+    extends Model<CustomerNotificationAttributes, CustomerNotificationCreationAttributes>
+    implements CustomerNotificationAttributes {
+    public id!: number;
+    public adminId!: string;
+    public customerId!: string;
+    public notifyId!: string;
+    public title!: string;
+    public message!: string;
+    public route!: string;
+    public type!: string;
+    public read!: boolean;
+    public date!: Date;
+    public time!: string;
+
+    public templateId!: string;
+    public imageUrl!: string;
+
+    public readonly createdAt!: Date;
+    public readonly updatedAt!: Date;
+    public readonly deletedAt!: Date;
+}
+
+// Initialize the Enquiry model
+CustomerNotification.init(
+    {
+        id: {
+            type: DataTypes.INTEGER,
+            primaryKey: true,
+            autoIncrement: true,
+            allowNull: false,
+            unique: true,
+        },
+        adminId: {
+            type: DataTypes.STRING(255),
+            allowNull: false,
+            references: {
+                model: Admin,
+                key: "adminId",
+            },
+        },
+        customerId: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+            defaultValue: null,
+        },
+        notifyId: {
+            type: DataTypes.TEXT,
+            allowNull: false,
+            defaultValue: DataTypes.UUIDV4(),
+            unique: true,
+        },
+        title: {
+            type: DataTypes.STRING(255),
+            allowNull: false,
+        },
+        message: {
+            type: DataTypes.TEXT,
+            allowNull: false,
+        },
+        route: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            defaultValue: null,
+        },
+        type: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            defaultValue: "general",
+        },
+        read: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+        date: {
+            type: DataTypes.DATE,
+            allowNull: false,
+        },
+        time: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+        },
+        templateId: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+            defaultValue: null,
+        },
+        imageUrl: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            defaultValue: null,
+        },
+    },
+    {
+        sequelize,
+        modelName: "CustomerNotifications",
+        tableName: "customer_notifications",
+        timestamps: true,
+        paranoid: true,
+
+        indexes: [
+            {
+                unique: true,
+                fields: ["notifyId", "date", "customerId", "adminId"],
+            },
+            // Common query patterns
+            {
+                fields: ["adminId", "customerId", "createdAt"], // customer notifications with pagination
+            },
+            {
+                fields: ["adminId", "customerId"], // customer notifications
+            },
+            {
+                fields: ["adminId", "customerId", "read", "createdAt"], // unread notifications with pagination
+            },
+            {
+                fields: ["adminId", "customerId", "read"], // unread notifications
+            },
+            {
+                fields: ["notifyId"], // notifyId lookup (already in unique but separate for faster lookups)
+            },
+            {
+                fields: ["date"], // date-based queries
+            },
+            {
+                fields: ["type"], // type filtering
+            },
+        ],
+    }
+);
+
+
+
+export { CustomerNotification };
