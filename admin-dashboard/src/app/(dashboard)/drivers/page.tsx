@@ -7,6 +7,7 @@ import { driversApi } from '@/lib/api';
 
 interface Driver {
     id: string;
+    driverId?: string; // Added driverId
     name: string;
     phone: string;
     email: string;
@@ -18,6 +19,8 @@ interface Driver {
     totalTrips: number;
     walletBalance: number;
     createdAt: string;
+    isOnline?: boolean; // Added isOnline
+    inActiveReason?: string; // Added inActiveReason
 }
 
 export default function DriversPage() {
@@ -49,24 +52,66 @@ export default function DriversPage() {
     };
 
     const columns = [
-        { key: 'name', header: 'Name', sortable: true },
-        { key: 'phone', header: 'Phone' },
         {
-            key: 'vehicleNumber',
-            header: 'Vehicle',
-            render: (d: Driver) => d.vehicle?.[0]?.vehicleNumber || d.vehicleNumber || '-'
+            key: 'sno',
+            header: 'S.No',
+            render: (_: Driver, index: number) => (page - 1) * pageSize + index + 1
         },
+        {
+            key: 'driverId',
+            header: 'Driver ID',
+            render: (d: Driver) => (
+                <a
+                    href={`/drivers/${d.driverId}`}
+                    onClick={(e) => { e.stopPropagation(); }}
+                    className="text-blue-600 hover:underline"
+                >
+                    {d.driverId || '-'}
+                </a>
+            )
+        },
+        { key: 'name', header: 'Driver Name', sortable: true },
+        {
+            key: 'isOnline',
+            header: 'Online Status',
+            render: (d: Driver) => (
+                <div className="flex justify-center">
+                    <div
+                        className={`w-3 h-3 rounded-full ${d.isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`}
+                        title={d.isOnline ? 'Online' : 'Offline'}
+                    />
+                </div>
+            )
+        },
+        { key: 'phone', header: 'Phone Number' },
+        { key: 'walletBalance', header: 'Wallet Balance', render: (d: Driver) => `₹${d.walletBalance || 0}` },
         { key: 'status', header: 'Status', render: (d: Driver) => <StatusBadge status={d.status || 'inactive'} /> },
-        { key: 'verificationStatus', header: 'Verified', render: (d: Driver) => <StatusBadge status={d.verificationStatus || 'pending'} /> },
-        { key: 'totalTrips', header: 'Trips', render: (d: Driver) => d.totalTrips || 0 },
-        { key: 'walletBalance', header: 'Wallet', render: (d: Driver) => `₹${d.walletBalance || 0}` },
+        { key: 'inActiveReason', header: 'Reason', render: (d: Driver) => d.inActiveReason || '-' },
         {
             key: 'actions',
             header: 'Actions',
             render: (d: Driver) => (
-                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined') window.location.href = `/drivers/${d.id}`; }}>
-                    View
-                </Button>
+                <div className="flex gap-2">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-blue-600 hover:text-blue-800 p-1 h-auto"
+                        onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined') window.location.href = `/drivers/${d.driverId}`; }}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:text-red-700 p-1 h-auto"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            // Handle delete 
+                        }}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></svg>
+                    </Button>
+                </div>
             )
         },
     ];
@@ -100,13 +145,13 @@ export default function DriversPage() {
             <DataTable
                 data={drivers}
                 columns={columns}
-                keyExtractor={(d) => d.id}
+                keyExtractor={(d) => d.driverId || ''}
                 loading={loading}
                 emptyMessage="No drivers found"
                 selectable
                 selectedIds={selectedIds}
                 onSelectionChange={setSelectedIds}
-                onRowClick={(d) => { if (typeof window !== 'undefined') window.location.href = `/drivers/${d.id}`; }}
+                onRowClick={(d) => { if (typeof window !== 'undefined') window.location.href = `/drivers/${d.driverId}`; }}
                 pagination={{ page, pageSize, total, onPageChange: setPage }}
             />
         </ClientLayout>

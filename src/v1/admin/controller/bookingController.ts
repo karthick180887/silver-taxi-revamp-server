@@ -151,8 +151,15 @@ export const getAllBookings = async (req: Request, res: Response): Promise<void>
             });
             return;
         }
+        const { driverId, customerId, vendorId } = req.query;
+
+        const whereCondition: any = { adminId };
+        if (driverId) whereCondition.driverId = driverId;
+        if (customerId) whereCondition.customerId = customerId;
+        if (vendorId) whereCondition.vendorId = vendorId;
+
         const bookings = await Booking.findAll({
-            where: { adminId },
+            where: whereCondition,
             attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
             order: [['createdAt', 'DESC']],
             include: [

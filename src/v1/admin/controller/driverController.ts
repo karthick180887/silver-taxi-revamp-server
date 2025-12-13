@@ -33,8 +33,19 @@ export const getAllDrivers = async (req: Request, res: Response): Promise<void> 
             });
             return;
         }
+        const search = req.query.search as string;
+
+        const whereCondition: any = { adminId };
+
+        if (search) {
+            whereCondition[Op.or] = [
+                { name: { [Op.iLike]: `%${search}%` } },
+                { phone: { [Op.iLike]: `%${search}%` } }
+            ];
+        }
+
         const drivers = await Driver.findAll({
-            where: { adminId },
+            where: whereCondition,
             attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
             include: [{
                 model: DriverWallet,

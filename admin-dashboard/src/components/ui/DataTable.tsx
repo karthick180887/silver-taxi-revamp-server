@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 interface Column<T> {
     key: keyof T | string;
     header: string;
-    render?: (item: T) => React.ReactNode;
+    render?: (item: T, index: number) => React.ReactNode;
     sortable?: boolean;
     width?: string;
 }
@@ -162,7 +162,7 @@ export function DataTable<T extends object>({
                                 </td>
                             </tr>
                         ) : (
-                            sortedData.map((item) => {
+                            sortedData.map((item, index) => {
                                 const id = keyExtractor(item);
                                 return (
                                     <tr
@@ -182,7 +182,7 @@ export function DataTable<T extends object>({
                                         {columns.map((col) => (
                                             <td key={String(col.key)} style={tdStyles}>
                                                 {col.render
-                                                    ? col.render(item)
+                                                    ? col.render(item, index)
                                                     : String((item as Record<string, unknown>)[col.key as string] ?? '-')}
                                             </td>
                                         ))}
