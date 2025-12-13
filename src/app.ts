@@ -138,7 +138,7 @@ app.use('/website', websiteAuth, websiteRouter)
 // app.use('/website', websiteRouter)
 
 // app.use('/*', auth);
-app.use(['/v1', '/'], auth, adminRouter)
+app.use(['/v1', '/', '/admin'], auth, adminRouter)
 
 
 app.use('/*', (_req: Request, res: Response) => {

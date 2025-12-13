@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: admin-dashboard-config
+data:
+  NODE_ENV: development
+  NEXT_PUBLIC_API_URL: http://backend-go-app:8081
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-dashboard
+spec:
+  type: NodePort
+  selector:
+    app: admin-dashboard
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 30061
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin-dashboard
+  template:
+    metadata:
+      labels:
+        app: admin-dashboard
+    spec:
+      containers:
+        - name: app
+          image: admin-dashboard:dev
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: admin-dashboard-config
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            periodSeconds: 10
+            initialDelaySeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            periodSeconds: 20
+            initialDelaySeconds: 20

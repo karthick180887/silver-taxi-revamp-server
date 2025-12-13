@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { Enquiry, Service } from "../../core/models";
+import { Op } from "sequelize";
 import { sendNotification } from "../../../common/services/socket/websocket";
 import { createNotification } from "../../core/function/notificationCreate";
 
@@ -7,6 +8,7 @@ import { createNotification } from "../../core/function/notificationCreate";
 export const getAllEnquiries = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
+        console.log(`[Enquiries] Fetching for adminId: ${adminId}`);
 
 
         if (!adminId) {
@@ -17,20 +19,45 @@ export const getAllEnquiries = async (req: Request, res: Response): Promise<void
             return;
         }
 
-        const enquires = await Enquiry.findAll({
-            where: { adminId },
-            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-            include: {
-                model: Service,
-                as: 'services',
-                attributes: ['serviceId', 'name'],
-            }
-        });
+        const [enquires, totalEnquiriesCount, todayEnquiriesCount, websiteEnquiriesCount] = await Promise.all([
+            Enquiry.findAll({
+                // where: { adminId },
+                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+                include: {
+                    model: Service,
+                    as: 'services',
+                    attributes: ['serviceId', 'name'],
+                },
+                order: [['createdAt', 'DESC']]
+            }),
+            Enquiry.count({}), // where: { adminId }
+            Enquiry.count({
+                // where: {
+                //     adminId,
+                //     createdAt: {
+                //         [Op.gte]: new Date(new Date().setHours(0, 0, 0, 0))
+                //     }
+                // } as any
+            }),
+            Enquiry.count({
+                // where: {
+                //     adminId,
+                //     [Op.or]: [{ source: 'Website' }, { createdBy: 'Website' }] 
+                // } as any
+            })
+        ]);
 
         res.status(200).json({
             success: true,
             message: "Enquires retrieved successfully",
-            data: enquires,
+            data: {
+                enquiries: enquires,
+                stats: {
+                    totalEnquiries: totalEnquiriesCount,
+                    todayEnquiries: todayEnquiriesCount,
+                    websiteEnquiries: websiteEnquiriesCount
+                }
+            },
         });
 
     } catch (error) {
@@ -221,7 +248,7 @@ export const createEnquiry = async (req: Request, res: Response): Promise<void> 
                     date: new Date(),
                     time: time,
                 });
-            }  
+            }
         }
 
         if (adminNotificationResponse.success) {

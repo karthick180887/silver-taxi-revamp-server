@@ -176,10 +176,12 @@ export const adminSignIn = async (req: Request, res: Response): Promise<void> =>
                 permission: ["admin_access"]
             }
         });
-    } catch (error) {
+    } catch (error: any) {
+        console.error("Admin Sign In Error Details:", error);
         res.status(500).json({
             success: false,
-            message: "Internal server error",
+            message: "Internal server error: " + error.message,
+            stack: error.stack
         });
     }
 }

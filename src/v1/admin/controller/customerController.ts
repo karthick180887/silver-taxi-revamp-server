@@ -111,34 +111,48 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<void
             console.log("[Customers] Missing adminId");
         }
 
-        const customers = await Customer.findAll({
-            where: { adminId },
-            order: [['createdAt', 'DESC']],
-            attributes: { exclude: ['updatedAt', 'deletedAt'] }
-        });
+        const [customers, totalCustomersCount, newCustomersToday, activeCustomers] = await Promise.all([
+            Customer.findAll({
+                where: { adminId },
+                order: [['createdAt', 'DESC']],
+                attributes: { exclude: ['updatedAt', 'deletedAt'] }
+            }),
+            Customer.count({ where: { adminId } }),
+            Customer.count({
+                where: {
+                    adminId,
+                    createdAt: {
+                        [Op.gte]: new Date(new Date().setHours(0, 0, 0, 0))
+                    }
+                } as any
+            }),
+            Customer.count({
+                where: {
+                    adminId,
+                    bookingCount: { [Op.gt]: 0 }
+                } as any
+            })
+        ]);
 
         console.log(`[Customers] Found ${customers.length} records.`);
-
-        const totalCustomers = customers.length;
-        // Calculate stats if possible, or use 0 for now to prevent crash
-        const customersCount = {
-            totalTripCompleted: 0, // Placeholder - implement actual count if needed
-            totalAmount: 0         // Placeholder - implement actual sum if needed
-        };
 
         res.status(200).json({
             success: true,
             message: "Customers retrieved successfully",
             data: {
                 customers: customers,
-                customersCount: customersCount,
+                stats: {
+                    totalCustomers: totalCustomersCount,
+                    newCustomersToday: newCustomersToday,
+                    activeCustomers: activeCustomers
+                },
                 pagination: {
                     currentPage: 1,
                     totalPages: 1,
-                    totalCount: totalCustomers,
+                    totalCount: totalCustomersCount,
                     hasNext: false,
                     hasPrev: false,
-                    limit: totalCustomers
+                    limit: totalCustomersCount
                 }
             }
         });

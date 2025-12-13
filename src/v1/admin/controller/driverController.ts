@@ -40,6 +40,11 @@ export const getAllDrivers = async (req: Request, res: Response): Promise<void> 
                 model: DriverWallet,
                 as: 'wallet',
                 attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
+            },
+            {
+                model: Vehicle,
+                as: 'vehicle',
+                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
             }]
         });
 
@@ -57,6 +62,7 @@ export const getAllDrivers = async (req: Request, res: Response): Promise<void> 
             data: {
                 drivers: drivers,
                 driversCount: driversCount,
+                total: drivers.length, // Added for frontend pagination compatibility
                 pagination: {
                     currentPage: 1,
                     totalPages: 1,

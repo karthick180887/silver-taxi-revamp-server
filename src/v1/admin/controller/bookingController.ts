@@ -49,39 +49,48 @@ export const getBookingDashboard = async (req: Request, res: Response): Promise<
             raw: true
         });
 
-        // 2. Recent Income (Mock or Aggregate if Revenue model exists)
-        // For now, using finalAmount from Bookings
+        // 2. Recent Income
         const totalRevenue = await Booking.sum('finalAmount', { where: { adminId } });
 
-        // 3. Weekly/Monthly Data for Charts (Simplified)
-        let chartData: any[] = [];
-        if (barChart === 'week') {
-            // Logic to get last 7 days bookings count
-            const last7Days = await Booking.findAll({
-                attributes: [
-                    [sequelize.fn('DATE', sequelize.col('createdAt')), 'date'],
-                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                ],
-                where: {
-                    adminId,
-                    createdAt: {
-                        [Op.gte]: dayjs().subtract(7, 'days').toDate()
-                    }
-                } as any,
-                group: [sequelize.fn('DATE', sequelize.col('createdAt'))],
-                order: [[sequelize.fn('DATE', sequelize.col('createdAt')), 'ASC']],
-                raw: true
-            });
-            chartData = last7Days;
-        }
+        // 3. Last 7 Days Revenue (For Trend Chart)
+        const last7DaysRevenue = await Booking.findAll({
+            attributes: [
+                [sequelize.fn('DATE', sequelize.col('createdAt')), 'date'],
+                [sequelize.fn('SUM', sequelize.col('finalAmount')), 'revenue'],
+                [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+            ],
+            where: {
+                adminId,
+                createdAt: {
+                    [Op.gte]: dayjs().subtract(7, 'days').toDate()
+                },
+                status: 'Completed' // Only count revenue from completed bookings
+            } as any,
+            group: [sequelize.fn('DATE', sequelize.col('createdAt'))],
+            order: [[sequelize.fn('DATE', sequelize.col('createdAt')), 'ASC']],
+            raw: true
+        });
+
+        // 4. Status Counts (For Donut Chart)
+        const statusDistribution = await Booking.findAll({
+            attributes: ['status', [sequelize.fn('COUNT', sequelize.col('status')), 'count']],
+            where: { adminId },
+            group: ['status'],
+            raw: true
+        });
 
         res.status(200).json({
             success: true,
             message: "Dashboard data retrieved",
             data: {
-                statusCounts,
-                totalRevenue: totalRevenue || 0,
-                chartData
+                stats: {
+                    totalRevenue: totalRevenue || 0,
+                    bookingsCount: await Booking.count({ where: { adminId } }),
+                },
+                charts: {
+                    revenue: last7DaysRevenue,
+                    status: statusDistribution
+                }
             }
         });
         console.log(`[Dashboard] Stats found: ${statusCounts.length}, Revenue: ${totalRevenue}`);
@@ -146,6 +155,13 @@ export const getAllBookings = async (req: Request, res: Response): Promise<void>
             where: { adminId },
             attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
             order: [['createdAt', 'DESC']],
+            include: [
+                {
+                    model: Driver,
+                    as: 'driver',
+                    attributes: ['name', 'phone', 'driverId']
+                }
+            ]
         });
 
 

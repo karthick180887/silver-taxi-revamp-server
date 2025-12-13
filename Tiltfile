@@ -22,3 +22,14 @@ k8s_resource("backend-go-app", port_forwards=[
 ])
 k8s_resource("redis")
 
+# Admin Dashboard
+docker_build(
+    "admin-dashboard:dev",
+    "admin-dashboard",
+    dockerfile="admin-dashboard/Dockerfile",
+    ignore=["node_modules/", ".next/", ".git/"],
+)
+k8s_yaml("k8s/admin-dashboard.yaml")
+k8s_resource("admin-dashboard", port_forwards=[
+    port_forward(3000, 3000, host="0.0.0.0")
+])
