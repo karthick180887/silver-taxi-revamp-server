@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'api_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'design_system.dart';
+import 'screens/auth/login_screen.dart';
+import 'screens/main_layout.dart';
 
 void main() {
   runApp(const VendorApp());
@@ -11,172 +14,57 @@ class VendorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Vendor App (API wired)',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2575FC)),
-        useMaterial3: true,
-      ),
-      home: const ApiDemoScreen(),
+      title: 'Silver Taxi Vendor',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      home: const AuthWrapper(),
     );
   }
 }
 
-/// Minimal screen that exercises all API methods.
-class ApiDemoScreen extends StatefulWidget {
-  const ApiDemoScreen({super.key});
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
 
   @override
-  State<ApiDemoScreen> createState() => _ApiDemoScreenState();
+  State<AuthWrapper> createState() => _AuthWrapperState();
 }
 
-class _ApiDemoScreenState extends State<ApiDemoScreen> {
-  final _api = VendorApiClient();
-  final _tokenController = TextEditingController();
-  final _log = <String>[];
-  bool _busy = false;
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _isLoading = true;
+  bool _isAuthenticated = false;
 
-  void _append(String text) {
-    setState(() => _log.insert(0, text));
+  @override
+  void initState() {
+    super.initState();
+    _checkAuth();
   }
 
-  Future<void> _call(Future<void> Function() fn) async {
-    setState(() => _busy = true);
-    try {
-      await fn();
-    } catch (e) {
-      _append('Error: $e');
-    } finally {
-      setState(() => _busy = false);
+  Future<void> _checkAuth() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('vendor_token');
+    
+    // Simulate a brief delay or verify token validity if API needed
+    // await Future.delayed(const Duration(milliseconds: 500)); 
+
+    if (mounted) {
+      setState(() {
+        _isAuthenticated = token != null && token.isNotEmpty;
+        _isLoading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Vendor API Demo'),
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _tokenController,
-              decoration: const InputDecoration(
-                labelText: 'Bearer token',
-                hintText: 'Paste JWT here',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                _ActionButton(
-                  label: 'Get profile',
-                  busy: _busy,
-                  onPressed: () => _call(() async {
-                    final res = await _api.fetchProfile(token: _tokenController.text);
-                    _append('profile → ${res.statusCode} ${res.message}');
-                  }),
-                ),
-                _ActionButton(
-                  label: 'Get transactions',
-                  busy: _busy,
-                  onPressed: () => _call(() async {
-                    final res = await _api.fetchTransactions(token: _tokenController.text);
-                    _append('transactions → ${res.statusCode} ${res.message}');
-                  }),
-                ),
-                _ActionButton(
-                  label: 'Get booking counts',
-                  busy: _busy,
-                  onPressed: () => _call(() async {
-                    final res = await _api.getBookingCounts(token: _tokenController.text);
-                    _append('counts → ${res.statusCode} ${res.message}');
-                  }),
-                ),
-                _ActionButton(
-                  label: 'Get config keys',
-                  busy: _busy,
-                  onPressed: () => _call(() async {
-                    final res = await _api.getConfigKeys(token: _tokenController.text);
-                    _append('config → ${res.statusCode} ${res.message}');
-                  }),
-                ),
-                _ActionButton(
-                  label: 'Get version',
-                  busy: _busy,
-                  onPressed: () => _call(() async {
-                    final res = await _api.getVersion(token: _tokenController.text);
-                    _append('version → ${res.statusCode} ${res.message}');
-                  }),
-                ),
-                _ActionButton(
-                  label: 'List bookings (v1)',
-                  busy: _busy,
-                  onPressed: () => _call(() async {
-                    final res = await _api.getAllBookings(token: _tokenController.text);
-                    _append('bookings → ${res.statusCode} ${res.message}');
-                  }),
-                ),
-                _ActionButton(
-                  label: 'List bookings (v2)',
-                  busy: _busy,
-                  onPressed: () => _call(() async {
-                    final res = await _api.getAllBookingsV2(token: _tokenController.text);
-                    _append('bookings v2 → ${res.statusCode} ${res.message}');
-                  }),
-                ),
-                _ActionButton(
-                  label: 'Get drivers w/ location',
-                  busy: _busy,
-                  onPressed: () => _call(() async {
-                    final res = await _api.getDriversWithLocation(token: _tokenController.text);
-                    _append('drivers-location → ${res.statusCode} ${res.message}');
-                  }),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Logs (most recent first)',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                for (final entry in _log.take(30))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(entry),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: AppColors.primary,
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
+    return _isAuthenticated ? const MainLayout() : const LoginScreen();
   }
 }
-
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    required this.label,
-    required this.onPressed,
-    required this.busy,
-  });
-
-  final String label;
-  final VoidCallback onPressed;
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: ElevatedButton(
-        onPressed: busy ? null : onPressed,
-        child: Text(label),
-      ),
-    );
-  }
-}
-
