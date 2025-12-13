@@ -291,20 +291,72 @@ export const specificBooking = async (req: Request, res: Response) => {
 
         switch (normalizedStatus) {
             case "booking-confirmed": {
-                const result = await fetchBookingsWithCount(
-                    {
-                        driverId,
-                        adminId,
-                        status: "Booking Confirmed",
-                        driverAccepted: "pending"
-                    },
+                // For "Booking Confirmed" status, we need to include:
+                // 1. Broadcast bookings (assignAllDriver = true, driverId = null)
+                // 2. Individual bookings (driverId = specific driver)
+                const { Op } = require('sequelize');
+                
+                debug.info(`Fetching bookings - adminId: ${adminId}, driverId: ${driverId}`);
+                
+                // Build where clause conditionally for adminId
+                const broadcastWhere: any = {
+                    driverId: null,
+                    assignAllDriver: true,
+                    status: "Booking Confirmed",
+                    driverAccepted: "pending"
+                };
+                if (adminId) {
+                    broadcastWhere.adminId = adminId;
+                }
+                
+                // Fetch broadcast bookings (available to all drivers)
+                const broadcastResult = await fetchBookingsWithCount(
+                    broadcastWhere,
                     order,
                     limit,
                     offset
                 );
-                bookings = result.bookings;
-                totalCount = result.totalCount;
+                debug.info(`Found ${broadcastResult.bookings.length} broadcast bookings`);
+                
+                // Build where clause for individual bookings
+                const individualWhere: any = {
+                    driverId,
+                    status: "Booking Confirmed",
+                    driverAccepted: "pending"
+                };
+                if (adminId) {
+                    individualWhere.adminId = adminId;
+                }
+                
+                // Fetch individual bookings (assigned to this driver)
+                const individualResult = await fetchBookingsWithCount(
+                    individualWhere,
+                    order,
+                    limit,
+                    offset
+                );
+                debug.info(`Found ${individualResult.bookings.length} individual bookings`);
+                
+                // Combine both results
+                bookings = [...broadcastResult.bookings, ...individualResult.bookings];
+                totalCount = broadcastResult.totalCount + individualResult.totalCount;
+                
+                // Remove duplicates (in case a booking appears in both)
+                const uniqueBookings = bookings.filter((booking: any, index: number, self: any[]) => 
+                    index === self.findIndex((b: any) => b.bookingId === booking.bookingId)
+                );
+                
+                // Sort by createdAt descending
+                uniqueBookings.sort((a: any, b: any) => 
+                    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                );
+                
+                bookings = uniqueBookings;
+                totalCount = uniqueBookings.length;
                 message = "Confirmed bookings fetched successfully";
+                
+                debug.info(`Returning ${uniqueBookings.length} total unique bookings`);
+                debug.info("Booking IDs:", uniqueBookings.map((b: any) => b.bookingId));
                 break;
             }
 

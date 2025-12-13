@@ -128,37 +128,3 @@ export const getConfigKeys = async (req: Request, res: Response) => {
     });
   }
 }
-
-export const getVersions = async (req: Request, res: Response) => {
-  const adminId = req.query.adminId ?? req.body.adminId;
-
-  if (!adminId) {
-    res.status(401).json({
-      success: false,
-      message: "Admin id is required",
-    });
-    return;
-  }
-
-  try {
-    const admin = await Admin.findOne({
-      where: { adminId },
-      attributes: ["versions"]
-    });
-
-
-    res.status(200).json({
-      success: true,
-      message: "Vendor app version fetched successfully",
-      data: admin?.versions?.vendorAppVersion
-    });
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Internal error",
-      error: err
-    });
-  }
-
-
-}

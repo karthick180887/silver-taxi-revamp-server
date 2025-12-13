@@ -127,28 +127,7 @@ VendorNotification.init(
                 unique: true,
                 fields: ["notifyId", "date", "vendorId", "adminId"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "vendorId", "createdAt"], // vendor notifications with pagination
-            },
-            {
-                fields: ["adminId", "vendorId"], // vendor notifications
-            },
-            {
-                fields: ["adminId", "vendorId", "read", "createdAt"], // unread notifications with pagination
-            },
-            {
-                fields: ["adminId", "vendorId", "read"], // unread notifications
-            },
-            {
-                fields: ["notifyId"], // notifyId lookup (already in unique but separate for faster lookups)
-            },
-            {
-                fields: ["date"], // date-based queries
-            },
-            {
-                fields: ["type"], // type filtering
-            },
+
         ],
     }
 );

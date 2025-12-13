@@ -63,23 +63,18 @@ export const sumAnything = (value: any): number => {
 };
 
 
-export const filterObject = (obj: Record<string, any>, excludeKeys: string[] = []) => {
+export const filterObject = (obj: Record<string, any>) => {
   const result: Record<string, number> = {};
   for (const key in obj) {
-    if (excludeKeys.includes(key)) {
-      console.log(`[SKIP] Skipping key: ${key}, value: ${obj[key]}`);
-      continue;
-    }
-    const value = Number(obj[key]);
+    const value = Number(obj[key]); // 🔥 force to number
+    // console.log("key & value >> ", key, value);
     if (!isNaN(value) && value > 0) {
       result[key] = value;
     }
-  } return result;
+  }
+  return result;
 };
 
-export const capitalizeFirstLetter = (string: string): string => {
-  return string.charAt(0).toUpperCase() + string.slice(1).toLowerCase();
-};
 
 
 

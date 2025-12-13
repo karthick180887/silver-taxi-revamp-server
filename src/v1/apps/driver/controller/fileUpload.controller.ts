@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { uploadFileToDOS3 } from "../../../../utils/minio.image";
+import { uploadFileToMiniIOS3 } from "../../../../utils/minio.image";
 import { debugLogger as debug } from "../../../../utils/logger";
 import fs from "fs/promises";
 
@@ -22,7 +22,7 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
         const uniqueId = nanoid(10);
         const imageBuffer = await fs.readFile(image.path);
         debug.info(`processing image upload for companyId: ${uniqueId}, pathName: ${pathName}, id: ${id}`);
-        const imageUrl = await uploadFileToDOS3(imageBuffer, `${pathName ? pathName.trim() : "others"}/${id ? `${id.trim()}/` : ``}${uniqueId}.webp`);
+        const imageUrl = await uploadFileToMiniIOS3(imageBuffer, `${pathName ? pathName.trim() : "others"}/${id ? `${id.trim()}/` : ``}${uniqueId}.webp`);
         debug.info(`Image uploaded successfully, URL: ${imageUrl}`);
         await fs.unlink(image.path).catch((err: Error) =>
             console.error("Error deleting temporary file:", err)

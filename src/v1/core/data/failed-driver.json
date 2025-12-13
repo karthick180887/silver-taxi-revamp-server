@@ -43,49 +43,6 @@
     "lastAppOpened": "2025-07-18T12:12:35.672074"
   },
   {
-    "id": "59bf478b-5010-43e4-ab28-6a73f7e854dd",
-    "accountCreatedAt": "Friday, October 3, 2025 15:31:41",
-    "carName": "WAGONR",
-    "phoneNum": "+917305981422",
-    "token": "fJiAftqaRIyFFiNU0Yseg5:APA91bETmHSiurCmwDiCcDXF4-jtxXNzciM913bO3BSlcWOwVWJv5gjlINYqgUEoF2xihK-M9dVozxn3xH_wmrxs-x1kIdqPYtQQfyv0cCNxSyANfd61HO0",
-    "carNumber": "TN42AR9541",
-    "driverNativeLocation": {
-      "country": "",
-      "district": "",
-      "state": ""
-    },
-    "uid": "59bf478b-5010-43e4-ab28-6a73f7e854dd",
-    "phoneNumber": "+917305981422",
-    "carType": "Mini",
-    "disableDriver": false,
-    "ratings": "4.3",
-    "proofs": {
-      "aadharCopy": "https://firebasestorage.googleapis.com/v0/b/silver-drop-taxi-3b2e9.appspot.com/o/DriverProofs%2F%2B917305981422%2Faadhar?alt=media&token=427a7ed2-a60c-4f90-bdc4-05dd3fadc6c1",
-      "userPhone": "+917305981422",
-      "insuranceCopy": "https://firebasestorage.googleapis.com/v0/b/silver-drop-taxi-3b2e9.appspot.com/o/DriverProofs%2F%2B917305981422%2Finsurance?alt=media&token=8b495c2f-a096-42e6-87de-cb15aa347bf6",
-      "created_at": "Friday, October 3, 2025 15:31:41",
-      "dlCopy": "https://firebasestorage.googleapis.com/v0/b/silver-drop-taxi-3b2e9.appspot.com/o/DriverProofs%2F%2B917305981422%2Fdl?alt=media&token=f544d26a-5c35-4928-a487-191b0e45408c",
-      "rcCopy": "https://firebasestorage.googleapis.com/v0/b/silver-drop-taxi-3b2e9.appspot.com/o/DriverProofs%2F%2B917305981422%2Frc?alt=media&token=a2cc23e2-6005-4a8a-8b7a-83dff4fbe0cc"
-    },
-    "name": "ANANDHARAJ ",
-    "location": {
-      "_latitude": 11.001702,
-      "_longitude": 76.9941333
-    },
-    "docsUploaded": true,
-    "lastLoginAt": "2025-10-03 15:31:45.265959",
-    "tokenUpdatedAt": "2025-10-03 15:31:45.265959",
-    "isAdminVerified": true,
-    "isOnline": true,
-    "lastTripTakenAt": "Sunday, October 19, 2025 09:30:29",
-    "totalTrips": 1,
-    "totalMoneyEarned": 2840,
-    "totalDistanceTravelled": 180,
-    "amount": 602.8,
-    "onRide": true,
-    "lastAppOpened": "2025-10-29T17:12:31.593267"
-  },
-  {
     "id": "7GwioukSz8gGAkA9G7bMt97LOXl2",
     "carNumber": "TN41Z1854",
     "carType": "Innova Crysta",

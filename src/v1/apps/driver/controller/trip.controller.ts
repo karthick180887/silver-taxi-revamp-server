@@ -843,7 +843,7 @@ export const tripCompleted = async (req: Request, res: Response) => {
 
             await activityLog.update({
                 tripCompletedTime: now.toDate(),
-                activeDrivingMinutes: isNaN(activeDrivingMinutes) ? 0 : activeDrivingMinutes,
+                activeDrivingMinutes : isNaN(activeDrivingMinutes) ? 0 : activeDrivingMinutes,
                 tripStatus: "Completed"
             });
 
@@ -922,7 +922,7 @@ export const tripCompleted = async (req: Request, res: Response) => {
             driver.totalEarnings = String(Number(driver.totalEarnings) + (Number(booking.tripCompletedFinalAmount) - Number(booking.driverDeductionAmount)));
             await driver.save();
 
-            const excludeKeys = ["Toll", "Hill", "Permit Charge", "Driver Beta"];
+            const excludeKeys = ["Toll", "Hill", "Permit Charge"];
             const extraChargesSum = sumSingleObject(booking.extraCharges, excludeKeys);
             const extraChargesValue = Number(extraChargesSum)
 
@@ -1219,7 +1219,7 @@ export const tripCompleted = async (req: Request, res: Response) => {
                     paymentMethod: booking.paymentMethod,
                     paymentDetails: booking.paymentMethod,
                     note: "This invoice is auto-generated and does not require a signature.",
-                }, null);
+                })
 
                 debug.info("invoice response >> ", invoice.success);
             } catch (error) {
@@ -1257,7 +1257,7 @@ export const tripCompleted = async (req: Request, res: Response) => {
                     variables: [
                         { type: "text", text: `${booking.createdBy == "Vendor" ? vendor?.name : (companyProfile?.name ?? "silvercalltaxi.in")}` },
                         { type: "text", text: booking.adminContact },
-                        { type: "text", text: `${companyProfile?.website ?? "silvercalltaxi.in"}booking-invoice?id=${invoice?.data?.invoiceNo}` },
+                        { type: "text", text: `${companyProfile?.website ?? "silvercalltaxi.in"}booking/invoice/${invoice?.data?.invoiceNo}` },
                     ],
                     templateName: "tripCompleted"
                 }
@@ -1528,7 +1528,7 @@ export const driverTripCancellation = async (req: Request, res: Response) => {
         }
 
         await booking.update({
-            status: 'Booking Confirmed',
+            status: 'Reassign',
             driverId: null,
             vehicleId: driver.vehicleId,
             driverAccepted: 'pending',

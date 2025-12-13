@@ -30,7 +30,6 @@ export interface CustomerTransactionAtttributes {
     tnxPaymentTime?: Date;
 
     fareBreakdown?: any;
-    retryCount?: number;
 }
 
 interface CustomerTransactionCreationAttributes extends Optional<CustomerTransactionAtttributes, 'id'> { }
@@ -65,7 +64,6 @@ class CustomerTransaction extends Model<CustomerTransactionAtttributes, Customer
     public tnxPaymentTime?: Date;
 
     public fareBreakdown?: any;
-    public retryCount?: number;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -190,11 +188,6 @@ CustomerTransaction.init(
             allowNull: true,
             defaultValue: null,
         },
-        retryCount: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            defaultValue: 0,
-        },
     },
     {
         sequelize,
@@ -206,34 +199,11 @@ CustomerTransaction.init(
             {
                 fields: ["transactionId", "type", "date", "customerId", "adminId"],
             },
-            // Common query patterns
             {
-                fields: ["adminId", "date"], // date-based queries
-            },
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["customerId", "date"], // customer transactions by date
-            },
-            {
-                fields: ["customerId", "createdAt"], // customer transactions with pagination
-            },
-            {
-                fields: ["adminId", "type", "date"], // type filtering with date
-            },
-            {
-                fields: ["adminId", "type", "createdAt"], // type filtering with pagination
-            },
-            {
-                fields: ["transactionId"], // transaction lookup (already in composite but separate for faster lookups)
-            },
-            {
-                fields: ["walletId"], // wallet lookup
-            },
-            {
-                fields: ["transactionType"], // transaction type filtering
-            },
+                fields: ["fareBreakdown"],
+                using: 'GIN',
+                name: 'fare_breakdown_gin_index'
+            }
         ],
     }
 );

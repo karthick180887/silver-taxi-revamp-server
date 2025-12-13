@@ -148,47 +148,11 @@ DriverWalletRequest.init(
         timestamps: true,
         paranoid: true,
         indexes: [
-            // Unique constraint
             {
-                unique: true,
-                fields: ['requestId'],
-            },
-            // Common query patterns - optimized for high concurrency
-            {
-                fields: ['adminId', 'createdAt'], // admin view with pagination
-            },
-            {
-                fields: ['adminId', 'status', 'createdAt'], // filter by status with pagination (most common)
-            },
-            {
-                fields: ['adminId', 'status'], // filter by status
-            },
-            {
-                fields: ['driverId', 'createdAt'], // driver requests with pagination
-            },
-            {
-                fields: ['driverId', 'status', 'createdAt'], // driver requests by status
-            },
-            {
-                fields: ['driverId', 'status'], // driver requests by status
-            },
-            {
-                fields: ['adminId', 'driverId', 'createdAt'], // admin filtering by driver
-            },
-            {
-                fields: ['adminId', 'type', 'createdAt'], // filter by type (add/withdraw)
-            },
-            {
-                fields: ['adminId', 'type'], // filter by type
-            },
-            {
-                fields: ['status'], // status filtering
-            },
-            {
-                fields: ['type'], // type filtering
-            },
-            {
-                fields: ['walletId'], // wallet lookup
+                fields: [
+                    "requestId", "type", "driverId",
+                    "adminId", "walletId"
+                ],
             },
         ],
     }

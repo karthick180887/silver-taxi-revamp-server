@@ -3,6 +3,8 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { logger } from '../../../utils/logger';
 import { decodeToken } from '../jwt/jwt';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { pubClient, subClient } from '../../db/redis';
 
 // Types
 interface AuthData {
@@ -28,7 +30,8 @@ export function initializeWebSocket(server: HTTPServer): SocketIOServer {
             origin: '*',
             methods: ['GET', 'POST'],
         },
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        adapter: createAdapter(pubClient, subClient)
     });
 
     io.on('connection', handleConnection);
@@ -61,8 +64,8 @@ function handleAuthentication(socket: Socket, data: AuthData): void {
         const decoded = decodeToken(data.token) as any;
 
         if (!decoded || !decoded.userData?.id) {
-           console.log("decoded", decoded)
-           return;
+            console.log("decoded", decoded)
+            return;
         }
 
         logger.info(`Client ${socket.id} authenticated with userId: ${decoded.userData.id}`);
@@ -105,6 +108,86 @@ export function sendNotification(target: string, data: NotificationData): void {
         io.to(target).emit('notification', data);
         console.log("notification broadcasted to room", `target :${target}`, `\n data :${data}`)
         logger.info(`Notification broadcasted to room: ${target}`);
+    }
+}
+
+/**
+ * Emit NEW_TRIP_OFFER event to a specific driver via Socket.IO
+ * This is used by the Flutter app's overlay notification service
+ */
+export function emitNewTripOfferToDriver(driverId: string, bookingData: any): void {
+    if (!io) {
+        logger.error('Socket.IO server not initialized');
+        return;
+    }
+
+    try {
+        // Emit to the driver's room (they join with their driverId)
+        // Flutter app expects: { type: 'NEW_TRIP_OFFER', data: { ...bookingData } }
+        const eventData = {
+            type: 'NEW_TRIP_OFFER',
+            data: bookingData,
+        };
+
+        // Check if any sockets are in the driver's room
+        const room = io.sockets.adapter.rooms.get(driverId);
+        const socketCount = room ? room.size : 0;
+
+        logger.info(`Emitting NEW_TRIP_OFFER to driver room "${driverId}": ${socketCount} socket(s) connected`);
+
+        if (socketCount === 0) {
+            logger.warn(`⚠️ No sockets found in room "${driverId}" - driver may not be connected`);
+        }
+
+        io.to(driverId).emit('notification', eventData);
+        logger.info(`✅ NEW_TRIP_OFFER event sent to driver: ${driverId}, bookingId: ${bookingData.bookingId || 'unknown'}`);
+    } catch (error) {
+        logger.error(`Error emitting NEW_TRIP_OFFER to driver ${driverId}:`, error);
+    }
+}
+
+/**
+ * Emit NEW_TRIP_OFFER event to multiple drivers via Socket.IO
+ * Used for broadcast bookings (assignAllDriver = true)
+ */
+export function emitNewTripOfferToDrivers(driverIds: string[], bookingData: any): void {
+    if (!io) {
+        logger.error('Socket.IO server not initialized');
+        return;
+    }
+
+    if (!driverIds || driverIds.length === 0) {
+        return;
+    }
+
+    try {
+        // Flutter app expects: { type: 'NEW_TRIP_OFFER', data: { ...bookingData } }
+        const eventData = {
+            type: 'NEW_TRIP_OFFER',
+            data: bookingData,
+        };
+
+        let connectedCount = 0;
+        let disconnectedCount = 0;
+
+        // Emit to each driver's room
+        driverIds.forEach(driverId => {
+            const room = io.sockets.adapter.rooms.get(driverId);
+            const socketCount = room ? room.size : 0;
+
+            if (socketCount > 0) {
+                connectedCount++;
+                io.to(driverId).emit('notification', eventData);
+                logger.info(`✅ Emitted to driver ${driverId} (${socketCount} socket(s) connected)`);
+            } else {
+                disconnectedCount++;
+                logger.warn(`⚠️ Driver ${driverId} not connected (room empty)`);
+            }
+        });
+
+        logger.info(`NEW_TRIP_OFFER event sent: ${connectedCount} connected, ${disconnectedCount} disconnected, bookingId: ${bookingData.bookingId || 'unknown'}`);
+    } catch (error) {
+        logger.error(`Error emitting NEW_TRIP_OFFER to multiple drivers:`, error);
     }
 }
 

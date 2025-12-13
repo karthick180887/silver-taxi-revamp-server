@@ -42,11 +42,14 @@ export const handleDriverNotification = async (msg: any, target: string) => {
                             driverId: msg.payload.ids.driverId,
                         },
                         data: {
-                            title: msg.payload.data.title,
-                            message: msg.payload.data.message,
-                            type: msg.payload.data.type,
-                            channelKey: msg.payload.data.channelKey,
+                            title: "New Booking Arrived",
+                            message: `Mr ${msg.payload.driverName}, you have received a new booking`,
+                            type: "new-booking",
+                            channelKey: "booking_channel",
+                            click_action: "FLUTTER_NOTIFICATION_CLICK",
+                            fullScreenIntent: "true",
                         },
+                        priority: "high"
                     });
                     console.log("✅ Driver FCM sent", { fcmResult, target, driverId: msg.payload.ids.driverId });
                 }
@@ -78,10 +81,10 @@ export const handleDriverNotification = async (msg: any, target: string) => {
                             driverId: msg.payload.driverId,
                         },
                         data: {
-                            title: msg.payload.data.title,
-                            message: msg.payload.data.message,
-                            type: msg.payload.data.type,
-                            channelKey: msg.payload.data.channelKey,
+                            title: "Payment Received",
+                            message: `Mr ${msg.payload.driverName}, you have received a payment`,
+                            type: "payment",
+                            channelKey: "payment_channel",
                         },
                     });
                     console.log("✅ Payment FCM sent", { fcmResult, target });
@@ -137,6 +140,35 @@ export const handleDriverNotification = async (msg: any, target: string) => {
         }
     } catch (error) {
         console.log("❌ Driver notification error", { error, msg, target });
+    }
+};
+
+// Batch Driver Notification Handler
+export const handleBatchDriverNotification = async (msg: any, target: string) => {
+    try {
+        if ((!msg.fcmTokens || msg.fcmTokens.length === 0) || !msg.payload) {
+            console.log("❌ Missing required FCM fields for batch driver notification", { msg, target });
+            return;
+        }
+
+        console.log(`✅ Batch Driver FCM Message received for ${msg.fcmTokens.length} tokens`, { target });
+
+        const fcmResult = await sendBatchNotifications(msg.fcmTokens, {
+            ids: msg.payload.ids || {},
+            data: msg.payload.data || {},
+            title: msg.payload.title,
+            message: msg.payload.message,
+            image: msg.payload.imageUrl
+        });
+
+        console.log("✅ Batch Driver FCM processed", {
+            success: fcmResult.successCount,
+            failure: fcmResult.failureCount,
+            target
+        });
+
+    } catch (error) {
+        console.log("❌ Batch driver notification error", { error, msg, target });
     }
 };
 
@@ -231,10 +263,10 @@ export const handleCustomerNotification = async (msg: any, target: string) => {
                         },
                         data: {
                             imageUrl: msg.payload.imageUrl,
-                            title: msg.payload.title,
-                            message: msg.payload.message,
-                            type: "custom-notification",
-                            channelKey: "others_channel",
+                            title: "Driver Arrived",
+                            message: "Your driver has arrived at the pickup location",
+                            type: "driver-arrived",
+                            channelKey: "trip_channel",
                         },
                     });
                     console.log("✅ Customer custom FCM sent", { fcmResult, target, customerId: msg.payload.ids.customerId });
@@ -454,69 +486,5 @@ export const handleWhatsappNotification = async (msg: any) => {
         // Implement Whatsapp sending logic here
     } catch (error) {
         console.log("❌ Driver notification error", { error, msg });
-    }
-};
-
-// Batch Driver Notification Handler
-export const handleBatchDriverNotification = async (msg: any, target: string) => {
-    try {
-        if (!msg.fcmTokens || !Array.isArray(msg.fcmTokens) || msg.fcmTokens.length === 0) {
-            console.log("❌ Missing required FCM tokens for batch driver notification", { msg, target });
-            return;
-        }
-
-        if (!msg.payload) {
-            console.log("❌ Missing required payload for batch driver notification", { msg, target });
-            return;
-        }
-
-        console.log(`✅ Batch Driver FCM Message received: ${msg.fcmTokens.length} tokens`, { target });
-
-        // Create notifications for each driver if driver data is provided
-        if (msg.driverData && Array.isArray(msg.driverData)) {
-            for (const driver of msg.driverData) {
-                if (driver.driverId && driver.adminId) {
-                    await createDriverNotification({
-                        title: msg.payload.title || "New Booking Arrived",
-                        message: msg.payload.message || `Mr ${driver.name || 'Driver'}, you have received a new booking.`,
-                        ids: {
-                            adminId: driver.adminId,
-                            driverId: driver.driverId,
-                        },
-                        type: msg.payload.type || "booking",
-                    });
-
-                    // Log activity if bookingId is provided
-                    if (msg.payload.ids?.bookingId && driver.driverId && driver.adminId) {
-                        await DriverBookingLog.upsert({
-                            adminId: driver.adminId,
-                            driverId: driver.driverId,
-                            bookingId: msg.payload.ids.bookingId,
-                            requestSendTime: msg.requestSentTime || dayjs().toDate(),
-                        }).catch((err) => console.error(`⚠️ Failed to log for ${driver.driverId}:`, err));
-                    }
-                }
-            }
-        }
-
-        // Batch send FCM notifications
-        const batchResult = await sendBatchNotifications(msg.fcmTokens, {
-            title: msg.payload.title,
-            message: msg.payload.message,
-            ids: msg.payload.ids || {},
-            data: msg.payload.data || {},
-            image: msg.payload.image,
-        });
-
-        console.log(`✅ Batch Driver FCM sent: ${batchResult.successCount} success, ${batchResult.failureCount} failed`, {
-            target,
-            invalidTokens: batchResult.invalidTokens?.length || 0,
-        });
-
-        if (batchResult.invalidTokens && batchResult.invalidTokens.length > 0) {
-            console.log(`⚠️ Invalid tokens detected: ${batchResult.invalidTokens.length}`);
-        }
-    } catch (error) {
-        console.log("❌ Batch driver notification error", { error, msg, target });
     }
 };

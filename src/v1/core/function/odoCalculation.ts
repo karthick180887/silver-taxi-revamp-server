@@ -106,10 +106,7 @@ export const driverCommissionCalculation = async ({
                 where: { id: recordId, adminId: booking.adminId }
             });
 
-            if (!hourlyPackage) {
-                console.log("hourlyPackage not found");
-                return {};
-            }
+            if (!hourlyPackage) throw new Error("Hourly package not found");
 
             const hourlyPackagePrice = hourlyPackage.price || 0;
             const packageDistance = hourlyPackage.distanceLimit || 0;
@@ -125,8 +122,8 @@ export const driverCommissionCalculation = async ({
             const taxAmount = Math.ceil((baseFare * booking.taxPercentage) / 100);
             const dGst = taxAmount || booking.tripCompletedTaxAmount;
 
-            const driverChargesTotal = sumSingleObject(driverCharges || {}, []);
-            const extraChargesTotal = sumSingleObject(extraCharges || {}, []);
+            const driverChargesTotal = sumSingleObject(driverCharges || {});
+            const extraChargesTotal = sumSingleObject(extraCharges || {});
 
             const commissionAmount = Math.ceil((baseFare * (driverCommissionRate || 0)) / 100);
             const CommissionTaxPct = companyCommissionPercentage || 0;
@@ -190,7 +187,7 @@ export const driverCommissionCalculation = async ({
         const totalCommission = commissionAmount + commissionTax;
         const extraPerKmCharge = dTripDistance * (extraPricePerKm || 0);
         const extraChargesAmount =
-            createdBy !== "Vendor" ? sumSingleObject(extraCharges, ["Toll", "Hill", "Permit Charge", "Driver Beta"]) : 0;
+            createdBy !== "Vendor" ? sumSingleObject(extraCharges) : 0;
 
         const deductionAmount =
             dGst +
@@ -204,7 +201,7 @@ export const driverCommissionCalculation = async ({
             convenienceFee;
 
         const additionalChanges =
-            createdBy !== "Vendor" ? filterObject(extraCharges, ["Toll", "Hill", "Permit Charge", "Driver Beta"]) : {};
+            createdBy !== "Vendor" ? filterObject(extraCharges) : {};
 
         const driverCommissionBreakup: DriverCommissionBreakup = {
             baseKmPrice,
@@ -382,8 +379,8 @@ export const odoCalculation = async (
                     booking.convenienceFee +
                     additionalExtraKmCharge;
 
-                const driverChargesTotal = sumSingleObject(booking.driverCharges || {}, []);
-                const extraChargesTotal = sumSingleObject(booking.extraCharges || {}, []);
+                const driverChargesTotal = sumSingleObject(booking.driverCharges || {});
+                const extraChargesTotal = sumSingleObject(booking.extraCharges || {});
                 finalPayOut =
                     hourlyPackagePrice +
                     extraKmCharge +
@@ -477,8 +474,8 @@ export const odoCalculation = async (
                     booking.discountAmount = discounts ? (discounts?.type === "Flat" ? discounts?.value : Math.ceil((baseFare * discounts?.value) / 100)) : 0;
                     taxAmount = Math.ceil(((baseFare) * booking.taxPercentage) / 100);
                     gst = taxAmount || booking.tripCompletedTaxAmount;
-                    const driverChargesTotal = sumSingleObject(booking.driverCharges || {}, []);
-                    const extraChargesTotal = sumSingleObject(booking.extraCharges || {}, []);
+                    const driverChargesTotal = sumSingleObject(booking.driverCharges || {});
+                    const extraChargesTotal = sumSingleObject(booking.extraCharges || {});
                     const commissionAmount = Math.ceil(((baseFare) * driverCommissionRate) / 100);
                     const CommissionTaxPct = companyCommissionPercentage;
                     const commissionTax = Math.ceil((commissionAmount * CommissionTaxPct) / 100);
@@ -533,8 +530,8 @@ export const odoCalculation = async (
             booking.discountAmount = discounts ? (discounts?.type === "Flat" ? discounts?.value : Math.ceil((baseFare * discounts?.value) / 100)) : 0;
             taxAmount = Math.ceil((baseFare * booking.taxPercentage) / 100);
             gst = taxAmount || booking.tripCompletedTaxAmount;
-            const driverChargesTotal = sumSingleObject(booking.driverCharges || {}, []);
-            const extraChargesTotal = sumSingleObject(booking.extraCharges || {}, []);
+            const driverChargesTotal = sumSingleObject(booking.driverCharges || {});
+            const extraChargesTotal = sumSingleObject(booking.extraCharges || {});
             finalPayOut =
                 baseFare +
                 taxAmount +

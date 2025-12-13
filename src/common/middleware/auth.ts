@@ -2,6 +2,7 @@ import { getJwtToken, decodeToken } from "../services/jwt/jwt";
 import { NextFunction, Request, Response } from "express";
 import { JwtType } from "../types/jwt";
 import { Admin, Customer, Driver, Vendor } from "../../v1/core/models";
+import { getCachedUser } from "../services/cache/userSession";
 
 // Admin
 export async function auth(req: Request, res: Response, next: NextFunction) {
@@ -46,12 +47,18 @@ export async function appAuth(req: Request, res: Response, next: NextFunction) {
     req.query.driverId = decode.userData.id?.toString();
     req.query.adminId = decode.adminId?.toString();
 
+    console.log("AppAuth Decode:", JSON.stringify(decode));
+
     if (req.query.driverId) {
-      const driver = await Driver.findOne({
-        where: {
-          driverId: req.query.driverId,
-        },
-      });
+      console.log("AppAuth: Searching for driverId:", req.query.driverId);
+
+      let driver = await getCachedUser('driver', req.query.driverId as string);
+
+      if (!driver) {
+        console.log("driver not found or not logged in. ID:", req.query.driverId);
+        res.status(401).json({ message: "driver not authorized" });
+        return
+      }
 
       if (!driver) {
         console.log("driver not found or not logged in");
@@ -92,11 +99,7 @@ export async function customerApp(req: Request, res: Response, next: NextFunctio
     req.query.adminId = decode.adminId?.toString();
 
     if (req.query.customerId) {
-      const customer = await Customer.findOne({
-        where: {
-          customerId: req.query.customerId,
-        },
-      });
+      const customer = await getCachedUser('customer', req.query.customerId as string);
 
       if (!customer) {
         console.log("customer not found or not logged in");
@@ -135,12 +138,7 @@ export async function vendorApp(req: Request, res: Response, next: NextFunction)
     req.query.adminId = decode.adminId?.toString();
 
     if (req.query.vendorId) {
-      const vendor = await Vendor.findOne({
-        where: {
-          vendorId: req.query.vendorId,
-          isLogin: true,
-        },
-      });
+      const vendor = await getCachedUser('vendor', req.query.vendorId as string);
 
       if (!vendor) {
         console.log("Vendor not found or not logged in");

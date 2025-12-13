@@ -106,16 +106,6 @@ VendorWallet.init(
                 unique: true,
                 fields: ["walletId", "vendorId"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["vendorId"], // vendor wallet lookup
-            },
-            {
-                fields: ["walletId"], // walletId lookup (already unique but separate for faster lookups)
-            },
         ],
     }
 );

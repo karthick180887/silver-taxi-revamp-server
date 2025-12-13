@@ -12,8 +12,7 @@ import vehicleRouter from "./vehicle.route";
 import analyticRouter from "./analytics.route";
 import earningRouter from './earnings.route';
 import { getAllStates, getCities } from "../controller/appAuth.controller";
-import { getConfigKeys, getVersions } from "../controller/driver.controller"
-import v2Router from "./v2.route";
+import { getConfigKeys } from "../controller/driver.controller"
 
 import { appAuth } from "../../../../common/middleware/auth";
 
@@ -21,25 +20,26 @@ const router: Router = express.Router();
 
 router.use("/auth", authRoute);
 
-router.use("/analytics", appAuth, analyticRouter);
+// Apply Auth Middleware for protected routes
+router.use(appAuth);
 
-router.use("/earnings", appAuth, earningRouter);
+router.use("/analytics", analyticRouter);
 
-router.use("/booking", appAuth, bookingRouter);
+router.use("/earnings", earningRouter);
 
-router.use("/trip", appAuth, tripRouter);
+router.use("/booking", bookingRouter);
 
-router.use("/vehicle", appAuth, vehicleRouter);
+router.use("/trip", tripRouter);
 
-router.use("/wallet", appAuth, walletRoute);
+router.use("/vehicle", vehicleRouter);
 
-router.use("/driver", appAuth, driverRouter);
+router.use("/wallet", walletRoute);
 
-router.use('/notification', appAuth, notificationRouter)
+router.use("/driver", driverRouter);
 
-router.use("/v2", appAuth, v2Router);
+router.use('/notification', notificationRouter)
 
-router.use('/image-upload', appAuth, (req, res, next) => {
+router.use('/image-upload', (req, res, next) => {
     upload.single('image')(req, res, (err) => {
         if (err instanceof multer.MulterError) {
             // Handle Multer-specific errors
@@ -74,7 +74,5 @@ router.get("/states", getAllStates);
 router.get("/cities", getCities);
 
 router.get("/config-keys", getConfigKeys);
-
-router.get("/version/get", getVersions);
 
 export default router

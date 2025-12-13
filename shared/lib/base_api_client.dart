@@ -145,7 +145,21 @@ class BaseApiClient {
 
     String message = '';
     if (data is Map && data.containsKey('message')) {
-      message = data['message'];
+      final messageValue = data['message'];
+      // Handle array messages (validation errors)
+      if (messageValue is List) {
+        final errorMessages = <String>[];
+        for (var item in messageValue) {
+          if (item is Map && item.containsKey('message')) {
+            errorMessages.add(item['message'].toString());
+          } else {
+            errorMessages.add(item.toString());
+          }
+        }
+        message = errorMessages.join('. ');
+      } else {
+        message = messageValue.toString();
+      }
     } else if (!isSuccess) {
       message = 'Request failed with status: ${response.statusCode}';
     }

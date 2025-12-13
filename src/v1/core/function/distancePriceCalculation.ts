@@ -121,7 +121,7 @@ export const distancePriceCalculation = async ({
             allIncludeVehicles = allIncludes.vehicles;
         }
 
-        taxPercentage = Number(service?.tax?.GST) ?? 0;
+        taxPercentage = service?.tax?.GST ?? 0;
         switch (service.name) {
             case "One way":
                 if (allIncludes) {
@@ -248,6 +248,7 @@ export const distancePriceCalculation = async ({
                 } else {
                     if (stops?.length) {
                         totalDistance = distance;
+
                     } else {
                         totalDistance = Math.max(distance * 2, service.minKm * tripDays);
                     }
@@ -321,7 +322,7 @@ export const distancePriceCalculation = async ({
 
         // console.log("newOfferAmount", newOfferAmount   , offerType, filteredOffers?.value, totalBeforeDiscount);
 
-        const finalDistance = service.name === "Airport Pickup" || service.name === "Airport Drop" ? distance : (allIncludes ? allIncludePackageDistance : stops?.length ? totalDistance : distance);
+        const finalDistance = service.name === "Airport Pickup" || service.name === "Airport Drop" ? distance : (allIncludes ? allIncludePackageDistance : totalDistance);
 
         return {
             success: true,
@@ -370,7 +371,6 @@ export interface ModifiedDualCalculationResult {
         extraPricePerKm?: number;
         additionalExtraPricePerKm?: number;
         days?: number;
-        minKm?: number;
     };
     modifiedFare: {
         distance: number;
@@ -384,7 +384,6 @@ export interface ModifiedDualCalculationResult {
         extraPricePerKm?: number;
         additionalExtraPricePerKm?: number;
         days?: number;
-        minKm?: number;
     };
 }
 // Calculate both estimation fare and vendor fare
@@ -402,11 +401,8 @@ export const modifiedDualFareCalculation = ({
     extraDriverBeta,
     additionalExtraPricePerKm,
     isHourly = false,
-    serviceType,
     days = 1,
-    stops,
-    hourlyPrice,
-    minKm
+    hourlyPrice
 }: {
     distance: number;
     toll: number;
@@ -421,11 +417,8 @@ export const modifiedDualFareCalculation = ({
     extraDriverBeta: number;
     additionalExtraPricePerKm?: number,
     isHourly: boolean,
-    serviceType: "One way" | "Round trip" | "Hourly Packages",
     days: number,
-    stops: string[]
     hourlyPrice?: number
-    minKm: number
 }): ModifiedDualCalculationResult => {
     // Estimation Fare (current logic)
 
@@ -443,8 +436,7 @@ export const modifiedDualFareCalculation = ({
             estimatedAmount: hourlyPrice || 0,
             finalAmount: (hourlyPrice || 0) + driverBeta + hill + permitCharge + toll,
             extraPricePerKm: extraPricePerKm,
-            additionalExtraPricePerKm,
-            minKm: minKm
+            additionalExtraPricePerKm
         };
 
         modifiedFare = {
@@ -458,21 +450,8 @@ export const modifiedDualFareCalculation = ({
             estimatedAmount: hourlyPrice || 0,
             finalAmount: (hourlyPrice || 0) + driverBeta + extraDriverBeta + hill + extraHill + permitCharge + extraPermitCharge + toll + extraToll,
             extraPricePerKm: extraPricePerKm + (additionalExtraPricePerKm || 0),
-            minKm: minKm
         };
     } else {
-        let finalDistance = distance;
-        if (serviceType == "Round trip") {
-            if (stops.length > 0) {
-                finalDistance = Math.max(distance, minKm * days);
-                distance = distance;
-            } else {
-                finalDistance = Math.max(distance * 2, minKm * days);
-                distance = distance * 2;
-            }
-        } else {
-            finalDistance = Math.max(distance, minKm);
-        }
         normalFare = {
             distance: distance,
             pricePerKm: pricePerKm,
@@ -480,10 +459,9 @@ export const modifiedDualFareCalculation = ({
             toll: toll,
             hill: hill,
             permitCharge: permitCharge,
-            estimatedAmount: finalDistance * pricePerKm,
-            finalAmount: Math.ceil((finalDistance * pricePerKm) + driverBeta + hill + permitCharge + toll),
-            days: days,
-            minKm: minKm
+            estimatedAmount: Math.ceil(distance * pricePerKm),
+            finalAmount: Math.ceil((distance * pricePerKm) + driverBeta + hill + permitCharge + toll),
+            days: days
         };
 
         modifiedFare = {
@@ -493,10 +471,9 @@ export const modifiedDualFareCalculation = ({
             toll: toll + extraToll,
             hill: hill + extraHill,
             permitCharge: permitCharge + extraPermitCharge,
-            estimatedAmount: Math.ceil(finalDistance * (pricePerKm + extraPricePerKm)),
-            finalAmount: Math.ceil((finalDistance * (pricePerKm + extraPricePerKm)) + driverBeta + extraDriverBeta + hill + extraHill + permitCharge + extraPermitCharge + toll + extraToll),
+            estimatedAmount: Math.ceil(distance * (pricePerKm + extraPricePerKm)),
+            finalAmount: Math.ceil((distance * (pricePerKm + extraPricePerKm)) + driverBeta + extraDriverBeta + hill + extraHill + permitCharge + extraPermitCharge + toll + extraToll),
             days: days,
-            minKm: minKm
         };
     }
 

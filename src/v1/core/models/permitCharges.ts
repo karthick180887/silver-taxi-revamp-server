@@ -69,23 +69,12 @@ PermitCharges.init({
     timestamps: true,
     paranoid: true,
     indexes: [
-        // Unique constraint
         {
             unique: true,
             fields: ['permitId'],
         },
-        // Common query patterns - optimized for high concurrency
         {
-            fields: ['adminId', 'createdAt'], // pagination queries
-        },
-        {
-            fields: ['adminId'], // admin filtering
-        },
-        {
-            fields: ['adminId', 'origin', 'destination'], // route lookup (most common)
-        },
-        {
-            fields: ['origin', 'destination'], // route lookup
+            fields: ['adminId', 'origin', 'destination'],
         },
     ],
 });

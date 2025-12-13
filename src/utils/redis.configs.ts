@@ -192,3 +192,59 @@ export const getDriverGeoLocation = async (adminId: string, driverId: string): P
     }
 };
 
+
+export const getClientConfig = async (id: string, adminId: string) => {
+    try {
+        const configString = await redis.get(`${adminId}:${id}:clientConfig`);
+        if (!configString) return null;
+        return JSON.parse(configString);
+    } catch (error) {
+        console.error("Error getting client config:", error);
+        return null;
+    }
+}
+export const clientConfig = async (id: string) => {
+    // Assuming 'id' encompasses admin info or is the key prefix
+    try {
+        const configString = await redis.get(`${id}:clientConfig`);
+        if (!configString) return { success: false };
+        const data = JSON.parse(configString);
+        return { success: true, data };
+    } catch (error) {
+        console.error("Error getting client config:", error);
+        return { success: false };
+    }
+};
+
+export const formConfig = async (id: string) => {
+    try {
+        const configString = await redis.get(`${id}:formConfig`);
+        if (!configString) return { success: false };
+        const data = JSON.parse(configString);
+        return { success: true, data };
+    } catch (error) {
+        console.error("Error getting form config:", error);
+        return { success: false };
+    }
+};
+
+export const getServiceConfig = async () => {
+    try {
+        const configString = await redis.get(`global:serviceConfig`);
+        if (!configString) return null;
+        return JSON.parse(configString);
+    } catch (error) {
+        console.error("Error getting service config:", error);
+        return null;
+    }
+};
+
+export const setServiceConfig = async (data: any) => {
+    try {
+        await redis.set(`global:serviceConfig`, JSON.stringify(data));
+        return true;
+    } catch (error) {
+        console.error("Error setting service config:", error);
+        return false;
+    }
+};

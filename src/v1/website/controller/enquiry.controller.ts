@@ -208,7 +208,7 @@ export const enquiryController = async (req: Request, res: Response): Promise<vo
                     }
 
                     newTariff = hourlyPackages.map((hourlyPackage) => {
-                        const taxPercentage = Number((hourlyPackage as any).services?.tax?.GST) ?? 0;
+                        const taxPercentage = (hourlyPackage as any).services?.tax?.GST ?? 0;
                         let basePrice: number = hourlyPackage.price;
                         const driverBetta = hourlyPackage.driverBeta || 0;
                         basePrice += driverBetta;

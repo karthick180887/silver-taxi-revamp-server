@@ -3,8 +3,7 @@ import authRoute from "./auth.route";
 import vendorRoute from "./vendor.route";
 import bookingRoute from "./booking.route";
 import estimationRoute from "./estimation.route";
-import { getConfigKeys, getVersions } from "../controller/auth.controller"
-import v2Route from "./v2.route";
+import { getConfigKeys } from "../controller/auth.controller"
 
 const router = express.Router();
 
@@ -20,11 +19,6 @@ router.use('/estimation', estimationRoute);
 // Vendor specific routes
 router.use('/', vendorRoute);
 
-// Vendor v2 routes
-router.use('/v2', v2Route);
-
 router.get('/config-keys', getConfigKeys);
-
-router.get('/version/get', getVersions);
 
 export default router;

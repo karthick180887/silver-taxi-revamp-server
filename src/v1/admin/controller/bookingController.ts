@@ -8,56 +8,132 @@ import {
     CompanyProfile,
     Vehicle,
     Enquiry,
-    CustomerWallet,
-    Vendor,
-    DriverBookingLog,
-    DriverNotification
+    CustomerWallet
 } from '../../core/models/index'
 import { bookingConfirm } from "../../../common/services/mail/mail";
-import { commissionCalculation, customOTPGenerator } from "../../core/function/commissionCalculation";
+import { commissionCalculation } from "../../core/function/commissionCalculation";
 import { sendNotification } from "../../../common/services/socket/websocket";
 import { createNotification } from "../../core/function/notificationCreate";
 import { createDriverNotification, createCustomerNotification } from '../../core/function/notificationCreate';
-import { sendToSingleToken, sendToMultipleTokens, sendBatchNotifications } from "../../../common/services/firebase/appNotify";
+import { sendToSingleToken, sendToMultipleTokens } from "../../../common/services/firebase/appNotify";
 import dayjs from "../../../utils/dayjs";
 import { debugLogger as debug, infoLogger as log } from "../../../utils/logger";
 import { sumSingleObject } from "../../core/function/objectArrays";
 import { generateReferralCode } from "../../core/function/referCode";
 import SMSService from "../../../common/services/sms/sms";
-import { driverCommissionCalculation, odoCalculation } from "../../core/function/odoCalculation";
+import { driverCommissionCalculation } from "../../core/function/odoCalculation";
 import { publishNotification } from "../../../common/services/rabbitmq/publisher";
-import { Op, Sequelize } from "sequelize";
+import { Op } from "sequelize";
 import { sequelize } from "../../../common/db/postgres";
 import { toLocalTime } from "../../core/function/dataFn";
-import { ModifiedDualCalculationResult, modifiedDualFareCalculation } from "../../core/function/distancePriceCalculation";
-import { getSegmentDistancesOptimized } from "../../../common/functions/distanceAndTime";
-import { createInvoice, InvoiceResponse } from "../../core/function/createFn/invoiceCreate";
-import { QueryParams } from "../../../common/types/global.types";
-import { getBarChartMeta } from "../../core/function/dataBaseFn";
-import { getAllRedisDrivers, getDriverFcmToken } from "../../../utils/redis.configs";
 
 const sms = SMSService()
 
-// Get all bookings
+// Get Booking Dashboard Stats
+export const getBookingDashboard = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const adminId = req.body.adminId ?? req.query.adminId;
+        const { areaChart, barChart, sortBy } = req.query;
 
-interface BookingFilterParams extends QueryParams {
-    isContacted?: boolean;
-    searchBy?: 'bookings' | 'drivers' | null;
-}
+        if (!adminId) {
+            res.status(400).json({ success: false, message: "adminId is required" });
+            return;
+        }
+
+        // 1. Status Counts
+        console.log(`[Dashboard] Fetching stats for adminId: ${adminId}`);
+        const statusCounts = await Booking.findAll({
+            where: { adminId },
+            attributes: ['status', [sequelize.fn('COUNT', sequelize.col('status')), 'count']],
+            group: ['status'],
+            raw: true
+        });
+
+        // 2. Recent Income (Mock or Aggregate if Revenue model exists)
+        // For now, using finalAmount from Bookings
+        const totalRevenue = await Booking.sum('finalAmount', { where: { adminId } });
+
+        // 3. Weekly/Monthly Data for Charts (Simplified)
+        let chartData: any[] = [];
+        if (barChart === 'week') {
+            // Logic to get last 7 days bookings count
+            const last7Days = await Booking.findAll({
+                attributes: [
+                    [sequelize.fn('DATE', sequelize.col('createdAt')), 'date'],
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                ],
+                where: {
+                    adminId,
+                    createdAt: {
+                        [Op.gte]: dayjs().subtract(7, 'days').toDate()
+                    }
+                } as any,
+                group: [sequelize.fn('DATE', sequelize.col('createdAt'))],
+                order: [[sequelize.fn('DATE', sequelize.col('createdAt')), 'ASC']],
+                raw: true
+            });
+            chartData = last7Days;
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Dashboard data retrieved",
+            data: {
+                statusCounts,
+                totalRevenue: totalRevenue || 0,
+                chartData
+            }
+        });
+        console.log(`[Dashboard] Stats found: ${statusCounts.length}, Revenue: ${totalRevenue}`);
+
+    } catch (error) {
+        console.error("Error fetching booking dashboard:", error);
+        res.status(500).json({ success: false, message: "Error fetching dashboard data" });
+    }
+};
+
+// Get Recent Bookings
+export const getRecentBookings = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const adminId = req.body.adminId ?? req.query.adminId;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 30;
+        const offset = (page - 1) * limit;
+
+        if (!adminId) {
+            res.status(400).json({ success: false, message: "adminId is required" });
+            return;
+        }
+
+        console.log(`[RecentBookings] Fetching recent bookings for adminId: ${adminId}`);
+
+        const bookings = await Booking.findAll({
+            where: { adminId },
+            limit,
+            offset,
+            order: [['createdAt', 'DESC']],
+            attributes: { exclude: ['updatedAt', 'deletedAt'] },
+            // include: [{ model: Customer, as: 'customer', attributes: ['name', 'phone'] }] // valid association?
+        });
+
+        console.log(`[RecentBookings] Found: ${bookings.length} bookings`);
+
+        res.status(200).json({
+            success: true,
+            message: "Recent bookings retrieved",
+            data: bookings,
+        });
+    } catch (error) {
+        console.error("Error fetching recent bookings:", error);
+        res.status(500).json({ success: false, message: "Error fetching recent bookings" });
+    }
+};
+
+// Get all bookings
 
 export const getAllBookings = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
-        const {
-            page = 1,
-            limit = 30,
-            search = '',
-            status = 'Booking Confirmed',
-            isContacted = false,
-            sortBy = 'createdAt',
-            sortOrder = 'DESC',
-            searchBy = null,
-        }: BookingFilterParams = req.query;
 
         if (!adminId) {
             res.status(400).json({
@@ -66,218 +142,37 @@ export const getAllBookings = async (req: Request, res: Response): Promise<void>
             });
             return;
         }
-        // Calculate offset for pagination
-        const offset = (page - 1) * limit;
-
-        // Build where clause
-        const whereClause: any = {
-            adminId,
-        };
-
-        // Handle searchBy logic first to determine if status should be applied
-        let shouldApplyStatusFilter = true;
-
-        // If searching by drivers, use driverName and driverPhone directly from Booking table
-        if (searchBy === 'drivers' && search) {
-            // Search bookings by driverName and driverPhone directly (no need to query Driver table)
-            whereClause[Op.or] = [
-                { driverName: { [Op.iLike]: `%${search}%` } },
-                { driverPhone: { [Op.iLike]: `%${search}%` } }
-            ];
-            // When searching by drivers, search across all statuses
-            shouldApplyStatusFilter = false;
-        }
-
-        // Add status filter if provided and not searching by drivers/bookings
-        if (shouldApplyStatusFilter && status && searchBy !== 'bookings') {
-            if (status === 'Vendor') {
-                whereClause.createdBy = 'Vendor';
-                whereClause.status = { [Op.in]: ['Booking Confirmed', 'Reassign'] };
-            } else if (status === 'Booking Confirmed') {
-                whereClause.status = 'Booking Confirmed';
-                whereClause.isContacted = isContacted;
-                whereClause.createdBy = { [Op.ne]: 'Vendor' };
-            } else {
-                whereClause.status = status;
-            }
-        }
-
-        // Build search conditions for bookings (only if not searching by drivers)
-        // Note: ENUM columns (paymentMethod, paymentStatus, status, type) cannot use LIKE in PostgreSQL
-        // They are excluded from search - use filters for exact ENUM matching
-        const searchConditions: any[] = [];
-        if (search && searchBy !== 'drivers') {
-            searchConditions.push(
-                { bookingId: { [Op.iLike]: `%${search}%` } },
-                { bookingNo: { [Op.iLike]: `%${search}%` } },
-                { name: { [Op.iLike]: `%${search}%` } },
-                { phone: { [Op.iLike]: `%${search}%` } },
-                { customerId: { [Op.iLike]: `%${search}%` } },
-                { driverId: { [Op.iLike]: `%${search}%` } },
-                { vendorId: { [Op.iLike]: `%${search}%` } },
-                { enquiryId: { [Op.iLike]: `%${search}%` } },
-                { serviceId: { [Op.iLike]: `%${search}%` } },
-                { vehicleId: { [Op.iLike]: `%${search}%` } },
-                { pickup: { [Op.iLike]: `%${search}%` } },
-                { drop: { [Op.iLike]: `%${search}%` } },
-                // Numeric fields - convert to number if search is numeric
-                ...(isNaN(Number(search)) ? [] : [
-                    { distance: Number(search) },
-                    { estimatedAmount: Number(search) },
-                    { finalAmount: Number(search) },
-                    { tripCompletedDistance: Number(search) },
-                    { tripCompletedEstimatedAmount: Number(search) },
-                    { tripCompletedFinalAmount: Number(search) },
-                    { tripCompletedTaxAmount: Number(search) },
-                ])
-            );
-        }
-
-        // Add search conditions to where clause if they exist
-        if (searchConditions.length > 0) {
-            whereClause[Op.or] = searchConditions;
-        }
-
-        // Define sort order mapping
-        const order: any[] = [];
-        order.push([sortBy, sortOrder]);
-
-        // Create base where clause without status for counts
-        const baseWhereClause = { adminId };
-
-        // Create count where clause that respects driver filter and search filters
-        // but excludes status filters for accurate pagination
-        const countWhereClause: any = { adminId };
-        // Add driver search conditions to count if searching by drivers
-        if (searchBy === 'drivers' && search) {
-            countWhereClause[Op.or] = [
-                { driverName: { [Op.iLike]: `%${search}%` } },
-                { driverPhone: { [Op.iLike]: `%${search}%` } },
-                { driverId: { [Op.iLike]: `%${search}%` } }
-            ];
-        }
-        // Add search conditions to count if searching by bookings
-        if (search && searchBy === 'bookings' && searchConditions.length > 0) {
-            countWhereClause[Op.or] = searchConditions;
-        }
-        // Run critical queries (must succeed) and count queries (can fail gracefully) in parallel
-        const [
-            criticalResults,
-            countResults
-        ] = await Promise.all([
-            // Critical queries - use Promise.all (fail fast if these fail)
-            Promise.all([
-                // Main bookings query
-                Booking.findAll({
-                    where: whereClause,
-                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order,
-                    limit: parseInt(limit as any),
-                    offset: offset
-                }),
-                // Total count - use countWhereClause to respect filters for accurate pagination
-                Booking.count({ where: countWhereClause })
-            ]),
-            // Count queries - use Promise.allSettled (resilient, won't fail if one fails)
-            Promise.allSettled([
-                // Booking confirmed count
-                Booking.count({
-                    where: {
-                        ...baseWhereClause,
-                        status: { [Op.in]: ['Booking Confirmed', 'Reassign'] },
-                        createdBy: { [Op.ne]: 'Vendor' }
-                    }
-                }),
-                // Not started count
-                Booking.count({
-                    where: {
-                        ...baseWhereClause,
-                        status: 'Not-Started'
-                    }
-                }),
-                // Not contacted count
-                Booking.count({
-                    where: {
-                        ...baseWhereClause,
-                        isContacted: false,
-                        status: 'Booking Confirmed',
-                        createdBy: { [Op.ne]: 'Vendor' }
-                    }
-                }),
-                // Contacted count
-                Booking.count({
-                    where: {
-                        ...baseWhereClause,
-                        isContacted: true,
-                        status: 'Booking Confirmed',
-                        createdBy: { [Op.ne]: 'Vendor' }
-                    }
-                }),
-                // Started count
-                Booking.count({
-                    where: {
-                        ...baseWhereClause,
-                        status: 'Started',
-                    }
-                }),
-                // Completed count
-                Booking.count({
-                    where: {
-                        ...baseWhereClause,
-                        status: { [Op.in]: ['Completed', 'Manual Completed'] }
-                    }
-                }),
-                // Cancelled count
-                Booking.count({
-                    where: {
-                        ...baseWhereClause,
-                        status: 'Cancelled'
-                    }
-                }),
-                // Vendor count
-                Booking.count({
-                    where: {
-                        ...baseWhereClause,
-                        createdBy: 'Vendor'
-                    }
-                }),
-            ])
-        ]);
-
-        // Extract critical results
-        const [bookings, totalCount] = criticalResults;
+        const bookings = await Booking.findAll({
+            where: { adminId },
+            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+            order: [['createdAt', 'DESC']],
+        });
 
 
-
-        // Extract count results with fallback to 0 if any fail
         const bookingsCount = {
-            bookingConfirmed: countResults[0].status === 'fulfilled' ? countResults[0].value : 0,
-            notStarted: countResults[1].status === 'fulfilled' ? countResults[1].value : 0,
-            notContacted: countResults[2].status === 'fulfilled' ? countResults[2].value : 0,
-            contacted: countResults[3].status === 'fulfilled' ? countResults[3].value : 0,
-            started: countResults[4].status === 'fulfilled' ? countResults[4].value : 0,
-            completed: countResults[5].status === 'fulfilled' ? countResults[5].value : 0,
-            cancelled: countResults[6].status === 'fulfilled' ? countResults[6].value : 0,
-            vendor: countResults[7].status === 'fulfilled' ? countResults[7].value : 0
+            bookingConfirmed: bookings.filter(b => b.status === "Booking Confirmed").length,
+            notStarted: bookings.filter(b => b.status === "Not-Started").length,
+            started: bookings.filter(b => b.status === "Started").length,
+            completed: bookings.filter(b => b.status === "Completed").length,
+            cancelled: bookings.filter(b => b.status === "Cancelled").length,
+            vendor: bookings.filter(b => b.vendorId !== null).length,
+            contacted: bookings.filter(b => b.isContacted).length,
+            notContacted: bookings.filter(b => !b.isContacted).length
         };
-        // console.log("bookings-->", bookingsCount);
-        const totalPages = Math.ceil(totalCount / parseInt(limit as any));
-        const hasNext = page < totalPages;
-        const hasPrev = page > 1;
 
         res.status(200).json({
             success: true,
             message: "Bookings retrieved successfully",
             data: {
-                bookings,
-                bookingsCount,
+                bookings: bookings,
+                bookingsCount: bookingsCount,
                 pagination: {
-                    currentPage: parseInt(page as any),
-                    totalPages,
-                    totalCount,
-                    hasNext,
-                    hasPrev,
-                    limit: parseInt(limit as any)
+                    currentPage: 1,
+                    totalPages: 1,
+                    totalCount: bookings.length,
+                    hasNext: false,
+                    hasPrev: false,
+                    limit: bookings.length
                 }
             }
         });
@@ -290,135 +185,10 @@ export const getAllBookings = async (req: Request, res: Response): Promise<void>
     }
 };
 
-export const getRecentBookings = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const adminId = req.body.adminId ?? req.query.adminId;
-        const {
-            page = 1,
-            limit = 30,
-            sortBy = 'createdAt',
-            sortOrder = 'DESC'
-        }: BookingFilterParams = req.query;
-
-        if (!adminId) {
-            res.status(400).json({
-                success: false,
-                message: "adminId is required in Bookings",
-            });
-            return;
-        }
-        // Calculate offset for pagination
-        const offset = (page - 1) * limit;
-
-        // Build where clause
-        const whereClause: any = {
-            adminId,
-            createdBy: { [Op.ne]: 'Vendor' }
-        };
-
-        // Define sort order mapping
-        const order: any[] = [];
-        order.push([sortBy, sortOrder]);
-
-        // Run critical queries (must succeed) and count queries (can fail gracefully) in parallel
-        const [
-            criticalResults,
-            countResults
-        ] = await Promise.all([
-            // Critical queries - use Promise.all (fail fast if these fail)
-            Promise.all([
-                // Main bookings query
-                Booking.findAll({
-                    where: whereClause,
-                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order,
-                    limit: parseInt(limit as any),
-                    offset: offset
-                }),
-                // Total count
-                Booking.count({ where: whereClause })
-            ]),
-            // Count queries - use Promise.allSettled (resilient, won't fail if one fails)
-            Promise.allSettled([
-                // Vendor bookings count
-                Booking.count({
-                    where: {
-                        ...whereClause,
-                        createdBy: 'Vendor',
-                    }
-                }),
-                // Website bookings count
-                Booking.count({
-                    where: {
-                        ...whereClause,
-                        type: 'Website',
-                        createdBy: { [Op.ne]: 'Vendor' }
-                    }
-                }),
-                // Manual bookings count
-                Booking.count({
-                    where: {
-                        ...whereClause,
-                        type: 'Manual',
-                        createdBy: { [Op.ne]: 'Vendor' }
-                    }
-                })
-            ])
-        ]);
-
-        // Extract critical results
-        const [bookings, totalCount] = criticalResults;
-
-
-
-        // Extract count results with fallback to 0 if any fail
-        const bookingsCount = {
-            vendor: countResults[0].status === 'fulfilled' ? countResults[0].value : 0,
-            website: countResults[1].status === 'fulfilled' ? countResults[1].value : 0,
-            manual: countResults[2].status === 'fulfilled' ? countResults[2].value : 0,
-        };
-        // console.log("bookings-->", bookingsCount);
-        const totalPages = Math.ceil(totalCount / parseInt(limit as any));
-        const hasNext = page < totalPages;
-        const hasPrev = page > 1;
-
-        res.status(200).json({
-            success: true,
-            message: "Recent bookings retrieved successfully",
-            data: {
-                bookings,
-                bookingsCount,
-                pagination: {
-                    currentPage: parseInt(page as any),
-                    totalPages,
-                    totalCount,
-                    hasNext,
-                    hasPrev,
-                    limit: parseInt(limit as any)
-                }
-            }
-        });
-    } catch (error) {
-        console.error("Error fetching recent bookings:", error);
-        res.status(500).json({
-            success: false,
-            message: "Error fetching bookings",
-        });
-    }
-};
-
 export const getVendorBookings = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
         const vendorId = req.body.vendorId ?? req.query.id;
-        const {
-            page = 1,
-            limit = 30,
-            search = '',
-            status = '',
-            sortBy = 'createdAt',
-            sortOrder = 'DESC',
-        }: QueryParams = req.query;
 
         if (!adminId) {
             res.status(400).json({
@@ -436,83 +206,17 @@ export const getVendorBookings = async (req: Request, res: Response): Promise<vo
             return;
         }
 
-        // Calculate offset for pagination
-        const offset = (parseInt(page as any) - 1) * parseInt(limit as any);
+        const bookings = await Booking.findAll({
+            where: { adminId, vendorId },
+            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+            order: [['createdAt', 'DESC']],
+        });
 
-        // Build where clause
-        const whereClause: any = {
-            adminId,
-            vendorId,
-        };
-
-        // Add status filter if provided
-        if (status) {
-            whereClause.status = status;
-        }
-
-        // Build search conditions
-        const searchConditions: any[] = [];
-        if (search) {
-            searchConditions.push(
-                { bookingId: { [Op.iLike]: `%${search}%` } },
-                { bookingNo: { [Op.iLike]: `%${search}%` } },
-                { name: { [Op.iLike]: `%${search}%` } },
-                { phone: { [Op.iLike]: `%${search}%` } },
-                { customerId: { [Op.iLike]: `%${search}%` } },
-                { driverId: { [Op.iLike]: `%${search}%` } },
-                { enquiryId: { [Op.iLike]: `%${search}%` } },
-                { serviceId: { [Op.iLike]: `%${search}%` } },
-                { vehicleId: { [Op.iLike]: `%${search}%` } },
-                { pickup: { [Op.iLike]: `%${search}%` } },
-                { drop: { [Op.iLike]: `%${search}%` } },
-                // Numeric fields - convert to number if search is numeric
-                ...(isNaN(Number(search)) ? [] : [
-                    { distance: Number(search) },
-                    { estimatedAmount: Number(search) },
-                    { finalAmount: Number(search) }
-                ])
-            );
-        }
-
-        // Add search conditions to where clause if they exist
-        if (searchConditions.length > 0) {
-            whereClause[Op.or] = searchConditions;
-        }
-
-        // Define sort order
-        const order: any[] = [];
-        order.push([sortBy, sortOrder]);
-
-        // Execute queries in parallel
-        const [bookings, totalCount] = await Promise.all([
-            Booking.findAll({
-                where: whereClause,
-                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                order,
-                limit: parseInt(limit as any),
-                offset: offset
-            }),
-            Booking.count({ where: whereClause })
-        ]);
-
-        const totalPages = Math.ceil(totalCount / parseInt(limit as any));
-        const hasNext = parseInt(page as any) < totalPages;
-        const hasPrev = parseInt(page as any) > 1;
 
         res.status(200).json({
             success: true,
             message: "Vendor Bookings retrieved successfully",
-            data: {
-                bookings,
-                pagination: {
-                    currentPage: parseInt(page as any),
-                    totalPages,
-                    totalCount,
-                    hasNext,
-                    hasPrev,
-                    limit: parseInt(limit as any)
-                }
-            },
+            data: bookings,
         });
     } catch (error) {
         console.error("Error fetching vendor bookings:", error);
@@ -527,29 +231,6 @@ export const getVendorBookingsById = async (req: Request, res: Response): Promis
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
         const { id } = req.params;
-        const {
-            page = 1,
-            limit = 30,
-            search = '',
-            status = '',
-            sortBy = 'createdAt',
-            sortOrder = 'DESC',
-        }: QueryParams = req.query;
-
-        const offset = Number(page - 1) * Number(limit);
-
-        const whereClause: any = {
-            adminId,
-            vendorId: id,
-        };
-
-        if (status) {
-            whereClause.status = status;
-        }
-
-        if (search) {
-            whereClause.bookingId = { [Op.iLike]: `%${search}%` };
-        }
 
         if (!adminId) {
             res.status(400).json({
@@ -559,36 +240,25 @@ export const getVendorBookingsById = async (req: Request, res: Response): Promis
             return;
         }
 
+        if (!id) {
+            res.status(400).json({
+                success: false,
+                message: "vendorId is required in Bookings",
+            });
+            return;
+        }
 
-        const [bookings, totalCount] = await Promise.all([
-            Booking.findAll({
-                where: whereClause,
-                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                order: [[sortBy, sortOrder]],
-                limit: Number(limit),
-                offset: offset
-            }),
-            Booking.count({ where: whereClause })
-        ]);
+        const bookings = await Booking.findAll({
+            where: { adminId, vendorId: id },
+            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+            order: [['createdAt', 'DESC']],
+        });
 
-        const totalPages = Math.ceil(totalCount / Number(limit));
-        const hasNext = Number(page) < totalPages;
-        const hasPrev = Number(page) > 1;
 
         res.status(200).json({
             success: true,
             message: "Vendor Bookings retrieved successfully",
-            data: {
-                bookings,
-                pagination: {
-                    currentPage: Number(page),
-                    totalPages,
-                    totalCount,
-                    hasNext,
-                    hasPrev,
-                    limit: Number(limit)
-                }
-            },
+            data: bookings,
         });
     } catch (error) {
         console.error("Error fetching vendor bookings:", error);
@@ -603,14 +273,6 @@ export const getDriverBookings = async (req: Request, res: Response): Promise<vo
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
         const { id } = req.params;
-        const {
-            page = 1,
-            limit = 30,
-            search = '',
-            status = '',
-            sortBy = 'createdAt',
-            sortOrder = 'DESC',
-        }: QueryParams = req.query;
 
         if (!adminId) {
             res.status(400).json({
@@ -620,83 +282,26 @@ export const getDriverBookings = async (req: Request, res: Response): Promise<vo
             return;
         }
 
-        // Calculate offset for pagination
-        const offset = Number(page - 1) * Number(limit);
+        console.log("adminId-->", adminId, "driverId-->", id)
+        const bookings = await Booking.findAll({
+            where: { adminId, driverId: id },
+            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+            order: [['createdAt', 'DESC']],
+        });
 
-        // Build where clause
-        const whereClause: any = {
-            adminId,
-            driverId: id,
-            driverAccepted: "accepted",
-        };
-
-        // Add status filter if provided
-        if (status) {
-            whereClause.status = status;
+        if (bookings.length === 0) {
+            res.status(200).json({
+                success: false,
+                message: "No bookings found",
+                data: []
+            });
+            return;
         }
-
-        // Build search conditions
-        const searchConditions: any[] = [];
-        if (search) {
-            searchConditions.push(
-                { bookingId: { [Op.iLike]: `%${search}%` } },
-                { bookingNo: { [Op.iLike]: `%${search}%` } },
-                { name: { [Op.iLike]: `%${search}%` } },
-                { phone: { [Op.iLike]: `%${search}%` } },
-                { customerId: { [Op.iLike]: `%${search}%` } },
-                { enquiryId: { [Op.iLike]: `%${search}%` } },
-                { serviceId: { [Op.iLike]: `%${search}%` } },
-                { vehicleId: { [Op.iLike]: `%${search}%` } },
-                { pickup: { [Op.iLike]: `%${search}%` } },
-                { drop: { [Op.iLike]: `%${search}%` } },
-                // Numeric fields - convert to number if search is numeric
-                ...(isNaN(Number(search)) ? [] : [
-                    { distance: Number(search) },
-                    { estimatedAmount: Number(search) },
-                    { finalAmount: Number(search) }
-                ])
-            );
-        }
-
-        // Add search conditions to where clause if they exist
-        if (searchConditions.length > 0) {
-            whereClause[Op.or] = searchConditions;
-        }
-
-        // Define sort order
-        const order: any[] = [];
-        order.push([sortBy, sortOrder]);
-
-        // Execute queries in parallel
-        const [bookings, totalCount] = await Promise.all([
-            Booking.findAll({
-                where: whereClause,
-                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                order,
-                limit: Number(limit),
-                offset: offset
-            }),
-            Booking.count({ where: whereClause })
-        ]);
-
-        const totalPages = Math.ceil(totalCount / Number(limit));
-        const hasNext = Number(page) < totalPages;
-        const hasPrev = parseInt(page as any) > 1;
 
         res.status(200).json({
             success: true,
             message: "Driver Bookings retrieved successfully",
-            data: {
-                bookings,
-                pagination: {
-                    currentPage: Number(page),
-                    totalPages,
-                    totalCount,
-                    hasNext,
-                    hasPrev,
-                    limit: Number(limit)
-                }
-            },
+            data: bookings,
         });
     } catch (error) {
         console.error("Error fetching driver bookings:", error);
@@ -742,274 +347,281 @@ export const getBookingById = async (req: Request, res: Response): Promise<void>
 };
 
 export const fairCalculation = async (req: Request, res: Response): Promise<void> => {
-    const adminId = req.query.adminId ?? req.body.adminId;
+    try {
+        const adminId = req.body.adminId ?? req.query.adminId;
+        const vendorId = req.body.vendorId ?? req.query.id;
+        const {
+            distance,
+            pickupDateTime,
+            dropDate,
+            serviceType,
+            vehicleId,
+            packageId,
+            packageType,
+            createdBy,
+            stops
+        } = req.body;
 
-    const {
-        // Person/route
-        name,
-        email,
-        phone,
-        pickup,
-        stops = [],
-        drop,
-        pickupDateTime,
-        dropDate,
-        enquiryId,
+        // console.log("req.body", req.body);
 
-        // Service/package
-        serviceType,
-        packageId,
-        packageType,
-
-        // Pricing inputs
-        pricePerKm,
-        extraPricePerKm,
-        driverBeta,
-        extraDriverBeta,
-        hill,
-        extraHill,
-        permitCharge,
-        extraPermitCharge,
-        toll,
-        extraToll,
-        distance,
-
-        // Vehicle/ids
-        vehicleId,
-        vehicleType,
-        tariffId,
-        offerId,
-
-        // Payment/meta
-        paymentMethod,
-        paymentStatus,
-        status,
-        type,
-        advanceAmount,
-        discountAmount,
-        // days,
-
-        // Optional pre-supplied
-        taxPercentage,
-        taxAmount,
-
-        noOfHours,
-        hourlyPrice,
-        additionalExtraPricePerKm,
-    } = req.body;
-
-    // console.log("Req body from enquiry data", req.body);
-
-    // Basic validation
-    if (!pickup) {
-        res.status(400).json({
-            success: false,
-            message: "Pickup locations are required"
-        });
-        return;
-    }
-
-    if (serviceType !== "Hourly Packages" && (!pricePerKm || isNaN(Number(pricePerKm)) || Number(pricePerKm) <= 0)) {
-        res.status(400).json({
-            success: false,
-            message: "Valid pricePerKm is required"
-        });
-        return;
-    }
-
-
-
-
-    if (serviceType === "Round trip") {
-        const pickupDateTimeObj = new Date(pickupDateTime);
-        const dropDateObj = new Date(dropDate);
-
-        pickupDateTimeObj.setHours(0, 0, 0, 0);
-        dropDateObj.setHours(0, 0, 0, 0);
-
-        if (dropDateObj.getTime() < pickupDateTimeObj.getTime()) {
+        // Validate common required fields
+        const requiredFields = ['pickupDateTime', 'serviceType', 'vehicleId'];
+        const missingFields = requiredFields.filter(field => !req.body[field]);
+        if (missingFields.length > 0) {
             res.status(400).json({
                 success: false,
-                message: "Drop date must be the same day or after pickup date for round trip",
+                message: `Missing required fields: ${missingFields.join(', ')}`,
             });
-            return; // ✅ only return if validation fails
+            return;
         }
-    }
 
-
-    try {
-        let totalDistance: number = 0;
-        let duration: string | number = "0 Hour 0 Minutes";
-        let fareCalculations: ModifiedDualCalculationResult;
-        // Hourly Packages branch
-        let days = 1;
-        let modifiedDriverBeta = driverBeta;
-        let modifiedExtraDriverBeta = extraDriverBeta;
-        const companyProfile = await CompanyProfile.findOne({
-            where: { adminId },
-        });
-
-        const service = await Service.findOne({
-            where: { name: serviceType, adminId },
-        })
-
-        if (serviceType === "Hourly Packages") {
-
-            totalDistance = Number(distance) || 0;
-            duration = `${noOfHours} ${noOfHours > 1 ? "Hours" : "Hour"}`;
-            // Calculate both fares
-            fareCalculations = modifiedDualFareCalculation({
-                distance: Number(totalDistance) || 0,
-                toll: Number(toll) || 0,
-                hill: Number(hill) || 0,
-                permitCharge: Number(permitCharge) || 0,
-                pricePerKm: Number(pricePerKm) || 0,
-                driverBeta: Number(driverBeta) || 0,
-                extraToll: Number(extraToll) || 0,
-                extraHill: Number(extraHill) || 0,
-                extraPermitCharge: Number(extraPermitCharge) || 0,
-                extraPricePerKm: Number(extraPricePerKm) || 0,
-                extraDriverBeta: Number(extraDriverBeta) || 0,
-                additionalExtraPricePerKm: Number(additionalExtraPricePerKm) || 0,
-                isHourly: true,
-                serviceType: serviceType,
-                stops: stops || [],
-                days: days || 1,
-                hourlyPrice: Number(hourlyPrice) || 0,
-                minKm: Number(service?.minKm) || 0
+        // Service-specific validations
+        if (serviceType === "Round trip" && !dropDate) {
+            res.status(400).json({
+                success: false,
+                message: "dropDate is required for Round trip",
             });
+            return;
+        }
 
-        } else {
-            // Calculate route
-            // if (distance && !isNaN(distance) && Number(distance) > 0) {
-            //     totalDistance = Number(distance);
-            // } else {
-            console.log("Route info from distance matrix >> ");
-            const routeInfo = await getSegmentDistancesOptimized({
-                pickupCity: pickup,
-                stops: stops || [],
-                dropCity: drop,
-                serviceType,
+        // Validate dates
+        const pickupDateTimeObj = new Date(pickupDateTime);
+        if (isNaN(pickupDateTimeObj.getTime())) {
+            res.status(400).json({
+                success: false,
+                message: "Invalid pickupDateTime format",
             });
+            return;
+        }
 
-            const service = await Service.findOne({
-                where: { adminId, name: serviceType }
-            })
-
-            console.log("Route info from distance matrix", routeInfo);
-
-            if (typeof routeInfo === "string") {
+        let dropDateObj: Date | null = null;
+        if (dropDate) {
+            dropDateObj = new Date(dropDate);
+            if (isNaN(dropDateObj.getTime())) {
                 res.status(400).json({
                     success: false,
-                    message: routeInfo
+                    message: "Invalid dropDate format",
+                });
+                return;
+            }
+        }
+
+        const service = await Service.findOne({ where: { name: serviceType, adminId } });
+        if (!service) {
+            res.status(404).json({
+                success: false,
+                message: "Service not found",
+            });
+            return;
+        }
+
+        const serviceId = service?.serviceId;
+
+        // Price calculation variables
+        let basePrice: number = 0;
+        let pricePerKm: number = 0;
+        let taxAmount: number = 0;
+        let finalPrice: number = 0;
+        let driverBeta: number = 0;
+        let totalDistance = 0;
+
+        const taxPercentage = service?.tax?.GST ?? 0; // Default tax percentage, update as needed
+
+        // Handle package-specific logic
+        if (packageType && packageId) {
+            switch (packageType) {
+                case "Hourly Package":
+                    let hourlyPackage: HourlyPackage | null = null;
+                    if (createdBy === "Vendor") {
+                        hourlyPackage = await HourlyPackage.findOne(
+                            { where: { packageId, vendorId, adminId } }
+                        );
+                    } else {
+                        hourlyPackage = await HourlyPackage.findOne(
+                            { where: { packageId, adminId } }
+                        );
+                    }
+                    if (!hourlyPackage) {
+                        res.status(404).json({
+                            success: false,
+                            message: "Hourly Package not found",
+                        });
+                        return;
+                    }
+                    basePrice = hourlyPackage.price;
+                    driverBeta = hourlyPackage.driverBeta;
+                    taxAmount = (basePrice * taxPercentage) / 100;
+                    finalPrice = basePrice + taxAmount + driverBeta;
+                    break;
+
+                case "Day Package":
+                    let dayPackage: DayPackage | null = null;
+                    if (createdBy === "Vendor") {
+                        dayPackage = await DayPackage.findOne(
+                            { where: { packageId, vendorId, adminId } }
+                        );
+                    } else {
+                        dayPackage = await DayPackage.findOne(
+                            { where: { packageId, adminId } }
+                        );
+                    }
+                    if (!dayPackage) {
+                        res.status(404).json({
+                            success: false,
+                            message: "Day Package not found",
+                        });
+                        return;
+                    }
+                    basePrice = dayPackage.price;
+                    taxAmount = (basePrice * taxPercentage) / 100;
+                    finalPrice = basePrice + taxAmount;
+                    break;
+
+                default:
+                    res.status(400).json({
+                        success: false,
+                        message: "Invalid package type",
+                    });
+                    return;
+            }
+        } else {
+            // Handle standard service logic (e.g., One way, Round trip, etc.)
+            let tariff: Tariff | null = null;
+            if (createdBy === "Vendor") {
+                tariff = await Tariff.findOne({
+                    where: { serviceId, vehicleId, vendorId, adminId },
+                    include: [
+                        {
+                            model: Vehicle,
+                            as: 'vehicles',
+                        }
+                    ]
+                });
+            } else {
+                tariff = await Tariff.findOne({
+                    where: { serviceId, vehicleId, adminId },
+                    include: [
+                        {
+                            model: Vehicle,
+                            as: 'vehicles',
+                        }
+                    ]
+                });
+            }
+
+
+            if (!tariff) {
+                res.status(404).json({
+                    success: false,
+                    message: "Tariff not found",
                 });
                 return;
             }
 
-            const start = new Date(pickupDateTime);
-            const end = new Date(dropDate);
+            // console.log("tariff", tariff);
+            // console.log("serviceId", serviceId);
 
-            // Normalize to midnight
-            start.setHours(0, 0, 0, 0);
-            end.setHours(0, 0, 0, 0);
+            switch (serviceType) {
+                case "One way":
+                    basePrice = Math.max(
+                        tariff.price * distance,
+                        service.minKm * tariff.price
+                    );
+                    totalDistance = distance
+                    pricePerKm = tariff.price;
+                    driverBeta = tariff.driverBeta;
+                    taxAmount = (basePrice * taxPercentage) / 100;
+                    finalPrice = basePrice + driverBeta + taxAmount;
+                    break;
 
-            days = serviceType === "Round trip"
-                ? Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
-                : 1;
+                case "Round trip":
+                    if (!dropDateObj) throw new Error("dropDate required");
+                    if (dropDateObj < pickupDateTimeObj) {
+                        res.status(400).json({
+                            success: false,
+                            message: "dropDate must be after pickupDateTime",
+                        });
+                        return;
+                    }
+                    const start = new Date(pickupDateTime);
+                    const end = new Date(dropDate);
 
-            const minKm = service?.minKm || 0;
-            totalDistance = routeInfo.distance;
-            duration = routeInfo.duration;
+                    // Normalize to midnight
+                    start.setHours(0, 0, 0, 0);
+                    end.setHours(0, 0, 0, 0);
+
+                    const tripDays = serviceType === "Round trip"
+                        ? Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+                        : 1;
+
+                    console.log("distance", distance);
+
+                    if (Array.isArray(stops) && stops.length > 0) {
+                        // Stops provided → use distance directly
+                        totalDistance = distance;
+                    } else {
+                        // No stops → find max value
+                        totalDistance = Math.max(
+                            distance * 2,
+                            service.minKm * tripDays
+                        );
+                    }
+
+
+                    console.log("totalDistance", totalDistance);
+                    pricePerKm = tariff.price;
+                    driverBeta = tariff.driverBeta * tripDays;
+                    basePrice = (totalDistance * tariff.price);
+                    taxAmount = (basePrice * taxPercentage) / 100;
+                    finalPrice = basePrice + driverBeta + taxAmount;
+                    break;
+
+                case "Airport Pickup":
+                case "Airport Drop":
+                    basePrice = tariff.price * distance;
+                    pricePerKm = tariff.price;
+                    driverBeta = tariff.driverBeta;
+                    taxAmount = (basePrice * taxPercentage) / 100;
+                    finalPrice = basePrice + driverBeta + taxAmount;
+                    break;
+
+                default:
+                    res.status(400).json({
+                        success: false,
+                        message: "Unsupported service type",
+                    });
+                    return;
+            }
         }
-
-        modifiedDriverBeta = driverBeta * days;
-        modifiedExtraDriverBeta = extraDriverBeta * days;
-
-        fareCalculations = modifiedDualFareCalculation({
-            distance: Number(totalDistance) || 0,
-            toll: Number(toll) || 0,
-            hill: Number(hill) || 0,
-            permitCharge: Number(permitCharge) || 0,
-            pricePerKm: Number(pricePerKm) || 0,
-            driverBeta: Number(modifiedDriverBeta) || 0,
-            extraToll: Number(extraToll) || 0,
-            extraHill: Number(extraHill) || 0,
-            extraPermitCharge: Number(extraPermitCharge) || 0,
-            extraPricePerKm: Number(extraPricePerKm) || 0,
-            serviceType: serviceType,
-            days: days,
-            stops: stops,
-            extraDriverBeta: Number(modifiedExtraDriverBeta) || 0,
-            isHourly: false,
-            minKm: Number(service?.minKm) || 0
-        });
-
-        // }
-
-
-        // Build complete booking payload expected by booking create
-        const bookingPayload = {
-            adminId,
-            name: name ?? null,
-            email: email ?? null,
-            phone,
-            pickup,
-            stops: stops,
-            drop,
-            pickupDateTime: pickupDateTime,
-            dropDate,
-            enquiryId: enquiryId ?? null,
-            serviceType,
-            offerId: offerId ?? null,
-            status: status || "Booking Confirmed",
-            type: type || "Manual",
-            paymentMethod: paymentMethod ?? "Cash",
-            advanceAmount: Number(advanceAmount) || 0,
-            discountAmount: Number(discountAmount) || 0,
-            distance: stops.length > 0 ? totalDistance : serviceType === "Round trip" ? totalDistance * 2 : totalDistance,
-            tariffId: tariffId ?? null,
-            vehicleId: vehicleId ?? null,
-            serviceId: service?.serviceId ?? null,
-            paymentStatus: paymentStatus || "Unpaid",
-            toll: toll || 0,
-            extraToll: Number(extraToll) || 0,
-            hill: hill || 0,
-            extraHill: Number(extraHill) || 0,
-            permitCharge: permitCharge || 0,
-            extraPermitCharge: Number(extraPermitCharge) || 0,
-            duration: duration,
-            vehicleType: vehicleType ?? null,
-            pricePerKm: Number(pricePerKm),
-            extraPricePerKm: Number(extraPricePerKm) || 0,
-            driverBeta: (driverBeta * days) || null,
-            extraDriverBeta: Number(extraDriverBeta) * days || 0,
-            estimatedAmount: fareCalculations.normalFare.estimatedAmount,
-            finalAmount: fareCalculations.normalFare.finalAmount,
-            upPaidAmount: Number(fareCalculations.normalFare.finalAmount - advanceAmount) || 0,
-            days: days ?? null,
-            minKm: service?.minKm || 0,
-            taxPercentage: Number(service?.tax?.GST) || 0,
-            taxAmount: Number(taxAmount) || 0,
-            convenienceFee: companyProfile?.convenienceFee || 0,
-            fareBreakdown: fareCalculations,
-        };
-
-        console.log("Booking payload for estimation", bookingPayload);
 
         res.status(200).json({
             success: true,
-            message: "Fare estimation calculated successfully",
-            data: bookingPayload,
+            message: `Fair Calculation done successfully`,
+            data: {
+                basePrice: Math.ceil(basePrice),
+                taxAmount: Math.ceil(taxAmount),
+                finalPrice: Math.ceil(finalPrice),
+                taxPercentage: taxPercentage,
+                driverBeta: driverBeta,
+                pricePerKm: pricePerKm,
+                totalDistance: Math.ceil(totalDistance),
+                breakFareDetails: {
+                    basePrice: Math.ceil(basePrice),
+                    taxAmount: Math.ceil(taxAmount),
+                    driverBeta: Math.ceil(driverBeta),
+                }
+            },
+
         });
+
     } catch (error) {
-        debug.info(`Estimation error: ${error}`);
+        console.error("Error creating booking:", error);
         res.status(500).json({
             success: false,
-            message: "Error calculating fare estimation",
-            error: error instanceof Error ? error.message : "Unknown error",
+            message: error instanceof Error ? error.message : "Internal server error",
         });
     }
-}
+};
 
 // Create a new booking
 export const createBooking = async (req: Request, res: Response): Promise<void> => {
@@ -1017,75 +629,70 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
         const adminId = req.body.adminId ?? req.query.adminId;
         const vendorId = req.body.vendorId ?? req.query.id;
         const {
-            name,
-            email,
-            phone,
-            pickup,
-            stops,
-            drop,
-            pickupDateTime,
-            dropDate,
-            enquiryId,
+            name, email, phone,
+            pickup, stops, drop, pickupDateTime,
+            dropDate, enquiryId,
             serviceType,
             offerId,
-            status,
-            type,
+            status, type,
             paymentMethod,
             advanceAmount,
             discountAmount,
+            estimatedAmount,
+            finalAmount,
             distance,
             tariffId,
             vehicleId,
             serviceId,
             upPaidAmount,
-            packageId,
-            paymentStatus,
+            packageId, packageType,
+            paymentStatus, createdBy,
             toll,
             extraToll,
             hill,
             extraHill,
             permitCharge,
             extraPermitCharge,
-            extraCharges,
-            duration,
-            vehicleType,
             pricePerKm,
             extraPricePerKm,
+            taxPercentage,
+            extraCharges,
+            taxAmount,
             driverBeta,
             extraDriverBeta,
-            estimatedAmount,
-            finalAmount,
-            taxPercentage,
-            taxAmount,
-            fareBreakdown,
-            convenienceFee,
-            createdBy
+            duration,
+            vehicleType
         } = req.body;
 
-        console.log("Vendor create booking with calculation (precomputed) request:", req.body);
-        console.log("Vendor ID:", vendorId);
 
-        // Basic validations
-        const requiredFields = [
-            "name",
-            "phone",
-            "pickup",
-            "pickupDateTime",
-            "serviceType",
-            "vehicleType",
-        ];
-        const missingFields = requiredFields.filter((field) => !req.body[field]);
+        console.log("req.body", req.body);
+
+
+        let days = 1;
+
+        // console.log(req.body);
+
+        // Validate common required fields
+        const requiredFields = ['name', 'phone', 'pickup', 'pickupDateTime', 'serviceType', 'vehicleId', 'vehicleType'];
+        const missingFields = requiredFields.filter(field => !req.body[field]);
         if (missingFields.length > 0) {
             res.status(400).json({
                 success: false,
-                message: `Missing required fields: ${missingFields.join(", ")}`,
+                message: `Missing required fields: ${missingFields.join(', ')}`,
             });
             return;
         }
 
-        let days = 1;
+        // Service-specific validations
+        if (serviceType === "Round trip" && !dropDate) {
+            res.status(400).json({
+                success: false,
+                message: "dropDate is required for Round trip",
+            });
+            return;
+        }
 
-
+        // Validate dates
         const pickupDateTimeObj = new Date(pickupDateTime);
         if (isNaN(pickupDateTimeObj.getTime())) {
             res.status(400).json({
@@ -1119,11 +726,8 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             ? Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
             : 1;
 
-        const startOtp = await customOTPGenerator();
-        const endOtp = await customOTPGenerator();
-
         const getService = await Service.findOne({
-            where: { name: serviceType, adminId },
+            where: { name: serviceType, adminId }
         });
 
         if (!getService) {
@@ -1136,124 +740,196 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
 
         // Validate service ID
         let service = getService?.serviceId;
+
+        // Validate tariff exists
+        let tariff: Tariff | null = null;
+        if (serviceId) {
+            tariff = await Tariff.findOne(
+                {
+                    where: { vehicleId, serviceId, adminId },
+                    include: [
+                        { model: Vehicle, as: 'vehicles' }
+                    ]
+                }
+            );
+        } else {
+            tariff = await Tariff.findOne(
+                {
+                    where: { vehicleId, serviceId: service, adminId },
+                    include: [
+                        { model: Vehicle, as: 'vehicles' }
+                    ]
+                }
+            );
+        }
+
         const companyProfile = await CompanyProfile.findOne({ where: { adminId } });
 
-        // Build booking data from precomputed fields
+        // console.log("tariff ---> ", tariff);
+        // Create booking
+        let convertedDistance = Math.round(Number(distance));
+        let convertedDuration = duration;
+        // const upPaidAmount = Number(finalAmount) - Number(advanceAmount)
+
+        if (packageId) {
+
+            let [type, name, recordId] = packageId.split("-");
+
+            switch (type) {
+                case "hr":
+                    const hourlyPackage = await HourlyPackage.findOne({ where: { id: recordId, adminId } });
+                    if (hourlyPackage) {
+                        convertedDistance = Number(hourlyPackage.distanceLimit);
+                        convertedDuration = `${hourlyPackage.noOfHours} Hours`;
+                    }
+                    break;
+                case "dl":
+                    const dayPackage = await DayPackage.findOne({ where: { id: recordId, adminId } });
+                    if (dayPackage) {
+                        convertedDistance = Number(dayPackage.distanceLimit);
+                        convertedDuration = `${dayPackage.noOfDays} Days`;
+                    }
+                    break;
+            }
+        }
+
+        const { customAlphabet } = await import("nanoid");
+        const generateOtp = customAlphabet('1234567890', 4);
+        const startOtp = generateOtp();
+        const endOtp = generateOtp();
         const bookingData = {
             adminId,
-            vendorId: undefined,
+            vendorId: createdBy === "Vendor" ? vendorId : null,
             name,
             email,
             stops,
             phone,
             pickup,
             drop,
+            days: days.toString(),
             pickupDateTime: pickupDateTimeObj,
             dropDate: dropDateObj,
             enquiryId,
             serviceType,
-            days: days.toString(),
-            tariffId: tariffId ?? null,
-            serviceId: serviceId ?? null,
+
+            tariffId: tariffId ?? tariff?.tariffId,
+            serviceId: serviceId ?? service,
             vehicleId,
-            // status: "Booking Confirmed",
+            status: status || "Booking Confirmed",
             type: type || "Manual",
-            distance: Math.round(distance || 0),
-            estimatedAmount: Math.ceil(estimatedAmount || 0),
-            discountAmount: discountAmount || 0,
-            finalAmount: Math.ceil(finalAmount || 0),
-            advanceAmount: advanceAmount,
-            upPaidAmount: upPaidAmount,
+            distance: Number(convertedDistance),
+            estimatedAmount: Number(estimatedAmount),
+            discountAmount: Number(discountAmount),
+            finalAmount: Number(finalAmount),
+            advanceAmount: Number(advanceAmount) ?? 0,
+            upPaidAmount: Number(upPaidAmount) ?? 0,
             packageId: packageId ?? null,
             offerId: offerId ?? null,
             paymentMethod,
-            minKm: getService?.minKm || 0,
-            paymentStatus: paymentStatus || "Unpaid",
-            createdBy: "Admin" as const,
-            extraToll: extraToll || 0,
-            extraHill: extraHill || 0,
-            extraPermitCharge: extraPermitCharge || 0,
-            pricePerKm: pricePerKm || 0,
-            extraPricePerKm: extraPricePerKm || 0,
-            taxPercentage: Number(taxPercentage) || Number(getService?.tax?.GST) || 0,
-            taxAmount: taxAmount || Math.ceil((taxPercentage || getService?.tax?.GST) * (estimatedAmount || 0) / 100),
-            driverBeta: driverBeta || undefined,
-            extraDriverBeta: extraDriverBeta || 0,
-            duration: duration ?? null,
+            minKm: getService?.minKm,
+            paymentStatus: paymentStatus || "Pending",
+            createdBy: createdBy ?? "Admin",
+            extraToll: extraToll ?? null,
+            extraHill: extraHill ?? null,
+            extraPermitCharge: extraPermitCharge ?? null,
+            pricePerKm: pricePerKm ?? null,
+            taxPercentage: taxPercentage ?? null,
+            taxAmount: taxAmount ?? null,
+            driverBeta: driverBeta ?? null,
+            duration: convertedDuration ?? null,
+            startOtp: startOtp,
+            endOtp: endOtp,
             extraCharges: extraCharges ?? {
-                "Toll": toll + extraToll || 0,
-                "Hill": hill + extraHill || 0,
-                "Permit Charge": permitCharge + extraPermitCharge || 0,
+                "Toll": 0,
+                "Hill": 0,
+                "Permit Charge": 0,
                 "Parking Charge": 0,
                 "Pet Charge": 0,
                 "Waiting Charge": 0,
             },
             vehicleType: vehicleType,
-            startOtp,
-            endOtp,
-            normalFare: fareBreakdown?.normalFare || null,
-            modifiedFare: fareBreakdown?.modifiedFare || null,
-            convenienceFee: convenienceFee || null,
+            normalFare: {
+                days: days || 1,
+                distance: distance,
+                pricePerKm: pricePerKm,
+                driverBeta: driverBeta,
+                toll: toll,
+                hill: hill,
+                permitCharge: permitCharge,
+                estimatedAmount: estimatedAmount,
+                finalAmount: finalAmount,
+            },
+            modifiedFare: {
+                days: (days ?? 1),
+                distance: (distance ?? 0),
+                pricePerKm: (pricePerKm ?? 0),
+                extraPricePerKm: (extraPricePerKm ?? 0),
+                driverBeta: (driverBeta ?? 0) + (extraDriverBeta ?? 0),
+                toll: (toll ?? 0) + (extraToll ?? 0),
+                hill: (hill ?? 0) + (extraHill ?? 0),
+                permitCharge: (permitCharge ?? 0) + (extraPermitCharge ?? 0),
+                estimatedAmount: Number(estimatedAmount) + (distance * (extraPricePerKm ?? 0)),
+                finalAmount: Number(finalAmount),
+            },
+            convenienceFee: companyProfile?.convenienceFee ?? 0,
             adminContact: String(companyProfile?.phone[0]) ?? "9876543210"
         };
 
-        console.log("Booking data: >> ", bookingData);
+        // console.log("bookingData ---> ", bookingData);
 
         const newBooking = await Booking.create(bookingData);
-
-        // bookingId
-        let cleanedPhone = phone.replace(/^\+?91|\D/g, "");
+        let cleanedPhone = phone.replace(/^\+?91|\D/g, '');
         let phoneNumber = cleanedPhone.slice(5, 10);
+
         newBooking.bookingId = `SLTB${phoneNumber}${newBooking.id}`;
+        // newBooking.bookingId = `book-${newBooking.id}`;
         await newBooking.save();
 
-        // Notifications and emails remain as in existing implementation
-        // (No changes below here)
-
-        let customer = await Customer.findOne({
-            where: {
-                phone: {
-                    [Op.iLike]: `%${phone}%`
-                },
-            }
-        });
-
+        let customer = await Customer.findOne({ where: { phone: { [Op.like]: `%${phone}%` } } });
         if (!customer) {
-            console.log(`${phone} customer not found, creating new customer`);
             const t = await sequelize.transaction();
-            customer = await Customer.create({
-                adminId,
-                name,
-                email,
-                phone: `91 ${cleanedPhone}`,
-                createdBy: "Vendor",
-                bookingCount: 1,
-                totalAmount: finalAmount || 0,
-            }, { transaction: t });
 
-            customer.customerId = `SLTC${phoneNumber}${customer.id}`;
-            const { code: referralCode } = generateReferralCode({ userId: customer.id });
-            customer.referralCode = referralCode;
-            await customer.save({ transaction: t });
+            try {
+                customer = await Customer.create({
+                    adminId,
+                    vendorId: createdBy === "Vendor" ? vendorId : null,
+                    name,
+                    email,
+                    phone: `91 ${cleanedPhone}`,
+                    createdBy: createdBy === "User" ? "Admin" : createdBy ?? "Admin",
+                    bookingCount: 1,
+                    totalAmount: finalAmount || 0,
+                }, { transaction: t });
 
-            const wallet = await CustomerWallet.create({
-                adminId,
-                customerId: customer.customerId,
-                balance: 0,
-                startAmount: 0,
-            }, { transaction: t });
+                customer.customerId = `SLTC${phoneNumber}${customer.id}`;
+                const { code: referralCode } = generateReferralCode({ userId: customer.id });
+                customer.referralCode = referralCode;
+                await customer.save({ transaction: t });
 
-            wallet.walletId = `cus-wlt-${wallet.id}`;
-            await wallet.save({ transaction: t });
+                const wallet = await CustomerWallet.create({
+                    adminId,
+                    customerId: customer.customerId,
+                    balance: 0,
+                    startAmount: 0,
+                }, { transaction: t });
 
-            customer.walletId = wallet.walletId;
-            await customer.save({ transaction: t }); // ✅ save only once, inside transaction
+                wallet.walletId = `cus-wlt-${wallet.id}`;
+                await wallet.save({ transaction: t });
 
-            await t.commit();
+                customer.walletId = wallet.walletId;
+                await customer.save({ transaction: t }); // ✅ save only once, inside transaction
+
+                await t.commit();
+            } catch (error) {
+                await t.rollback();
+                console.error("Transaction failed:", error);
+                throw error;
+            }
+
         } else {
             await customer.update({
                 bookingCount: customer.bookingCount + 1,
-                totalAmount: customer.totalAmount + Number(finalAmount || 0),
+                totalAmount: customer.totalAmount + finalAmount,
             });
         }
 
@@ -1360,15 +1036,16 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
                     month: 'long',
                     day: 'numeric'
                 }) : null,
-                vehicleType: vehicleType,
+                vehicleType: (tariff as any).vehicles.type,
+                vehicleName: (tariff as any).vehicles.name,
                 serviceType: serviceType,
-                estimatedAmount: fareBreakdown?.modifiedFare?.estimatedAmount,
-                discountAmount: fareBreakdown?.modifiedFare?.discountAmount || discountAmount,
+                estimatedAmount: estimatedAmount,
+                discountAmount: discountAmount,
                 taxAmount: taxAmount,
-                toll: fareBreakdown?.modifiedFare?.toll,
-                hill: fareBreakdown?.modifiedFare?.hill,
-                permitCharge: fareBreakdown?.modifiedFare?.permitCharge,
-                finalAmount: fareBreakdown?.modifiedFare?.finalAmount,
+                toll: toll,
+                hill: hill,
+                permitCharge: permitCharge,
+                finalAmount: finalAmount,
                 advanceAmount: advanceAmount,
                 upPaidAmount: upPaidAmount,
                 paymentMethod: paymentMethod,
@@ -1407,17 +1084,17 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
                     },
                     { type: "text", text: `${newBooking.pickup}${newBooking.stops.length > 0 ? ` → ${newBooking.stops.slice(0, 2).join(" → ")} → ${newBooking.drop}` : ""}${newBooking.drop ? `→ ${newBooking.drop}` : ""}` },
                     { type: "text", text: `${newBooking.serviceType === "Round trip" ? `${newBooking.serviceType} day(s)${newBooking.days}` : newBooking.serviceType}` },
-                    { type: "text", text: newBooking.modifiedFare?.distance || newBooking.distance.toString() },
-                    { type: "text", text: newBooking.modifiedFare?.minKm || newBooking.minKm.toString() },
-                    { type: "text", text: newBooking.modifiedFare?.pricePerKm || newBooking.pricePerKm.toString() },
-                    { type: "text", text: newBooking.modifiedFare?.driverBeta || newBooking.driverBeta.toString() },
+                    { type: "text", text: newBooking.distance },
+                    { type: "text", text: newBooking.minKm },
+                    { type: "text", text: newBooking.pricePerKm },
+                    { type: "text", text: newBooking.driverBeta },
                     // { type: "text", text: newBooking.extraCharges["Toll"].toString() ?? "0" },
-                    { type: "text", text: newBooking.modifiedFare["hill"].toString() ?? "0" },
-                    { type: "text", text: newBooking.modifiedFare["permitCharge"].toString() ?? "0" },
-                    { type: "text", text: newBooking.modifiedFare?.estimatedAmount.toString() || newBooking.estimatedAmount.toString() },
+                    { type: "text", text: newBooking.extraCharges["Hill"].toString() ?? "0" },
+                    { type: "text", text: newBooking.extraCharges["Permit Charge"].toString() ?? "0" },
+                    { type: "text", text: newBooking.estimatedAmount.toString() },
                     { type: "text", text: newBooking.taxAmount.toString() },
-                    { type: "text", text: newBooking.modifiedFare?.discountAmount.toString() || newBooking.discountAmount.toString() },
-                    { type: "text", text: newBooking.modifiedFare?.finalAmount.toString() || newBooking.finalAmount.toString() },
+                    { type: "text", text: newBooking.discountAmount.toString() },
+                    { type: "text", text: newBooking.finalAmount.toString() },
                     { type: "text", text: companyProfile?.phone[0] ?? "9876543210" },
                     { type: "text", text: companyProfile?.website ?? "https://silvertaxi.in" },
                 ],
@@ -1438,7 +1115,7 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
                 template: "customer_booking_acknowledgement",
                 data: {
                     contact: `${(companyProfile?.name ?? "silvercalltaxi.in")}`,
-                    location: `${pickup}${drop ? `→${drop}` : ""}`,
+                    location: `${pickup} ${stops.length > 0 ? ` → ${stops.join(" → ")} → ${drop}` : drop ? ` → ${drop}` : ""}`,
                     pickupDateTime: new Date(
                         new Date(pickupDateTime).getTime() - IST_OFFSET
                     ).toLocaleString("en-IN", {
@@ -1451,16 +1128,16 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
                         hour12: true
                     }),
                     serviceType: `${newBooking.serviceType === "Round trip" ? `${newBooking.serviceType} day(s)${newBooking.days}` : newBooking.serviceType}`,
-                    distance: newBooking.modifiedFare?.distance,
-                    minKm: newBooking.modifiedFare?.minKm,
-                    pricePerKm: newBooking.modifiedFare?.pricePerKm,
-                    driverBeta: newBooking.modifiedFare?.driverBeta,
-                    hill: newBooking.modifiedFare["hill"].toString() ?? "0",
-                    permitCharges: newBooking.modifiedFare["permitCharge"].toString() ?? "0",
-                    estimatedAmount: newBooking.modifiedFare?.estimatedAmount.toString(),
+                    distance: newBooking.distance,
+                    minKm: newBooking.minKm,
+                    pricePerKm: newBooking.pricePerKm,
+                    driverBeta: newBooking.driverBeta,
+                    hill: newBooking.extraCharges["Hill"].toString() ?? "0",
+                    permitCharges: newBooking.extraCharges["Permit Charge"].toString() ?? "0",
+                    estimatedAmount: newBooking.estimatedAmount.toString(),
                     taxAmount: newBooking.taxAmount.toString(),
-                    discountAmount: newBooking.modifiedFare?.discountAmount.toString() || newBooking.discountAmount,
-                    finalAmount: newBooking.modifiedFare?.finalAmount.toString(),
+                    discountAmount: newBooking.discountAmount.toString(),
+                    finalAmount: newBooking.finalAmount.toString(),
                     contactNumber: companyProfile?.phone[0] ?? "9876543210",
                     website: companyProfile?.website ?? "https://silvertaxi.in"
                 }
@@ -1491,169 +1168,66 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
     }
 };
 
-export const assignDriver = async (req: Request, res: Response): Promise<void> => {
+export const assignDriver = async (req: Request, res: Response) => {
+
     const adminId = req.body.adminId ?? req.query.adminId;
     const { bookingId, driverId } = req.body;
 
-    if (!adminId) {
-        res.status(400).json({
-            success: false,
-            message: 'adminId is required',
-        });
-        return;
-    }
-
-    if (!bookingId) {
-        res.status(400).json({
-            success: false,
-            message: 'bookingId is required',
-        });
-        return;
-    }
-
-    if (!driverId) {
-        res.status(400).json({
-            success: false,
-            message: 'driverId is required',
-        });
-        return;
-    }
-
     const requestSentTime = dayjs().toDate();
-    log.info(`Assign driver for adminId: ${adminId}, bookingId: ${bookingId}, driverId: ${driverId} entry $>>`);
 
-    const transaction = await sequelize.transaction();
-
+    log.info(`Assign driver for adminId: ${adminId} and driverId: ${driverId} entry $>>`);
     try {
-        // Find booking with lock to prevent concurrent modifications
-        const booking = await Booking.findOne({
-            where: { bookingId, adminId },
-            transaction,
-            lock: transaction.LOCK.UPDATE,
-        });
-
+        const booking = await Booking.findOne({ where: { bookingId, adminId } });
         if (!booking) {
-            await transaction.rollback();
-            debug.info(`Assign driver | Booking not found: bookingId=${bookingId}, adminId=${adminId}`);
+            debug.info(`Assign driver for adminId: ${adminId} and driverId: ${driverId} Booking not found`);
             res.status(404).json({
                 success: false,
                 message: 'Booking not found',
             });
-            return;
+            return
         }
 
-        // Validate booking status - don't allow assignment if booking is completed or cancelled
-        if (booking.status === 'Completed' || booking.status === 'Cancelled' || booking.status === 'Manual Completed') {
-            await transaction.rollback();
-            res.status(400).json({
-                success: false,
-                message: `Cannot assign driver to a ${booking.status.toLowerCase()} booking`,
-            });
-            return;
+        // Check if a driver is already assigned
+        const previousDriverId = booking.driverId;
+        if (previousDriverId && previousDriverId !== driverId) {
+            // Unassign the previous driver
+            const previousDriver = await Driver.findOne({ where: { driverId: previousDriverId, adminId } });
+            if (previousDriver) {
+                await previousDriver.update({ assigned: false });
+            }
         }
 
-        // Find driver
         const driver = await Driver.findOne({
             where: { driverId, adminId },
-            transaction,
         });
 
         if (!driver) {
-            await transaction.rollback();
-            debug.info(`Assign driver | Driver not found: driverId=${driverId}, adminId=${adminId}`);
+            debug.info(`Assign driver for adminId: ${adminId} and driverId: ${driverId} Driver not found`);
             res.status(404).json({
                 success: false,
                 message: 'Driver not found',
             });
-            return;
+            return
         }
 
-        // Check if driver is active
-        if (!driver.isActive) {
-            await transaction.rollback();
-            res.status(400).json({
-                success: false,
-                message: 'Cannot assign an inactive driver',
-            });
-            return;
-        }
 
-        // Check if driver is already assigned to another active booking
-        const existingBooking = await Booking.findOne({
-            where: {
-                adminId,
-                driverId,
-                driverAccepted: { [Op.in]: ['accepted'] },
-                status: { [Op.in]: ['Not-Started', 'Started'] },
-                bookingId: { [Op.ne]: bookingId },
-            },
-            transaction,
-        });
-
-        if (existingBooking) {
-            await transaction.rollback();
-            res.status(400).json({
-                success: false,
-                message: 'Driver is already assigned to another active booking',
-            });
-            return;
-        }
-
-        // Handle previous driver unassignment
-        const previousDriverId = booking.driverId;
-        if (previousDriverId && previousDriverId !== driverId) {
-            const previousDriver = await Driver.findOne({
-                where: { driverId: previousDriverId, adminId },
-                transaction,
-            });
-
-            if (previousDriver) {
-                previousDriver.assigned = false;
-                await previousDriver.save({ transaction });
-            }
-        }
-
-        // Assign the new driver with driverName and driverPhone
-        const updateData: any = {
+        // Assign the new driver
+        // await booking.update({ driverId });
+        await booking.update({
             driverId,
-            driverName: driver.name,
-            driverPhone: driver.phone,
-            driverAccepted: 'pending',
+            driverAccepted: "pending",
             assignAllDriver: false,
             requestSentTime,
-        };
+        });
 
-        // Only update status if it's not already in a valid state
-        if (booking.status === 'Not-Started' || booking.status === 'Reassign') {
-            updateData.status = 'Booking Confirmed';
-        }
 
-        await booking.update(updateData, { transaction });
-
-        // Commit transaction
-        await transaction.commit();
-
-        // Persist driver notification and push via FCM (non-blocking)
         try {
-            const bookingAssignNotification = await createDriverNotification({
-                title: "New Booking Arrived",
-                message: `Mr ${driver.name}, you have received a new booking.`,
-                ids: {
-                    adminId: booking.adminId,
-                    driverId: driver.driverId,
-                    bookingId: booking.bookingId,
-                },
-                type: "booking",
-            });
-
-            // Get FCM token from Redis
-            const redisFcmToken = booking.adminId
-                ? await getDriverFcmToken(String(booking.adminId), String(driver.driverId))
-                : null;
-            const targetFcmToken = redisFcmToken || driver.fcmToken;
-
-            if (bookingAssignNotification && targetFcmToken && targetFcmToken.trim() !== '') {
-                const tokenResponse = await sendToSingleToken(targetFcmToken, {
+            const message = {
+                type: "new-booking",
+                fcmToken: driver.fcmToken,
+                payload: {
+                    title: "New Booking Arrived",
+                    message: `Mr ${driver.name}, you have received a new booking.`,
                     ids: {
                         adminId: booking.adminId,
                         bookingId: booking.bookingId,
@@ -1661,21 +1235,21 @@ export const assignDriver = async (req: Request, res: Response): Promise<void> =
                     },
                     data: {
                         title: 'New Booking Arrived',
-                        message: `Mr ${driver.name}, you have received a new booking.`,
+                        message: `Mr ${driver.name} You have received a new booking`,
                         type: "new-booking",
                         channelKey: "booking_channel",
                     }
-                });
-                debug.info(`FCM Notification Response: ${tokenResponse}`);
-            } else {
-                debug.info(`Driver notification not created or FCM token missing for driverId=${driver.driverId}`);
-            }
+                }
+            };
+
+            // Publish to the queue
+            publishNotification("notification.fcm.driver", message);
+            debug.info(`FCM Notification sent to driver queue ${driver.driverId}`);
         } catch (err: any) {
-            // Log but don't fail the request if notification fails
             debug.info(`FCM Notification Error: ${err}`);
         }
 
-        log.info(`Assign driver for adminId: ${adminId}, bookingId: ${bookingId}, driverId: ${driverId} exit <<$`);
+        log.info(`Assign driver for adminId: ${adminId} and driverId: ${driverId} exit <<$`);
 
         res.status(200).json({
             success: true,
@@ -1683,8 +1257,7 @@ export const assignDriver = async (req: Request, res: Response): Promise<void> =
             data: booking,
         });
     } catch (error) {
-        await transaction.rollback();
-        debug.info(`Assign driver error: adminId=${adminId}, bookingId=${bookingId}, driverId=${driverId}, error=${error}`);
+        debug.info(`Assign driver for adminId: ${adminId} and driverId: ${driverId} error >> ${error}`);
         res.status(500).json({
             success: false,
             message: error instanceof Error ? error.message : 'Internal server error',
@@ -1718,44 +1291,13 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
             if (previousDriver) await previousDriver.update({ assigned: false });
         }
 
-        const normalizedAdminId = adminId ? String(adminId) : "";
-        let broadcastDrivers: Array<{ driverId: string; adminId: string; name: string; fcmToken?: string | null }> = [];
+        // Fetch all active drivers
+        const drivers = await Driver.findAll({
+            where: { adminId, isActive: true },
+            attributes: ['driverId', 'name', 'fcmToken'],
+        });
 
-        if (normalizedAdminId) {
-            const redisDrivers = await getAllRedisDrivers(normalizedAdminId);
-            broadcastDrivers = redisDrivers
-                .filter(driver => driver && driver.isActive)
-                .map(driver => ({
-                    driverId: driver.driverId,
-                    adminId: driver.adminId,
-                    name: driver.name,
-                    fcmToken: driver.fcmToken,
-                }));
-        }
-
-        if (!broadcastDrivers.length) {
-            const dbDrivers = await Driver.findAll({
-                where: { adminId, isActive: true },
-                attributes: ['driverId', 'name', 'adminId'],
-            });
-
-            // Enrich with FCM tokens from Redis
-            broadcastDrivers = await Promise.all(
-                dbDrivers.map(async (driver) => {
-                    const redisFcmToken = driver.adminId
-                        ? await getDriverFcmToken(String(driver.adminId), String(driver.driverId))
-                        : null;
-                    return {
-                        driverId: driver.driverId,
-                        adminId: driver.adminId,
-                        name: driver.name,
-                        fcmToken: redisFcmToken,
-                    };
-                })
-            );
-        }
-
-        if (!broadcastDrivers.length) {
+        if (!drivers.length) {
             return res.status(404).json({
                 success: false,
                 message: "No active drivers found",
@@ -1768,129 +1310,40 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
             driverAccepted: "pending",
             assignAllDriver: true,
             requestSentTime,
-            status: "Booking Confirmed",
         });
 
-        // Collect all valid FCM tokens and driver data
-        const validDrivers = broadcastDrivers.filter(driver => driver.fcmToken && driver.fcmToken.trim() !== '');
-        const fcmTokens: string[] = [];
-        const driverData: any[] = [];
-
-        // Collect tokens and driver data
-        for (const driver of validDrivers) {
-            if (driver.fcmToken) {
-                fcmTokens.push(driver.fcmToken);
-            }
-            driverData.push({
-                driverId: driver.driverId,
-                adminId: booking.adminId,
-                name: driver.name,
-            });
-        }
-
-        // Send batch notification directly (without queue)
-        if (fcmTokens.length > 0) {
-            // Prepare bulk notification data
-            const notificationData = driverData
-                .filter(driver => driver.driverId && driver.adminId)
-                .map(driver => ({
+        // Send RabbitMQ message to each driver
+        for (const driver of drivers) {
+            const message = {
+                type: "new-booking",
+                fcmToken: driver.fcmToken,
+                payload: {
                     title: "New Booking Arrived",
-                    message: `Mr ${driver.name || 'Driver'}, you have received a new booking.`,
-                    driverId: driver.driverId,
-                    adminId: driver.adminId,
-                    route: "",
-                    type: "booking",
-                    read: false,
-                    date: new Date(),
-                    time: new Date().toLocaleTimeString(),
-                }));
-
-            // Prepare booking log data for parallel upserts
-            const bookingLogData = driverData
-                .filter(driver => booking.bookingId && driver.driverId && driver.adminId)
-                .map(driver => ({
-                    adminId: driver.adminId,
-                    driverId: driver.driverId,
-                    bookingId: booking.bookingId,
-                    requestSendTime: requestSentTime,
-                }));
-
-            // Execute all operations in parallel
-            const [notificationResult, logResults, batchResult] = await Promise.allSettled([
-                // Bulk create notifications
-                notificationData.length > 0
-                    ? DriverNotification.bulkCreate(notificationData, {
-                        returning: true,
-                    }).then(notifications => {
-                        // Update notifyId for each notification in parallel
-                        return Promise.all(
-                            notifications.map(async (notif) => {
-                                if (!notif.notifyId) {
-                                    notif.notifyId = `notify-${notif.id}`;
-                                    await notif.save();
-                                }
-                                return notif;
-                            })
-                        );
-                    })
-                    : Promise.resolve([]),
-
-                // Parallel upserts for booking logs
-                Promise.allSettled(
-                    bookingLogData.map(logData =>
-                        DriverBookingLog.upsert(logData).catch((err) => {
-                            debug.info(`Failed to log for driver ${logData.driverId}:`, err);
-                            return null;
-                        })
-                    )
-                ),
-
-                // Batch send FCM notifications
-                sendBatchNotifications(fcmTokens, {
-                    title: "New Booking Arrived",
-                    message: "You have received a new booking.",
+                    message: `Mr ${driver.name}, you have received a new booking.`,
                     ids: {
                         adminId: booking.adminId,
                         bookingId: booking.bookingId,
+                        driverId: driver.driverId,
                     },
                     data: {
                         title: "New Booking Arrived",
-                        message: "You have received a new booking.",
+                        message: `Mr ${driver.name}, you have received a new booking.`,
                         type: "new-booking",
                         channelKey: "booking_channel",
-                        bookingId: String(booking.bookingId),
                     },
-                }),
-            ]);
+                },
+            };
 
-            // Log results
-            if (notificationResult.status === 'fulfilled') {
-                debug.info(`Bulk created ${notificationResult.value.length} notifications`);
-            } else {
-                debug.info(`Failed to bulk create notifications:`, notificationResult.reason);
-            }
-
-            if (logResults.status === 'fulfilled') {
-                const successfulLogs = logResults.value.filter(r => r.status === 'fulfilled').length;
-                debug.info(`Created ${successfulLogs} booking logs`);
-            }
-
-            if (batchResult.status === 'fulfilled') {
-                const result = batchResult.value;
-                debug.info(`Batch FCM notification sent: ${result.successCount} success, ${result.failureCount} failed`);
-                if (result.invalidTokens && result.invalidTokens.length > 0) {
-                    debug.info(`Invalid tokens detected: ${result.invalidTokens.length}`);
-                }
-            } else {
-                debug.info(`Failed to send batch FCM notifications:`, batchResult.reason);
-            }
+            // Push message to RabbitMQ
+            publishNotification("notification.fcm.driver", message);
+            debug.info(`FCM Notification queued for driver ${driver.driverId}`);
         }
 
         log.info(`Assign all drivers for adminId: ${adminId}, bookingId: ${id} completed <<`);
 
         return res.status(200).json({
             success: true,
-            message: `Batch notifications sent to ${validDrivers.length} drivers`,
+            message: `Notifications sent to ${drivers.length} drivers via RabbitMQ`,
             booking,
         });
     } catch (error) {
@@ -2171,462 +1624,6 @@ export const updateBooking = async (req: Request, res: Response): Promise<void> 
     }
 };
 
-export const manualBookingComplete = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const adminId = req.body.adminId ?? req.query.adminId;
-        const { id } = req.params; // Get booking ID from request parameters
-        const {
-            startOdometerValue,
-            endOdometerValue,
-            tripStartedTime,
-            tripCompletedTime,
-            isManualCompleted,
-            driverCharges,
-            extraCharges,
-            tripCompletedPaymentMethod,
-            paymentMethod
-        } = req.body;
-
-        // console.log("req.body ---> ", req.body);
-
-        // Validate required fields for update
-        const requiredFields = ['startOdometerValue', 'endOdometerValue'];
-        const missingFields = requiredFields.filter(field => !req.body[field]);
-        if (missingFields.length > 0) {
-            res.status(400).json({
-                success: false,
-                message: `Missing required fields: ${missingFields.join(', ')}`,
-            });
-            return;
-        }
-
-        // Validate booking exists
-        const booking = await Booking.findOne({ where: { bookingId: id, adminId } });
-        if (!booking) {
-            res.status(404).json({
-                success: false,
-                message: "Booking not found",
-            });
-            return;
-        }
-
-
-        await booking.update({
-            startOdometerValue,
-            endOdometerValue,
-            tripStartedTime: new Date(tripStartedTime),
-            tripCompletedTime: new Date(tripCompletedTime),
-            driverCharges: driverCharges || {},
-            extraCharges: extraCharges || {},
-        }); // Update the booking
-        await booking.save();
-
-        const odoCalRes: any = await odoCalculation(id);
-        console.warn("Response from odoCalculation in tripend", odoCalRes);
-
-        if (isManualCompleted && booking.driverId) {
-            const driver = await Driver.findOne({ where: { driverId: booking.driverId, adminId } });
-            if (driver) {
-                await driver.update({ assigned: false });
-            }
-        }
-        // ===============================X==================x=========================X===========================//
-
-        if (!booking) {
-            res.status(404).json({
-                success: false,
-                message: 'Booking not found',
-            });
-            return;
-        }
-
-        let driver: Driver | null = null;
-        if (booking.driverId) {
-            driver = await Driver.findOne({
-                where: { driverId: booking.driverId, adminId }
-            });
-        }
-
-        if (!driver) {
-            res.status(404).json({
-                success: false,
-                message: 'Driver not found',
-            });
-            return;
-        }
-
-
-        let customer: Customer | null = null;
-        if (booking.customerId) {
-            customer = await Customer.findOne({
-                where: { customerId: booking.customerId, adminId }
-            });
-        }
-
-
-        if (customer) {
-            customer.totalAmount = (customer.totalAmount || 0) + (booking.tripCompletedFinalAmount || 0);
-            customer.bookingCount = (customer.bookingCount || 0) + 1;
-            await customer.save();
-        }
-
-        const now = dayjs();
-
-
-        const activityLog = await DriverBookingLog.findOne({
-            where: {
-                bookingId: id,
-                adminId,
-                driverId: driver.driverId
-            },
-            attributes: ["id", "tripStartedTime", "tripCompletedTime", "adminId", "driverId", "bookingId"]
-        });
-
-        if (activityLog) {
-            const tripStartedTime = dayjs(activityLog.tripStartedTime);
-            const activeDrivingMinutes = now.diff(tripStartedTime, "minute");
-
-            await activityLog.update({
-                tripCompletedTime: now.toDate(),
-                activeDrivingMinutes: isNaN(activeDrivingMinutes) ? 0 : activeDrivingMinutes,
-                tripStatus: "Completed"
-            });
-
-        }
-
-        let vehicle: any = null;
-        if (booking?.vehicleId) {
-            vehicle = await Vehicle.findOne({
-                where: { vehicleId: booking?.vehicleId, adminId }
-            });
-        }
-
-        let isCustomerAvailable = false;
-        await booking.update({
-            status: 'Manual Completed',
-            paymentStatus: 'Paid',
-            tripCompletedPaymentMethod: "Cash",
-            upPaidAmount: 0,
-        });
-
-        driver.assigned = false;
-        driver.bookingCount += 1;
-        driver.totalEarnings = String(Number(driver.totalEarnings) + (Number(booking.tripCompletedFinalAmount) - Number(booking.driverDeductionAmount)));
-        await driver.save();
-
-        const excludeKeys = ["Toll", "Hill", "Permit Charge"];
-        const extraChargesSum = sumSingleObject(booking.extraCharges, excludeKeys);
-        const extraChargesValue = Number(extraChargesSum)
-
-        const driverDeductionFinalAmount = booking.driverDeductionAmount + extraChargesValue
-        console.log("From and to", booking.pickup, booking.drop, "driverDeductionFinalAmount", driverDeductionFinalAmount);
-        const driverCommission = await commissionCalculation({
-            debitedId: driver.driverId ?? "",
-            amount: driverDeductionFinalAmount,
-            serviceId: booking.serviceId,
-            debitedBy: "Driver",
-            bookingId: booking.bookingId,
-            pickup: booking.pickup,
-            drop: booking.drop,
-            earnedAmount: booking.tripCompletedFinalAmount - driverDeductionFinalAmount,
-            creditAmount: booking.discountAmount || 0,
-            driverFareBreakup: booking.driverCommissionBreakup,
-
-        });
-
-        if (booking.createdBy === "Vendor") {
-            const vendorCommission = await commissionCalculation({
-                debitedId: booking.vendorId,
-                amount: booking.vendorDeductionAmount,
-                serviceId: booking.serviceId,
-                debitedBy: "Vendor",
-                bookingId: booking.bookingId,
-                creditAmount: booking.vendorCommission,
-                pickup: booking.pickup,
-                drop: booking.drop,
-                booking: booking
-            });
-
-            console.log("vendorCommission >> ", vendorCommission);
-        }
-
-
-        if (activityLog) {
-            const tripStartedTime = dayjs(activityLog.tripStartedTime);
-            const activeDrivingMinutes = now.diff(tripStartedTime, "minute");
-
-            await activityLog.update({
-                tripCompletedTime: now.toDate(),
-                activeDrivingMinutes,
-                tripStatus: "Completed"
-            });
-
-        }
-
-
-        // Send notification to customer
-        if (customer) {
-            let customerName = customer ? customer.name : "Customer";
-
-            const customerNotification = await createCustomerNotification({
-                title: "Your trip has been completed!",
-                message: `Thank you, ${customerName}, for riding with us. Your trip with Driver ${driver.name} has been successfully completed. We hope you had a great experience!`,
-                ids: {
-                    adminId: booking.adminId,
-                    bookingId: booking.bookingId,
-                    customerId: booking.customerId
-                },
-                type: "booking"
-            });
-
-
-            try {
-                if (customerNotification && customer.fcmToken && customer.fcmToken.trim() !== '') {
-                    const tokenResponse = await sendToSingleToken(customer.fcmToken, {
-                        ids: {
-                            adminId: booking.adminId,
-                            bookingId: booking.bookingId,
-                            customerId: booking.customerId
-                        },
-                        data: {
-                            title: 'Your trip has been completed!',
-                            message: `Thank you, ${customerName}, for riding with us. Your trip with Driver ${driver.name} has been successfully completed. We hope you had a great experience!`,
-                            type: "customer-trip-completed",
-                            channelKey: "customer_info",
-                        }
-                    });
-                    debug.info(`FCM Notification Response: ${tokenResponse}`);
-                } else {
-                    debug.info("Customer FCM token not available or notification failed");
-                }
-            } catch (err: any) {
-                debug.info(`FCM Notification Error - trip completed notification to customer: ${err}`);
-            }
-
-            isCustomerAvailable = true
-
-        }
-
-        // Send FCM notification to vendor (if booking was created by vendor)
-        if (booking.createdBy === "Vendor" && booking.vendorId) {
-            const vendor = await Vendor.findOne({
-                where: { vendorId: booking.vendorId, adminId },
-                attributes: ["fcmToken"],
-            });
-
-            if (vendor && vendor.fcmToken && vendor.fcmToken.trim() !== '') {
-                try {
-                    const vendorFcmResponse = await sendToSingleToken(vendor.fcmToken, {
-                        ids: {
-                            adminId: booking.adminId,
-                            bookingId: booking.bookingId,
-                            vendorId: booking.vendorId,
-                        },
-                        data: {
-                            title: "Trip Completed",
-                            message: `Trip #${booking.bookingId} has been successfully completed.`,
-                            type: "trip-completed",
-                            channelKey: "booking_channel",
-                        },
-                    });
-                    debug.info(`Vendor FCM Notification Response: ${vendorFcmResponse}`);
-                } catch (fcmError) {
-                    debug.info(`FCM Notification Error - trip completed notification to vendor: ${fcmError}`);
-                }
-            } else {
-                debug.info(`Vendor FCM token not available for vendorId: ${booking.vendorId}`);
-            }
-        }
-
-        const time = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: 'numeric', hour12: true, timeZone: 'Asia/Kolkata' }).format(new Date());
-        const notification = {
-            adminId,
-            vendorId: booking.createdBy === "Vendor" ? booking.vendorId : null,
-            title: `Trip Completed – Trip #${booking.bookingId}`,
-            description: `Driver has successfully completed Trip #${booking.bookingId}.`,
-            read: false,
-            date: new Date(),
-            time: time,
-        };
-
-        const notificationResponse = await createNotification(notification as any);
-        const adminNotification = {
-            adminId,
-            vendorId: null,
-            title: `Trip Completed – Trip #${booking.bookingId}`,
-            description: `Driver has successfully completed Trip #${booking.bookingId}.`,
-            read: false,
-            date: new Date(),
-            time: time,
-        }
-
-        const adminNotificationResponse = await createNotification(adminNotification as any);
-
-        if (notificationResponse.success) {
-            if (booking.createdBy === "Vendor") {
-                sendNotification(booking.vendorId, {
-                    notificationId: notificationResponse.notificationId ?? undefined,
-                    title: `Trip Completed – Trip #${booking.bookingId}`,
-                    description: `Driver has successfully completed Trip #${booking.bookingId}.`,
-                    read: false,
-                    date: new Date(),
-                    time: time,
-                });
-            }
-
-            if (adminNotificationResponse.success) {
-                sendNotification(adminId, {
-                    notificationId: adminNotificationResponse.notificationId ?? undefined,
-                    title: `Trip Completed – Trip #${booking.bookingId}`,
-                    description: `Driver has successfully completed Trip #${booking.bookingId}.`,
-                    read: false,
-                    date: new Date(),
-                    time: time,
-                });
-            }
-        }
-
-        let invoiceResponse: InvoiceResponse | null = null;
-        console.log(
-            booking.driverCharges,
-            booking.extraCharges
-        )
-        try {
-            invoiceResponse = await createInvoice({
-                adminId: booking.adminId,
-                vendorId: booking.vendorId,
-                bookingId: booking.bookingId,
-                name: booking.name,
-                phone: booking.phone,
-                email: booking.email,
-                serviceType: booking.serviceType,
-                vehicleType: vehicle?.type || null,
-                totalKm: booking.tripCompletedDistance,
-                pickup: booking.pickup,
-                drop: booking.drop,
-                pricePerKm: booking.pricePerKm,
-                estimatedAmount: booking.tripCompletedEstimatedAmount || 0,
-                advanceAmount: booking.advanceAmount,
-                travelTime: booking.tripCompletedDuration,
-                otherCharges: {
-                    "CGST & SGST": booking.taxAmount,
-                    "Driver beta": booking.tripCompletedDriverBeta || booking.driverBeta || 0,
-                    ...booking.extraCharges,
-                    ...booking.driverCharges,
-                },
-                totalAmount: booking.tripCompletedFinalAmount,
-                createdBy: booking.createdBy,
-                status: booking.paymentStatus,
-                paymentMethod: booking.paymentMethod,
-                paymentDetails: booking.paymentMethod,
-                note: "This invoice is auto-generated and does not require a signature.",
-            }, booking.bookingId);
-
-            debug.info("invoice response >> ", invoiceResponse.success);
-        } catch (error) {
-            debug.info("Error in invoice creation >> ", error);
-        }
-
-        const customerCleanedPhone = booking.phone.replace(/^\+?91|\D/g, '');
-        const driverCleanedPhone = driver.phone.replace(/^\+?91|\D/g, '');
-
-        const companyProfile = await CompanyProfile.findOne({ where: { adminId } });
-
-        let vendor: Vendor | null = null;
-        if (booking.createdBy === "Vendor") {
-            vendor = await Vendor.findOne({ where: { adminId, vendorId: booking.vendorId } });
-        }
-
-        // SMS Send
-        /* try {
-            const smsResponse = await sms.sendTemplateMessage({
-                mobile: Number(cleanedPhone),
-                template: "trip_completed",
-                data: {
-                    contactNumber: companyProfile?.phone[0] ?? "9876543210",
-                    website: companyProfile?.website ?? "https://silvercalltaxi.in/",
-                }
-            })
-            if (smsResponse) {
-                debug.info("Trip completed SMS sent successfully");
-            } else {
-                debug.info("Trip completed SMS not sent");
-            }
-        } catch (error) {
-            debug.info(`Error sending Trip completed SMS: ${error}`);
-        } */
-
-        // Send whatsapp message
-        /* try {
-            // send driver trip completed whatsapp message
-            const waDriverPayload = {
-                phone: driverCleanedPhone,
-                variables: [
-                    { type: "text", text: `${booking.pickup} to ${booking.drop}` },
-                    {
-                        type: "text", text: `${new Date(booking.tripCompletedTime).toLocaleString('en-IN', {
-                            timeZone: "Asia/Kolkata",
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true
-                        })}`
-                    },
-                ],
-                templateName: "driverTripCompleted"
-            }
-
-            publishNotification("notification.whatsapp", waDriverPayload)
-                .catch((err) => console.log("❌ Failed to publish Whatsapp notification", err));
-
-            // send customer trip completed whatsapp message
-            const waCustomerPayload = {
-                phone: customerCleanedPhone,
-                variables: [
-                    { type: "text", text: `${booking.createdBy == "Vendor" ? vendor?.name : (companyProfile?.name ?? "silvercalltaxi.in")}` },
-                    { type: "text", text: booking.adminContact },
-                    { type: "text", text: `${companyProfile?.website ?? "silvercalltaxi.in"}booking-invoice?id=${invoice?.data?.invoiceNo}` },
-                ],
-                templateName: "tripCompleted"
-            }
-
-            publishNotification("notification.whatsapp", waCustomerPayload)
-                .catch((err) => console.log("❌ Failed to publish Whatsapp notification", err));
-        } catch (error) {
-            console.error("Error sending whatsapp trip completed :", error);
-        } */
-
-        debug.info("driverCommission >> ", driverCommission)
-
-        // Determine response message based on customer availability and email status
-        let responseMessage = "Trip completed successfully";
-
-        if (!isCustomerAvailable) {
-            responseMessage += ", customer data not found for this booking so notification may not be delivered to customer";
-        }
-
-        if (!booking.email || booking.email.trim() === '') {
-            responseMessage += ", email not available so email notification was not sent";
-        }
-
-        res.status(200).json({
-            success: true,
-            message: responseMessage,
-            data: booking,
-        });
-        return;
-
-    } catch (error) {
-        console.error("Error updating booking:", error);
-        res.status(500).json({
-            success: false,
-            message: error instanceof Error ? error.message : "Internal server error",
-        });
-    }
-};
-
 export const deleteBooking = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
@@ -2755,6 +1752,7 @@ export const toggleChanges = async (req: Request, res: Response): Promise<void> 
             } else if (status === "Cancelled") {
                 const driverId = booking.driverId;
                 if (driverId) {
+
                     const driver = await Driver.findOne({
                         where: { driverId, adminId }
                     });
@@ -2776,13 +1774,10 @@ export const toggleChanges = async (req: Request, res: Response): Promise<void> 
 
 
                         try {
-                            const redisFcmToken = booking.adminId
-                                ? await getDriverFcmToken(String(booking.adminId), String(driver.driverId))
-                                : null;
-                            const targetFcmToken = redisFcmToken || driver.fcmToken;
-
-                            if (bookingAssignNotification && targetFcmToken) {
-                                const tokenResponse = await sendToSingleToken(targetFcmToken, {
+                            if (bookingAssignNotification) {
+                                const tokenResponse = await sendToSingleToken(driver.fcmToken, {
+                                    // title: 'New Booking Arrived',
+                                    // message: `Mr ${driver.name} You have received a new booking`,
                                     ids: {
                                         adminId: booking.adminId,
                                         bookingId: booking.bookingId,
@@ -2797,7 +1792,7 @@ export const toggleChanges = async (req: Request, res: Response): Promise<void> 
                                 });
                                 debug.info(`FCM Notification Response: ${tokenResponse}`);
                             } else {
-                                debug.info(`booking cancelled by admin notification skipped due to missing token`);
+                                debug.info(`booking cancelled  by customer notification is false`);
                             }
                         } catch (err: any) {
                             debug.info(`FCM Notification Error: ${err}`);
@@ -2942,7 +1937,7 @@ export const multiDeleteBookings = async (req: Request, res: Response): Promise<
             }
 
             // Unassign driver if assigned
-            if (booking.driverId && booking.status !== 'Completed') {
+            if (booking.driverId !== null && booking.driverId !== undefined && booking.driverId !== "") {
                 const driver = await Driver.findOne({
                     where: { driverId: booking.driverId },
                 });
@@ -2973,130 +1968,6 @@ export const multiDeleteBookings = async (req: Request, res: Response): Promise<
         res.status(500).json({
             success: false,
             message: "Error deleting bookings",
-        });
-    }
-};
-
-export const getDashboardData = async (req: Request, res: Response) => {
-    try {
-        const adminId = req.body.adminId ?? req.query.adminId;
-        const {
-            areaChart = false,
-            barChart = 'day',
-            topDrivers = 'day',
-        } = req.query;
-
-        let areaChartData: any = null;
-        let barChartData: any = null;
-        let topDriversData: any = null;
-
-        /* -------------------------------------------------------
-         * 1) AREA CHART (Service-wise counts)
-         * ----------------------------------------------------- */
-        if (areaChart) {
-            const [oneWay, roundTrip, hourlyPackages] = await Promise.all([
-                Booking.count({ where: { adminId, serviceType: "One way" } }),
-                Booking.count({ where: { adminId, serviceType: "Round trip" } }),
-                Booking.count({ where: { adminId, serviceType: "Hourly Packages" } }),
-            ]);
-
-            areaChartData = { oneWay, roundTrip, hourlyPackages };
-        }
-
-        /* -------------------------------------------------------
-         * 2) BAR CHART (Dynamic by filter)
-         * ----------------------------------------------------- */
-        if (barChart) {
-            const filter = String(barChart);
-            const { startDate, categories, datePart } = getBarChartMeta(filter);
-
-            const sqlResult = await Booking.findAll({
-                where: {
-                    adminId,
-                    createdAt: { [Op.gte]: startDate },
-                } as any,
-                attributes: [
-                    [
-                        Sequelize.literal(`EXTRACT(${datePart} FROM "createdAt")`),
-                        "category",
-                    ],
-                    [Sequelize.fn("COUNT", Sequelize.col("createdAt")), "total"],
-                ],
-                group: ["category"],
-                order: [[Sequelize.literal("category"), "ASC"]],
-                raw: true,
-            });
-
-            // Build dataset in frontend-ready format
-            const dataset = categories.map((category) => ({
-                category,
-                Bookings: 0,
-            }));
-
-            sqlResult.forEach((row: any) => {
-                let index = Number(row.category);
-                // PostgreSQL EXTRACT returns 1-indexed for DAY (1-31) and MONTH (1-12)
-                // but our arrays are 0-indexed, so we need to adjust
-                if (datePart === "DAY" || datePart === "MONTH") {
-                    index = index - 1;
-                }
-                if (dataset[index]) dataset[index].Bookings = Number(row.total);
-            });
-
-            barChartData = dataset;
-        }
-
-        /* -------------------------------------------------------
-         * 3) TOP DRIVERS (Top 5 by booking count)
-         * ----------------------------------------------------- */
-        if (topDrivers) {
-            const drivers = await Driver.findAll({
-                where: { adminId },
-                attributes: [
-                    "driverId",
-                    "name",
-                    [
-                        Sequelize.literal(`(
-                    SELECT COUNT(*)
-                    FROM bookings AS b
-                    WHERE b."driverId" = "Driver"."driverId"
-                      AND b."deletedAt" IS NULL
-                  )`),
-                        "bookingCount"
-                    ]
-                ],
-                order: [[Sequelize.literal(`"bookingCount"`), "DESC"]],
-                limit: 5,
-                raw: true,
-            });
-
-            topDriversData = drivers.map((d) => ({
-                name: d.name ?? "Unknown",
-                total: Number(d.bookingCount) || 0,
-            }));
-        }
-
-
-
-        /* -------------------------------------------------------
-         * Final Response
-         * ----------------------------------------------------- */
-        return res.status(200).json({
-            success: true,
-            message: "Dashboard data fetched successfully",
-            data: {
-                areaChartData,
-                barChartData,
-                topDriversData,
-            },
-        });
-    } catch (error) {
-        console.error("Dashboard Error:", error);
-
-        return res.status(500).json({
-            success: false,
-            message: "Error fetching dashboard data",
-            error: error instanceof Error ? error.message : "Unknown error",
         });
     }
 };

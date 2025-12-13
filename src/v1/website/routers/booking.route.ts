@@ -1,4 +1,4 @@
-import { bookingCreate, bookingSave, bookingUpdate, getBookingInvoice } from "../controller/booking.controller";
+import { bookingCreate, bookingSave, bookingUpdate } from "../controller/booking.controller";
 import { Router } from "express";
 import { getBookingStatus } from "../controller/website.controller";
 
@@ -11,7 +11,5 @@ router.post("/", bookingCreate);
 router.put("/:id", bookingUpdate);
 
 router.post("/savebooking", bookingSave);
-
-router.get("/invoice/:id", getBookingInvoice);
 
 export default router;

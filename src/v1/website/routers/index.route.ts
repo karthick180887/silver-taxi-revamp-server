@@ -13,6 +13,7 @@ import {
     getSingleBlog
 } from "../controller/website.controller";
 import { bookingCreate, bookingUpdate } from "../controller/booking.controller";
+import { redisConfigController } from "../controller/config.controller";
 import { distancePriceController } from "../controller/distancePrice.controller";
 // import { calculationController } from "../controller/calculation.controller";
 import { enquiryController } from "../controller/enquiry.controller";

@@ -19,7 +19,7 @@ RUN npm ci --production
 COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production
-ENV PORT=3011
-EXPOSE 3011
+ENV PORT=8081
+EXPOSE 8081
 
 CMD ["node", "dist/server.js"]

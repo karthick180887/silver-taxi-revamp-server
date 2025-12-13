@@ -81,7 +81,7 @@ export const getDriverAnalytics = async (req: Request, res: Response) => {
                 }
             });
 
-            
+
         } else {
             res.status(400).json({ success: false, message: "Please provide 'startDate' or both 'startDate' and 'endDate'." });
             return;
@@ -246,9 +246,9 @@ export const getGraphEarnings = async (req: Request, res: Response) => {
                 'tripCompletedFinalAmount',
                 'driverDeductionAmount',
                 'driverCharges',
-                'permitCharge',
-                'toll',
-                'hill',
+                'extraPermitCharge',
+                'extraToll',
+                'extraHill',
             ],
             paranoid: false
         });
@@ -280,9 +280,9 @@ export const getGraphEarnings = async (req: Request, res: Response) => {
                     return isNaN(amount) ? sum : sum + amount;
                 }, 0);
 
-                const permitCharge = Number(booking.permitCharge ?? 0);
-                const toll = Number(booking.toll ?? 0);
-                const hill = Number(booking.hill ?? 0);
+                const permitCharge = Number(booking.extraPermitCharge ?? 0);
+                const toll = Number(booking.extraToll ?? 0);
+                const hill = Number(booking.extraHill ?? 0);
 
                 totalDriverCharges += extraDriverCharges + permitCharge + toll + hill;
                 // console.log("totalDriverCharges >> ", totalDriverCharges);

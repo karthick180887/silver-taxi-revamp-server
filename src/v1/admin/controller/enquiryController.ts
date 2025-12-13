@@ -2,23 +2,12 @@ import { Request, Response } from "express";
 import { Enquiry, Service } from "../../core/models";
 import { sendNotification } from "../../../common/services/socket/websocket";
 import { createNotification } from "../../core/function/notificationCreate";
-import { QueryParams } from "../../../common/types/global.types";
-import { Op } from "sequelize";
-import dayjs from "../../../utils/dayjs";
-import { capitalizeFirstLetter } from "../../core/function/objectArrays";
 
 // Get all enquires
 export const getAllEnquiries = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
-        const {
-            page = 1,
-            limit = 25,
-            search = '',
-            status = '',
-            sortBy = 'createdAt',
-            sortOrder = 'DESC'
-        }: QueryParams = req.query;
+
 
         if (!adminId) {
             res.status(400).json({
@@ -28,105 +17,20 @@ export const getAllEnquiries = async (req: Request, res: Response): Promise<void
             return;
         }
 
-        // Calculate offset for pagination
-        const offset = (page - 1) * limit;
-
-        // Build where clause
-        const whereClause: any = { adminId };
-
-        // Add status filter if provided
-        if (status) {
-            whereClause.status = status;
-        }
-
-        // Build search conditions
-        const searchConditions: any[] = [];
-        if (search) {
-            searchConditions.push(
-                { enquiryId: { [Op.iLike]: `%${search}%` } },
-                { name: { [Op.iLike]: `%${search}%` } },
-                { phone: { [Op.iLike]: `%${search}%` } },
-                { email: { [Op.iLike]: `%${search}%` } },
-                { serviceId: { [Op.iLike]: `%${search}%` } },
-            );
-            const types = ['website', 'app', 'manual'];
-            if (types.includes(search.toLowerCase())) {
-                searchConditions.push({ type: { [Op.eq]: capitalizeFirstLetter(search) } });
+        const enquires = await Enquiry.findAll({
+            where: { adminId },
+            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+            include: {
+                model: Service,
+                as: 'services',
+                attributes: ['serviceId', 'name'],
             }
-        }
-
-        // Add search conditions to where clause if they exist
-        if (searchConditions.length > 0) {
-            whereClause[Op.or] = searchConditions;
-        }
-        const baseWhereClause = { ...whereClause };
-        delete baseWhereClause.status;
-
-        // Define sort order mapping
-        const order: any[] = [];
-        order.push([sortBy, sortOrder]);
-
-        const [criticalResults, countResults] = await Promise.all([
-            Promise.all([
-                Enquiry.findAll({
-                    where: whereClause,
-                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    include: {
-                        model: Service,
-                        as: 'services',
-                        attributes: ['serviceId', 'name'],
-                    },
-                    order,
-                    limit: parseInt(limit as any),
-                    offset: offset
-                }),
-                Enquiry.count({ where: baseWhereClause })
-
-            ]),
-            Promise.allSettled([
-                // Enquiry Total Count
-                Enquiry.count({ where: baseWhereClause }),
-                // Enquiry Current Count
-                Enquiry.count({
-                    where: {
-                        ...baseWhereClause, createdAt: {
-                            [Op.gte]: dayjs().startOf('day').toDate(),
-                            [Op.lte]: dayjs().endOf('day').toDate()
-                        }
-                    }
-                }),
-                // Enquiry Website Count
-                Enquiry.count({ where: { ...baseWhereClause, type: 'Website' } }), ,
-            ])
-        ]);
-
-        const [enquires, count] = criticalResults;
-
-        const enquiriesCount = {
-            total: countResults[0].status === 'fulfilled' ? countResults[0].value : 0,
-            today: countResults[1].status === 'fulfilled' ? countResults[1].value : 0,
-            website: countResults[2].status === 'fulfilled' ? countResults[2].value : 0,
-        }
-
-        const totalPages = Math.ceil(count / limit);
-        const hasNext = page < totalPages;
-        const hasPrev = page > 1;
+        });
 
         res.status(200).json({
             success: true,
             message: "Enquires retrieved successfully",
-            data: {
-                enquires,
-                enquiriesCount,
-                pagination: {
-                    currentPage: parseInt(page as any),
-                    totalPages,
-                    totalCount: count,
-                    hasNext,
-                    hasPrev,
-                    limit: parseInt(limit as any)
-                }
-            },
+            data: enquires,
         });
 
     } catch (error) {
@@ -317,7 +221,7 @@ export const createEnquiry = async (req: Request, res: Response): Promise<void> 
                     date: new Date(),
                     time: time,
                 });
-            }
+            }  
         }
 
         if (adminNotificationResponse.success) {

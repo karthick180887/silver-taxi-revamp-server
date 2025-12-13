@@ -15,6 +15,9 @@ const redis = createClient({
     password: redisPassword,
 });
 
+const pubClient = redis.duplicate();
+const subClient = redis.duplicate();
+
 // Function to initialize Redis and trigger backup
 async function initRedis() {
     await new Promise<void>((resolve, reject) => {
@@ -29,7 +32,11 @@ async function initRedis() {
             reject(error);
         });
 
-        redis.connect().catch(reject);
+        Promise.all([
+            redis.connect(),
+            pubClient.connect(),
+            subClient.connect()
+        ]).catch(reject);
     });
 }
 
@@ -280,4 +287,4 @@ async function exportDataToTexTCommandWithScan(req: Request, res: Response): Pro
 }
 
 
-export { redis, initRedis, exportDataToJSONWithScan, exportDataToTexTCommandWithScan };
+export { redis, pubClient, subClient, initRedis, exportDataToJSONWithScan, exportDataToTexTCommandWithScan };

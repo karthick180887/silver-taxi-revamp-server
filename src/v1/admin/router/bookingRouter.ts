@@ -13,19 +13,18 @@ import {
     getDriverBookings,
     assignAllDrivers,
     getVendorBookingsById,
-    manualBookingComplete,
-    getDashboardData,
+    getBookingDashboard,
     getRecentBookings
 } from "../controller/bookingController";
 
 
 const router = Router();
 
-router.get('/dashboard', getDashboardData);
-
-router.get("/vendor", getVendorBookings);
+router.get("/dashboard", getBookingDashboard);
 
 router.get("/recent", getRecentBookings);
+
+router.get("/vendor", getVendorBookings);
 
 router.get("/vendor/:id", getVendorBookingsById);
 
@@ -42,8 +41,6 @@ router.post("/assign-driver", assignDriver);
 router.post("/:id/assign-driver", assignAllDrivers);
 
 router.put("/:id", updateBooking);
-
-router.post("/manual-complete/:id", manualBookingComplete);
 
 router.delete("/:id", deleteBooking);
 

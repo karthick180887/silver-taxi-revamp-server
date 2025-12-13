@@ -94,26 +94,9 @@ OfferUsage.init({
     timestamps: true,
     paranoid: true,
     indexes: [
-        // Unique constraint
         {
             unique: true,
             fields: ["offerId", "customerId", "bookingId"],
-        },
-        // Common query patterns - optimized for high concurrency
-        {
-            fields: ['adminId', 'createdAt'], // pagination queries
-        },
-        {
-            fields: ['adminId', 'offerId', 'createdAt'], // offer usage with pagination
-        },
-        {
-            fields: ['customerId', 'createdAt'], // customer offer usage
-        },
-        {
-            fields: ['bookingId'], // booking lookup
-        },
-        {
-            fields: ['offerId'], // offer lookup
         },
     ],
 });

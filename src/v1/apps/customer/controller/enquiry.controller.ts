@@ -141,7 +141,7 @@ export const estimateFare = async (req: Request, res: Response): Promise<void> =
 
     // const polyline = await polylineCreate(pickUp, drop, stops || []);
 
-    const service = await Service.findOne({ where: { adminId, name: serviceType, isActive: true } });
+    const service = await Service.findOne({ where: { name: serviceType, isActive: true } });
     if (!service) {
       debugLog("Invalid service type", { serviceType });
       res.status(400).json({ success: false, message: "Invalid service type" });
@@ -467,7 +467,7 @@ export const estimateFare = async (req: Request, res: Response): Promise<void> =
               duration: pricingResult.cals?.duration || routeInfo.duration,
               driverBeta: pricingResult.cals?.driverBeta || 0,
               taxAmount: Math.ceil(pricingResult.cals?.taxAmount ?? 0),
-              taxPercentage: Number(pricingResult.cals?.taxPercentage) || 0,
+              taxPercentage: pricingResult.cals?.taxPercentage || 0,
               toll: pricingResult.cals?.toll || 0,
               hill: pricingResult.cals?.hill || 0,
               permitCharge: pricingResult.cals?.permitCharge || 0,

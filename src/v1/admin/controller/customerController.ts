@@ -5,7 +5,6 @@ import { CustomerWallet } from "../../core/models/customerWallets";
 import { Op, Transaction } from "sequelize";
 import { generateReferralCode } from "../../core/function/referCode";
 import { sequelize } from "../../../common/db/postgres";
-import { QueryParams } from "common/types/global.types";
 
 
 // Create a new customer
@@ -105,76 +104,43 @@ export const createCustomer = async (req: Request, res: Response): Promise<void>
 export const getAllCustomers = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
-        const {
-            page = 1,
-            limit = 25,
-            search = '',
-            sortBy = 'createdAt',
-            sortOrder = 'DESC'
-        }: QueryParams = req.query;
 
-        const offset = (page - 1) * limit;
+        console.log(`[Customers] Fetching all customers for adminId: ${adminId}`);
 
-        const whereClause: any = { adminId };
-
-        const searchConditions: any[] = [];
-
-        if (search) {
-            searchConditions.push(
-                { name: { [Op.iLike]: `%${search}%` } },
-                { phone: { [Op.iLike]: `%${search}%` } },
-                { email: { [Op.iLike]: `%${search}%` } },
-                { customerId: { [Op.iLike]: `%${search}%` } },
-            );
+        if (!adminId) {
+            console.log("[Customers] Missing adminId");
         }
 
-        if (searchConditions.length > 0) {
-            whereClause[Op.or] = searchConditions;
-        }
+        const customers = await Customer.findAll({
+            where: { adminId },
+            order: [['createdAt', 'DESC']],
+            attributes: { exclude: ['updatedAt', 'deletedAt'] }
+        });
 
-        const [criticalResults, countResults] = await Promise.all([
-            Promise.all([
-                Customer.findAll({
-                    where: whereClause,
-                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order: [[sortBy, sortOrder]],
-                    limit: parseInt(limit as any),
-                    offset: offset
-                }),
-                Customer.count({ where: whereClause })
-            ]),
-            Promise.allSettled([
-                Customer.sum('bookingCount', { where: whereClause }),
-                Customer.sum('totalAmount', { where: whereClause }),
-            ])
-        ]);
+        console.log(`[Customers] Found ${customers.length} records.`);
 
-        const [customers, count] = criticalResults;
-
+        const totalCustomers = customers.length;
+        // Calculate stats if possible, or use 0 for now to prevent crash
         const customersCount = {
-            totalTripCompleted: countResults[0].status === 'fulfilled' ? countResults[0].value : 0,
-            totalAmount: countResults[1].status === 'fulfilled' ? countResults[1].value : 0,
-        }
-
-        const totalPages = Math.ceil(count / limit);
-        const hasNext = page < totalPages;
-        const hasPrev = page > 1;
+            totalTripCompleted: 0, // Placeholder - implement actual count if needed
+            totalAmount: 0         // Placeholder - implement actual sum if needed
+        };
 
         res.status(200).json({
             success: true,
             message: "Customers retrieved successfully",
             data: {
-                customers,
-                customersCount,
+                customers: customers,
+                customersCount: customersCount,
                 pagination: {
-                    currentPage: parseInt(page as any),
-                    totalPages,
-                    totalCount: count,
-                    hasNext,
-                    hasPrev,
-                    limit: parseInt(limit as any)
+                    currentPage: 1,
+                    totalPages: 1,
+                    totalCount: totalCustomers,
+                    hasNext: false,
+                    hasPrev: false,
+                    limit: totalCustomers
                 }
-            },
+            }
         });
     } catch (error) {
         console.error("Error fetching customers:", error);
@@ -184,6 +150,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<void
         });
     }
 };
+
 export const getVendorCustomers = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
@@ -221,53 +188,6 @@ export const getBookingsByCustomers = async (req: Request, res: Response): Promi
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
         const { id } = req.params;
-        const {
-            page = 1,
-            limit = 25,
-            search = '',
-            status = '',
-            sortBy = 'createdAt',
-            sortOrder = 'DESC'
-        }: QueryParams = req.query;
-
-        const offset = (page - 1) * limit;
-        const whereClause: any = { adminId };
-
-        const searchConditions: any[] = [];
-
-        if (search) {
-            searchConditions.push(
-                { bookingId: { [Op.iLike]: `%${search}%` } },
-                { bookingNo: { [Op.iLike]: `%${search}%` } },
-                { name: { [Op.iLike]: `%${search}%` } },
-                { phone: { [Op.iLike]: `%${search}%` } },
-                { customerId: { [Op.iLike]: `%${search}%` } },
-                { driverId: { [Op.iLike]: `%${search}%` } },
-                { vendorId: { [Op.iLike]: `%${search}%` } },
-                { enquiryId: { [Op.iLike]: `%${search}%` } },
-                { serviceId: { [Op.iLike]: `%${search}%` } },
-                { vehicleId: { [Op.iLike]: `%${search}%` } },
-                { pickup: { [Op.iLike]: `%${search}%` } },
-                { drop: { [Op.iLike]: `%${search}%` } },
-                // Numeric fields - convert to number if search is numeric
-                ...(isNaN(Number(search)) ? [] : [
-                    { distance: Number(search) },
-                    { estimatedAmount: Number(search) },
-                    { finalAmount: Number(search) }
-                ])
-            );
-        }
-
-        if (searchConditions.length > 0) {
-            whereClause[Op.or] = searchConditions;
-        }
-
-        const order: any[] = [];
-        order.push([sortBy, sortOrder]);
-
-        if (status) {
-            whereClause.status = status;
-        }
 
         if (!id) {
             res.status(400).json({
@@ -289,40 +209,14 @@ export const getBookingsByCustomers = async (req: Request, res: Response): Promi
 
         // Fetch bookings only if customer exists
         const bookings = await Booking.findAll({
-            where: whereClause,
+            where: { phone: { [Op.like]: `%${customer.phone}%` } },
             attributes: { exclude: ["id", "updatedAt", "deletedAt"] },
-            order: [[sortBy, sortOrder]],
-            limit: Number(limit),
-            offset: offset
         });
-
-        const totalCount = await Booking.count({ where: whereClause });
-
-        const totalAmount = await Booking.sum('tripCompletedFinalAmount', { where: whereClause });
-
-        const totalPages = Math.ceil(totalCount / limit);
-        const hasNext = page < totalPages;
-        const hasPrev = page > 1;
-
 
         res.status(200).json({
             success: true,
             message: "Bookings retrieved successfully",
-            data: {
-                bookings,
-                bookingCount: {
-                    totalTrip: totalCount,
-                    totalAmount: totalAmount,
-                },
-                pagination: {
-                    currentPage: Number(page),
-                    totalPages,
-                    totalCount: totalCount,
-                    hasNext,
-                    hasPrev,
-                    limit: Number(limit)
-                }
-            },
+            data: bookings,
         });
     } catch (error) {
         console.error("Error fetching bookings:", error);
@@ -465,12 +359,7 @@ export const multiDeleteCustomers = async (req: Request, res: Response): Promise
             });
 
             if (customers.length === 0) {
-                console.error("No customers found for deletion");
-                res.status(404).json({
-                    success: false,
-                    message: "No customers found for deletion",
-                });
-                return;
+                throw new Error("No customers found with the provided IDs");
             }
 
             // 2. Find linked wallets

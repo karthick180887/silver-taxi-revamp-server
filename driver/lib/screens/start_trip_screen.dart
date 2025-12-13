@@ -270,32 +270,12 @@ class _StartTripScreenState extends State<StartTripScreen> {
             errorMessage = 'Trip cannot be started. Please ensure the trip is accepted first.';
           } else if (errorMessage.contains('trip not found')) {
             errorMessage = 'Trip not found. The trip may have been cancelled or does not exist.';
+          } else if (errorMessage.contains('Request failed')) {
+            errorMessage = 'Unable to start trip. Please check your connection and try again.';
           }
         }
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $errorMessage'),
-            duration: const Duration(seconds: 5),
-            backgroundColor: Colors.red.shade600,
-            action: widget.trip.id.startsWith('booking-')
-                ? SnackBarAction(
-                    label: 'Accept First',
-                    textColor: Colors.white,
-                    onPressed: () {
-                      // Navigate back and show message to accept first
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Please accept the booking from the "New Requests" tab first.'),
-                          duration: Duration(seconds: 3),
-                        ),
-                      );
-                    },
-                  )
-                : null,
-          ),
-        );
+        _showErrorDialog(errorMessage);
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -307,6 +287,106 @@ class _StartTripScreenState extends State<StartTripScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Start/OTP not available for admin bookings.'),
+      ),
+    );
+  }
+
+  void _showErrorDialog(String errorMessage) {
+    // Extract a user-friendly message
+    String friendlyMessage = errorMessage;
+    
+    // Remove "start trip: " prefix if present
+    if (friendlyMessage.startsWith('start trip: ')) {
+      friendlyMessage = friendlyMessage.substring('start trip: '.length);
+    }
+    
+    // Map common error patterns to user-friendly messages
+    if (errorMessage.contains('already assigned')) {
+      friendlyMessage = 'You are already assigned to another active booking. Please complete or cancel that booking first.';
+    } else if (errorMessage.contains('Cannot start a booking')) {
+      friendlyMessage = 'Cannot start a booking. Please accept the booking first to convert it to a trip.';
+    } else if (errorMessage.contains('Invalid start OTP') || 
+               errorMessage.contains('Invalid or missing OTP') || 
+               (errorMessage.contains('OTP') && (errorMessage.contains('invalid') || errorMessage.contains('incorrect')))) {
+      friendlyMessage = 'Invalid or incorrect OTP. Please get a new OTP from backend and try again.';
+    } else if (errorMessage.contains('odometer') || errorMessage.contains('Odometer') || errorMessage.contains('startOdometer') || 
+               errorMessage.contains('must be a positive number')) {
+      friendlyMessage = 'Invalid odometer reading. Please enter a valid value greater than 0.';
+    } else if (errorMessage.contains('must be at least 4 characters')) {
+      friendlyMessage = 'OTP must be at least 4 characters long. Please enter a valid OTP.';
+    } else if (errorMessage.contains('status') && (errorMessage.contains('cannot') || errorMessage.contains('not allowed'))) {
+      friendlyMessage = 'Trip cannot be started. Please ensure the trip is accepted first.';
+    } else if (errorMessage.contains('not found') || errorMessage.contains('does not exist') || errorMessage.contains('Booking not found')) {
+      friendlyMessage = 'Trip not found. The trip may have been cancelled or does not exist.';
+    } else if (errorMessage.contains('Request failed') || errorMessage.contains('connection')) {
+      friendlyMessage = 'Unable to start trip. Please check your connection and try again.';
+    } else if (errorMessage.contains('Unable to start trip')) {
+      // Already user-friendly, use as-is
+      friendlyMessage = errorMessage;
+    } else if (errorMessage.length > 150) {
+      // If message is too long, provide a generic one
+      friendlyMessage = 'Unable to start trip. Please verify your OTP and odometer reading, then try again.';
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Unable to Start Trip',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: const BoxDecoration(
+                  color: Colors.grey,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close,
+                  size: 16,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              friendlyMessage,
+              style: const TextStyle(fontSize: 14, color: Colors.black87),
+            ),
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('OK'),
+            ),
+          ),
+        ],
       ),
     );
   }

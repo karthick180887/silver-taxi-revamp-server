@@ -405,10 +405,20 @@ class _EndTripScreenState extends State<EndTripScreen> {
       );
 
       // 2. Complete Trip (Record payment/fare)
+      // Get payment method from trip data, default to "Cash"
+      final paymentMethod = widget.trip.raw['paymentMethod']?.toString() ?? 
+                           widget.trip.raw['payment_method']?.toString() ?? 
+                           'Cash';
+      // Ensure it's one of the valid values: Cash, Link, or UPI
+      final validPaymentMethod = ['Cash', 'Link', 'UPI'].contains(paymentMethod) 
+          ? paymentMethod 
+          : 'Cash';
+      
       await widget.tripService.completeTrip(
         token: widget.token,
         tripId: widget.trip.id,
         fare: totalFare,
+        paymentMethod: validPaymentMethod,
         hillCharge: double.tryParse(_hillChargeController.text) ?? 0.0,
         tollCharge: double.tryParse(_tollChargeController.text) ?? 0.0,
         petCharge: double.tryParse(_petChargeController.text) ?? 0.0,

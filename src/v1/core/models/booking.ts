@@ -27,8 +27,6 @@ export interface BookingAttributes {
     dropDate?: Date | null;
     enquiryId?: string;
     driverId?: string | null;
-    driverName?: string | null;
-    driverPhone?: string | null;
     assignAllDriver?: boolean;
     tariffId?: string;
     packageId?: string;
@@ -109,7 +107,6 @@ export interface BookingAttributes {
 
     convenienceFee?: number;
     adminContact?: string;
-    test?: boolean;
 
 }
 
@@ -135,8 +132,6 @@ class Booking
     public dropDate!: Date | null;
     public enquiryId!: string;
     public driverId!: string | null;
-    public driverName!: string | null;
-    public driverPhone!: string | null;
     public assignAllDriver!: boolean;
     public tariffId!: string;
     public packageId!: string;
@@ -221,7 +216,6 @@ class Booking
     public minKm!: number;
     public convenienceFee!: number;
     public adminContact!: string;
-    public test!: boolean;
 
 
     public readonly createdAt!: Date;
@@ -319,16 +313,6 @@ Booking.init(
             //     model: Driver,
             //     key: "driverId",
             // },
-            defaultValue: null
-        },
-        driverName: {
-            type: DataTypes.STRING(255),
-            allowNull: true,
-            defaultValue: null
-        },
-        driverPhone: {
-            type: DataTypes.STRING(20),
-            allowNull: true,
             defaultValue: null
         },
         assignAllDriver: {
@@ -458,7 +442,7 @@ Booking.init(
             defaultValue: 0,
         },
         taxPercentage: {
-            type: DataTypes.FLOAT,
+            type: DataTypes.INTEGER,
             allowNull: true,
             defaultValue: null,
         },
@@ -720,114 +704,54 @@ Booking.init(
         timestamps: true,
         paranoid: true,
         indexes: [
-            // Unique identifiers
             {
-              unique: true,
-              fields: ['bookingId'],
+                fields: [
+                    "bookingId", "adminId",
+                    "serviceType", "customerId",
+                    "driverId", "tariffId",
+                    "enquiryId", "phone",
+                    "email", "serviceId",
+                    "vehicleId", "vendorId",
+                    "tripStartedTime", "tripCompletedTime",
+                ],
+
             },
             {
-              unique: true,
-              fields: ['bookingNo'],
-            },
-          
-            // Admin-level views (dashboards, lists) - Most common queries
-            {
-              fields: ['adminId', 'createdAt'],      // list bookings by admin with pagination
+                fields: ["driverCharges"],
+                using: 'GIN',
+                name: 'driver_charges_gin_index'
             },
             {
-              fields: ['adminId', 'status', 'createdAt'], // filter by status + time (most common)
+                fields: ["extraCharges"],
+                using: 'GIN',
+                name: 'extra_charges_gin_index'
             },
             {
-              fields: ['adminId', 'status'], // filter by status only
+                fields: ["geoLocation"],
+                using: 'GIN',
+                name: 'geo_location_gin_index'
             },
             {
-              fields: ['adminId', 'paymentStatus', 'createdAt'], // payment status filtering
+                fields: ["normalFare"],
+                using: 'GIN',
+                name: 'normal_fare_gin_index'
             },
             {
-              fields: ['adminId', 'serviceType', 'createdAt'], // service type filtering
+                fields: ["modifiedFare"],
+                using: 'GIN',
+                name: 'modified_fare_gin_index'
             },
             {
-              fields: ['adminId', 'type', 'createdAt'], // booking type filtering (Website/App/Manual)
+                fields: ["driverCommissionBreakup"],
+                using: 'GIN',
+                name: 'driver_commission_breakup_gin_index'
             },
             {
-              fields: ['adminId', 'isContacted', 'createdAt'], // contacted status filtering
+                fields: ["vendorCommissionBreakup"],
+                using: 'GIN',
+                name: 'vendor_commission_breakup_gin_index'
             },
-            {
-              fields: ['adminId', 'pickupDateTime'], // date range queries
-            },
-            {
-              fields: ['adminId', 'pickupDateTime', 'createdAt'], // date range queries with sorting
-            },
-          
-            // Driver-specific views
-            {
-              fields: ['driverId', 'status', 'createdAt'], // driver history / current trips with sorting
-            },
-            {
-              fields: ['driverId', 'status'], // driver history / current trips
-            },
-            {
-              fields: ['driverId', 'createdAt'], // driver bookings by date
-            },
-            {
-              fields: ['driverName'], // search by driver name
-            },
-            {
-              fields: ['driverPhone'], // search by driver phone
-            },
-          
-            // Customer-specific views
-            {
-              fields: ['customerId', 'createdAt'], // customer bookings with pagination
-            },
-            {
-              fields: ['customerId', 'status', 'createdAt'], // customer history with status
-            },
-            {
-              fields: ['customerId', 'status'], // customer history
-            },
-          
-            // Vendor-specific views
-            {
-              fields: ['vendorId', 'createdAt'], // vendor bookings with pagination
-            },
-            {
-              fields: ['vendorId', 'status', 'createdAt'], // vendor history with status
-            },
-            {
-              fields: ['vendorId', 'status'], // vendor history
-            },
-            {
-              fields: ['adminId', 'vendorId', 'createdAt'], // admin filtering by vendor
-            },
-          
-            // Fast search by phone, name, and other searchable fields
-            {
-              fields: ['phone'], // phone search
-            },
-            {
-              fields: ['name'], // name search
-            },
-            {
-              fields: ['enquiryId'], // enquiry lookup
-            },
-            {
-              fields: ['serviceId'], // service lookup
-            },
-            {
-              fields: ['vehicleId'], // vehicle lookup
-            },
-            {
-              fields: ['tariffId'], // tariff lookup
-            },
-            {
-              fields: ['offerId'], // offer lookup
-            },
-            {
-              fields: ['promoCodeId'], // promo code lookup
-            },
-          ],
-          comment: "Table for bookings",  
+        ],
     }
 );
 

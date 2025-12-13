@@ -98,26 +98,13 @@ AllIncludes.init({
     timestamps: true,
     paranoid: true,
     indexes: [
-        // Unique constraint
         {
-            unique: true,
-            fields: ['includeId'],
-        },
-        // Common query patterns - optimized for high concurrency
-        {
-            fields: ['adminId', 'createdAt'], // pagination queries
+            fields: ['adminId', 'origin', 'destination'],
         },
         {
-            fields: ['adminId'], // admin filtering
-        },
-        {
-            fields: ["adminId", "includeId"], // admin + includeId lookup
-        },
-        {
-            fields: ['origin', 'destination'], // route lookup (most common)
-        },
-        {
-            fields: ['adminId', 'origin', 'destination'], // admin + route lookup
+            fields: ['vehicles'],
+            using: 'GIN',
+            name: 'idx_all_includes_vehicles',
         },
     ],
 });

@@ -8,7 +8,7 @@ export interface VehicleAttributes {
   adminId: string;
   vehicleId?: string;
   driverId?: string;
-  name?: string;
+  name: string;
   type: string;
   fuelType?: 'Petrol' | 'Diesel' | 'Electric' | 'Hybrid';
   isActive: boolean;
@@ -134,8 +134,7 @@ Vehicle.init(
     },
     name: {
       type: DataTypes.STRING(255),
-      allowNull: true,
-      defaultValue: null,
+      allowNull: false,
     },
     type: {
       type: DataTypes.STRING(255),
@@ -340,37 +339,6 @@ Vehicle.init(
       {
         unique: true,
         fields: ["adminId", "vehicleId", "type"],
-      },
-      // Common query patterns
-      {
-        fields: ["adminId", "createdAt"], // pagination queries
-      },
-      {
-        fields: ["adminId", "isActive", "createdAt"], // active vehicles with pagination
-      },
-      {
-        fields: ["adminId", "isActive"], // active vehicles
-      },
-      {
-        fields: ["adminId", "adminVerified", "createdAt"], // verification status with pagination
-      },
-      {
-        fields: ["adminId", "adminVerified"], // verification status
-      },
-      {
-        fields: ["driverId", "adminId"], // driver vehicles lookup
-      },
-      {
-        fields: ["driverId"], // driver vehicles
-      },
-      {
-        fields: ["vehicleId"], // vehicleId lookup (already in unique but separate for faster lookups)
-      },
-      {
-        fields: ["type"], // vehicle type filtering
-      },
-      {
-        fields: ["vehicleNumber"], // vehicle number search
       },
     ],
     comment: "Table for storing vehicle details",

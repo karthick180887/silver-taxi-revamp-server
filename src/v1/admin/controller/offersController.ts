@@ -4,7 +4,7 @@ import { Op } from "sequelize";
 import schedule from 'node-schedule';
 import { logger } from "../../../utils/logger";
 import fs from 'fs/promises';
-import { uploadFileToDOS3 } from "../../../utils/minio.image";
+import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
 const isValidDate = (date: any): boolean => {
     return date instanceof Date && !isNaN(date.getTime());
 };
@@ -181,7 +181,7 @@ export const createOffer = async (req: Request, res: Response) => {
                 const imageBuffer = await fs.readFile(bannerImage.path);
 
                 // Upload to MinIO
-                const imageUrl = await uploadFileToDOS3(imageBuffer, `offer/${newOffer.offerId}.webp`);
+                const imageUrl = await uploadFileToMiniIOS3(imageBuffer, `offer/${newOffer.offerId}.webp`);
 
                 // Update offer with image URL
                 newOffer.bannerImage = imageUrl ?? '';

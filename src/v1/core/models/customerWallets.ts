@@ -106,16 +106,6 @@ CustomerWallet.init(
                 unique: true,
                 fields: ["walletId", "customerId"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["customerId"], // customer wallet lookup
-            },
-            {
-                fields: ["walletId"], // walletId lookup (already unique but separate for faster lookups)
-            },
         ],
     }
 );

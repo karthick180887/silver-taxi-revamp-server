@@ -1,6 +1,7 @@
 import '../api_client.dart';
 import '../models/trip_models.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:convert';
 
 const String kTripStatusNew = 'Booking Confirmed';
 // Backend trip table uses "accepted" for upcoming/not-started. Keep UI label "Not Started".
@@ -150,8 +151,8 @@ class TripService {
       _log('[TripService]   - Raw data values: $data');
       
       final counts = {
-        'offers': _parseInt(data['offers'], 'offers'),
-        'accepted': _parseInt(data['accepted'], 'accepted'),
+        'offers': _parseInt(data['new-bookings'], 'offers'),
+        'accepted': _parseInt(data['not-started'], 'accepted'),
         'started': _parseInt(data['started'], 'started'),
         'completed': _parseInt(data['completed'], 'completed'),
         'cancelled': _parseInt(data['cancelled'], 'cancelled'),
@@ -290,6 +291,7 @@ class TripService {
     required String token,
     required String tripId,
     required double fare,
+    String paymentMethod = 'Cash', // Default to Cash, backend accepts: "Cash", "Link", or "UPI"
     double? hillCharge,
     double? tollCharge,
     double? petCharge,
@@ -297,9 +299,14 @@ class TripService {
     double? parkingCharge,
     double? waitingCharge,
   }) async {
+    // Validate payment method
+    final validMethods = ['Cash', 'Link', 'UPI'];
+    final finalPaymentMethod = validMethods.contains(paymentMethod) ? paymentMethod : 'Cash';
+    
     final res = await _api.completeTrip(
       token: token,
       tripId: tripId,
+      paymentMethod: finalPaymentMethod,
       fare: fare,
       hillCharge: hillCharge,
       tollCharge: tollCharge,
@@ -358,23 +365,156 @@ class TripService {
   void _ensureSuccess(ApiResult res, String context) {
     if (!res.success) {
       // Try to extract error message from response
-      String errorMessage = res.body['message']?.toString() ?? 
-                           res.body['error']?.toString() ?? 
-                           'Request failed';
+      String errorMessage = 'Request failed';
       
-      // If status code is 400, include more details
-      if (res.statusCode == 400) {
-        final error = res.body['error']?.toString() ?? '';
-        if (error.isNotEmpty && error != errorMessage) {
-          errorMessage = '$errorMessage: $error';
+      // Log full response for debugging first
+      _log('[TripService] ❌ API call failed: $context');
+      _log('[TripService]   - Status Code: ${res.statusCode}');
+      _log('[TripService]   - ApiResult.message: ${res.message}');
+      _log('[TripService]   - ApiResult.data type: ${res.data.runtimeType}');
+      _log('[TripService]   - ApiResult.data: ${res.data}');
+      _log('[TripService]   - ApiResult.body type: ${res.body.runtimeType}');
+      _log('[TripService]   - ApiResult.body: ${res.body}');
+      
+      // Check if body is a Map and extract error message
+      if (res.body is Map) {
+        final body = res.body as Map;
+        
+        // Handle validation errors array (backend returns message as array for validation errors)
+        if (body['message'] != null) {
+          final messageValue = body['message'];
+          _log('[TripService]   - body[message] type: ${messageValue.runtimeType}');
+          _log('[TripService]   - body[message] value: $messageValue');
+          
+          // If message is an array (validation errors), extract messages
+          if (messageValue is List) {
+            final errorMessages = <String>[];
+            for (var item in messageValue) {
+              if (item is Map) {
+                // Extract message from error object: { field: "...", message: "..." }
+                final msg = item['message']?.toString() ?? '';
+                if (msg.isNotEmpty) {
+                  errorMessages.add(msg);
+                }
+              } else {
+                errorMessages.add(item.toString());
+              }
+            }
+            if (errorMessages.isNotEmpty) {
+              errorMessage = errorMessages.join('. ');
+            }
+          } 
+          // If message is a string, use it directly
+          else if (messageValue is String) {
+            errorMessage = messageValue;
+          }
+          // If message is something else, convert to string
+          else {
+            errorMessage = messageValue.toString();
+          }
+        }
+        
+        // Fallback to other error fields
+        if (errorMessage == 'Request failed' || errorMessage.isEmpty) {
+          errorMessage = body['error']?.toString() ?? 
+                        body['msg']?.toString() ??
+                        body['errorMessage']?.toString() ??
+                        'Request failed';
+        }
+        
+        // For 400 errors, try to get more specific validation errors
+        if (res.statusCode == 400) {
+          // Check for validation errors array in 'errors' field
+          if (body['errors'] != null && body['errors'] is List) {
+            final errors = (body['errors'] as List).map((e) {
+              if (e is Map) {
+                return e['message']?.toString() ?? e.toString();
+              }
+              return e.toString();
+            }).join(', ');
+            if (errors.isNotEmpty) {
+              errorMessage = errors;
+            }
+          }
+          // Check for nested error object
+          else if (body['error'] is Map) {
+            final errorMap = body['error'] as Map;
+            errorMessage = errorMap['message']?.toString() ?? 
+                          errorMap['msg']?.toString() ?? 
+                          errorMessage;
+          }
+          
+          // If still generic, provide context-specific message
+          if (errorMessage == 'Request failed' || errorMessage.isEmpty) {
+            if (context.contains('start trip')) {
+              errorMessage = 'Unable to start trip. Please check your OTP and odometer reading.';
+            } else if (context.contains('end trip')) {
+              errorMessage = 'Unable to end trip. Please check your OTP and odometer reading.';
+            } else if (context.contains('accept')) {
+              errorMessage = 'Unable to accept booking. Please try again.';
+            } else {
+              errorMessage = 'Request failed. Please check your input and try again.';
+            }
+          }
+        }
+      } 
+      // Also check res.data directly (might be different from body)
+      else if (res.data is Map) {
+        final data = res.data as Map;
+        if (data['message'] != null) {
+          final messageValue = data['message'];
+          if (messageValue is List) {
+            final errorMessages = <String>[];
+            for (var item in messageValue) {
+              if (item is Map) {
+                final msg = item['message']?.toString() ?? '';
+                if (msg.isNotEmpty) {
+                  errorMessages.add(msg);
+                }
+              } else {
+                errorMessages.add(item.toString());
+              }
+            }
+            if (errorMessages.isNotEmpty) {
+              errorMessage = errorMessages.join('. ');
+            }
+          } else if (messageValue is String) {
+            errorMessage = messageValue;
+          }
+        }
+      }
+      // Fallback to ApiResult message (but it might be array string representation)
+      else if (res.message != null && res.message!.isNotEmpty) {
+        // Check if message looks like an array string representation
+        if (res.message!.startsWith('[') && res.message!.contains('message')) {
+          // Try to parse it
+          try {
+            final parsed = jsonDecode(res.message!);
+            if (parsed is List) {
+              final errorMessages = <String>[];
+              for (var item in parsed) {
+                if (item is Map) {
+                  final msg = item['message']?.toString() ?? '';
+                  if (msg.isNotEmpty) {
+                    errorMessages.add(msg);
+                  }
+                }
+              }
+              if (errorMessages.isNotEmpty) {
+                errorMessage = errorMessages.join('. ');
+              }
+            }
+          } catch (_) {
+            // If parsing fails, use as-is
+            errorMessage = res.message!;
+          }
+        } else {
+          errorMessage = res.message!;
         }
       }
       
-      // Log full error details for debugging
-      _log('[TripService] ❌ API call failed: $context');
-      _log('[TripService]   - Status Code: ${res.statusCode}');
-      _log('[TripService]   - Error Message: $errorMessage');
-      _log('[TripService]   - Full Response: ${res.body}');
+      // Final log
+      _log('[TripService]   - Final Error Message: $errorMessage');
       
       throw Exception('$context: $errorMessage');
     }

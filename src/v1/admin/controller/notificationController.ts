@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { Notification, NotificationTemplates, Customer, Driver, Vendor } from "../../core/models"; // Import the Notification model
 import { sendCustomNotifications } from "../../../common/services/firebase/appNotify";
 import fs from 'fs/promises';
-import { uploadFileToDOS3 } from "../../../utils/minio.image";
+import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
 import { Op } from "sequelize";
 import dayjs from "../../../utils/dayjs";
 import {
@@ -15,7 +15,6 @@ import {
 } from "../../../common/validations/customNotificationSchema";
 import { channel } from "diagnostics_channel";
 import { publishNotification } from "../../../common/services/rabbitmq/publisher";
-import { getAllRedisDrivers, getDriverFcmToken } from "../../../utils/redis.configs";
 
 // Helper function to format date for display
 const formatDateForDisplay = (date: Date | string) => {
@@ -335,7 +334,7 @@ export const createCustomNotification = async (req: Request, res: Response): Pro
                 const imageBuffer = await fs.readFile(bannerImage.path);
 
                 // Upload to MinIO
-                const imageUrl = await uploadFileToDOS3(imageBuffer, `notification/${customNotification.id}.webp`);
+                const imageUrl = await uploadFileToMiniIOS3(imageBuffer, `notification/${customNotification.id}.webp`);
 
                 // Update notification with image URL
                 customNotification.image = imageUrl ?? '';
@@ -465,7 +464,7 @@ export const editCustomNotification = async (req: Request, res: Response): Promi
                 const imageBuffer = await fs.readFile(bannerImage.path);
 
                 // Upload to MinIO
-                const imageUrl = await uploadFileToDOS3(imageBuffer, `notification/${customNotification.id}.webp`);
+                const imageUrl = await uploadFileToMiniIOS3(imageBuffer, `notification/${customNotification.id}.webp`);
 
                 // Update notification with image URL
                 customNotification.image = imageUrl ?? '';
@@ -781,45 +780,12 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
         switch (target) {
             case "driver":
 
-                const redisDrivers = adminId
-                    ? await getAllRedisDrivers(String(adminId))
-                    : [];
+                const drivers = await Driver.findAll({
+                    where: { adminId, isActive: true, adminVerified: "Approved" },
+                })
 
-                let targetDrivers = redisDrivers
-                    .filter(driver => driver && driver.isActive);
-
-                if (!targetDrivers.length) {
-                    const dbDrivers = await Driver.findAll({
-                        where: { adminId, isActive: true, adminVerified: "Approved" },
-                    });
-
-                    // Enrich with FCM tokens from Redis
-                    targetDrivers = await Promise.all(
-                        dbDrivers.map(async (driver) => {
-                            const redisFcmToken = driver.adminId
-                                ? await getDriverFcmToken(String(driver.adminId), String(driver.driverId))
-                                : null;
-                            return {
-                                driverId: driver.driverId,
-                                adminId: driver.adminId,
-                                name: driver.name,
-                                phone: driver.phone,
-                                adminVerified: driver.adminVerified,
-                                fcmToken: redisFcmToken,
-                                walletId: driver.walletId,
-                                geoLocation: null,
-                                isActive: driver.isActive,
-                            };
-                        })
-                    );
-                }
-
-                for (const driver of targetDrivers) {
-                    if (!driver.fcmToken || driver.fcmToken.trim() === "") {
-                        console.log(`Skipping driver ${driver.driverId} due to missing FCM token`);
-                        continue;
-                    }
-
+                // Send queued message to each driver
+                for (const driver of drivers) {
                     const message = {
                         type: "custom",
                         fcmToken: driver.fcmToken,
@@ -841,6 +807,7 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
                         },
                     };
 
+                    // Push message to queue
                     publishNotification("notification.fcm.driver", message);
                     console.log(`FCM Notification queued for driver ${driver.driverId}`);
                 }

@@ -135,22 +135,11 @@ Service.init(
         unique: true,
         fields: ["adminId", "serviceId", "name"], 
       },
-      // Common query patterns
       {
-        fields: ["adminId", "createdAt"], // pagination queries
-      },
-      {
-        fields: ["adminId", "isActive", "createdAt"], // active services with pagination
-      },
-      {
-        fields: ["adminId", "isActive"], // active services
-      },
-      {
-        fields: ["serviceId"], // serviceId lookup (already in unique but separate for faster lookups)
-      },
-      {
-        fields: ["name"], // service name lookup
-      },
+        fields:["tax"],
+        using: "GIN",
+        name: "idx_service_tax",
+      }
     ],
     comment: "Table for storing service details",
   }

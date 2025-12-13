@@ -15,11 +15,26 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   String? _error;
   Map<String, dynamic> _analytics = {};
   List<Map<String, dynamic>> _graphPoints = [];
+  late DateTime _start;
+  late DateTime _end;
 
   @override
   void initState() {
     super.initState();
+    // Default to last 7 days
+    _end = DateTime.now();
+    _start = _end.subtract(const Duration(days: 6));
     _load();
+  }
+
+  String _formatDate(DateTime date) {
+    // Backend expects DD-MM-YYYY format
+    return '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year.toString().padLeft(4, '0')}';
+  }
+
+  String _formatWeekStart(DateTime date) {
+    // Backend expects DD/MM/YYYY format (with slashes) for weekDayStart
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year.toString().padLeft(4, '0')}';
   }
 
   Future<void> _load() async {
@@ -28,11 +43,23 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       _error = null;
     });
     try {
-      final analyticsRes = await _api.getDriverAnalytics(token: widget.token);
+      // Backend requires at least startDate
+      final analyticsRes = await _api.getAnalytics(
+        token: widget.token,
+        startDate: _formatDate(_start),
+        endDate: _formatDate(_end),
+      );
       if (!analyticsRes.success) {
         throw Exception(analyticsRes.body['message'] ?? 'Failed to load analytics');
       }
-      final graphRes = await _api.getEarningsGraph(token: widget.token);
+      // Earnings graph uses weekDayStart parameter (DD/MM/YYYY format with slashes)
+      // For now, use default (previous week) by not passing parameters
+      // Or calculate week start from _start date
+      final weekStartFormatted = _formatWeekStart(_start);
+      final graphRes = await _api.getEarningsGraph(
+        token: widget.token,
+        weekDayStart: weekStartFormatted,
+      );
       if (!graphRes.success) {
         throw Exception(graphRes.body['message'] ?? 'Failed to load analytics graph');
       }

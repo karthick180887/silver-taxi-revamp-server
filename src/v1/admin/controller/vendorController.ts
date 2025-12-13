@@ -6,19 +6,13 @@ import { Admin } from "../../core/models/admin";
 import { Op } from "sequelize";
 import bcrypt from "bcrypt";
 import { VendorBankDetails } from "../../core/models/vendorBankDetails";
-import { QueryParams } from "common/types/global.types";
 
 // Get all vendors
 export const getAllVendors = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
-        const {
-            page = 1,
-            limit = 25,
-            search = '',
-            sortBy = 'createdAt',
-            sortOrder = 'DESC'
-        }: QueryParams = req.query;
+
+        console.log(`[Vendors] Fetching vendors for adminId: ${adminId}`);
 
         if (!adminId) {
             res.status(400).json({
@@ -27,81 +21,41 @@ export const getAllVendors = async (req: Request, res: Response): Promise<void> 
             });
             return;
         }
+        const vendors = await Vendor.findAll({
+            where: { adminId: adminId },
+            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+            include: [
+                {
+                    model: VendorWallet,
+                    as: 'wallet',
+                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt', 'driverId'] }
+                },
+            ]
+        })
 
-        const offset = (page - 1) * limit;
-
-        const whereClause: any = { adminId };
-
-        const searchConditions: any[] = [];
-
-        if (search) {
-            searchConditions.push(
-                { vendorId: { [Op.iLike]: `%${search}%` } },
-                { name: { [Op.iLike]: `%${search}%` } },
-                { phone: { [Op.iLike]: `%${search}%` } },
-                { email: { [Op.iLike]: `%${search}%` } },
-            );
-            if (search === 'active' || search === 'inactive') {
-                searchConditions.push({ isLogin: search === 'active' ? true : false });
-            }
-        }
-
-        if (searchConditions.length > 0) {
-            whereClause[Op.or] = searchConditions;
-        }
-
-        const [criticalResults, countResults] = await Promise.all([
-            Promise.all([
-                Vendor.findAll({
-                    where: whereClause,
-                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    include: [
-                        {
-                            model: VendorWallet,
-                            as: 'wallet',
-                            attributes: { exclude: ['id', 'updatedAt', 'deletedAt', 'driverId'] }
-                        },
-                    ],
-                    order: [[sortBy, sortOrder]],
-                    limit: parseInt(limit as any),
-                    offset: offset
-                }),
-                Vendor.count({ where: whereClause })
-            ]),
-            Promise.allSettled([
-                Vendor.count({ where: { ...whereClause, isLogin: true } }),
-                Vendor.count({ where: { ...whereClause, isLogin: false } }),
-                Vendor.count({ where: whereClause })
-            ])
-        ]);
-
-        const [vendors, count] = criticalResults;
+        console.log(`[Vendors] Found ${vendors.length} vendors.`);
 
         const vendorsCount = {
-            active: countResults[0].status === 'fulfilled' ? countResults[0]?.value : 0,
-            inactive: countResults[1].status === 'fulfilled' ? countResults[1].value : 0,
-            total: countResults[2].status === 'fulfilled' ? countResults[2].value : 0,
-        }
-
-        const totalPages = Math.ceil(count / limit);
-        const hasNext = page < totalPages;
-        const hasPrev = page > 1;
+            total: vendors.length,
+            active: vendors.filter(v => v.isLogin).length,
+            inactive: vendors.filter(v => !v.isLogin).length
+        };
 
         res.status(200).json({
             success: true,
             message: "Vendors retrieved successfully",
             data: {
-                vendors,
-                vendorsCount,
+                vendors: vendors,
+                vendorsCount: vendorsCount,
                 pagination: {
-                    currentPage: Number(page),
-                    totalPages: Number(totalPages),
-                    totalCount: count,
-                    hasNext,
-                    hasPrev,
-                    limit: Number(limit)
+                    currentPage: 1,
+                    totalPages: 1,
+                    totalCount: vendors.length,
+                    hasNext: false,
+                    hasPrev: false,
+                    limit: vendors.length
                 }
-            },
+            }
         });
     } catch (error) {
         console.error("Error fetching vendors:", error);

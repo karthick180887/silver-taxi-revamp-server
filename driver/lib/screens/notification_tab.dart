@@ -137,10 +137,33 @@ class _NotificationTabState extends State<NotificationTab> {
     });
   }
 
-  void _deleteAll() {
+  void _deleteAll() async {
+    if (_notifications.isEmpty) return;
+    
+    // Get all notification IDs before clearing
+    final ids = _notifications.map((n) => n.id).toList();
+    
     setState(() {
       _notifications.clear();
     });
+    
+    // Delete from backend (don't block UI)
+    try {
+      await _api.deleteNotifications(token: widget.token, notificationIds: ids);
+    } catch (e) {
+      debugPrint('Error deleting notifications from backend: $e');
+      // Don't show error to user - already removed from UI
+    }
+  }
+
+  Future<void> _deleteNotificationFromBackend(String notificationId) async {
+    try {
+      await _api.deleteNotifications(token: widget.token, notificationIds: [notificationId]);
+      debugPrint('Notification $notificationId deleted from backend');
+    } catch (e) {
+      debugPrint('Error deleting notification from backend: $e');
+      // Don't show error - notification already removed from UI
+    }
   }
 
   @override
@@ -229,10 +252,15 @@ class _NotificationTabState extends State<NotificationTab> {
                     alignment: Alignment.centerRight,
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
-                  onDismissed: (_) {
+                  onDismissed: (direction) {
+                    // Remove by ID, not by index, to avoid widget tree issues
+                    final notificationId = notif.id;
                     setState(() {
-                      _notifications.removeAt(i);
+                      _notifications.removeWhere((n) => n.id == notificationId);
                     });
+                    
+                    // Optionally delete from backend (don't block UI)
+                    _deleteNotificationFromBackend(notificationId);
                   },
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 12),

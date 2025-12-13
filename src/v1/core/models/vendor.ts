@@ -137,29 +137,7 @@ Vendor.init(
             {
                 unique: true,
                 fields: ["adminId", "vendorId", "email", "phone", "walletId"],
-            },
-            // Common query patterns
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "isLogin", "createdAt"], // active/inactive vendors with pagination
-            },
-            {
-                fields: ["adminId", "isLogin"], // active/inactive vendors
-            },
-            {
-                fields: ["phone"], // phone search (already unique but index helps with LIKE queries)
-            },
-            {
-                fields: ["email"], // email search (already unique but index helps with LIKE queries)
-            },
-            {
-                fields: ["name"], // name search
-            },
-            {
-                fields: ["vendorId"], // vendorId lookup
-            },
+            }
         ],
         comment: "Table for vendors",
     }

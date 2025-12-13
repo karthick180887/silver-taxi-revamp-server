@@ -20,29 +20,19 @@ export const getPromoCodes = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        const currentDate = dayjs().toDate();
-
-        // Build where clause conditionally
-        // Only return promos that have started (startDate <= now) and haven't expired (endDate > now)
-        const whereClause: any = {
-            status: true,
-            startDate: { [Op.lte]: currentDate },
-            endDate: { [Op.gt]: currentDate },
-        };
-
-        // Only add adminId filter if it's provided
-        if (adminId) {
-            whereClause.adminId = adminId;
-        }
-
         const promoCodes = await PromoCode.findAll({
-            where: whereClause,
+            where: {
+                status: true,
+                adminId,
+                startDate: { [Op.lte]: dayjs().toDate() },
+                endDate: { [Op.gt]: dayjs().toDate() },
+            },
             include: [
                 {
                     model: PromoCodeUsage,
                     as: "promoCodeUsage",
                     required: false,
-                    attributes: [], // don't fetch usage rows, just count them
+                    attributes: [], // don’t fetch usage rows, just count them
                     where: { customerId },
                 },
             ],
@@ -51,21 +41,22 @@ export const getPromoCodes = async (req: Request, res: Response): Promise<void> 
                     [Sequelize.fn("COUNT", Sequelize.col("promoCodeUsage.id")), "usageCount"],
                 ],
             },
-            group: [Sequelize.col("PromoCode.id")],
+            group: ["PromoCode.id"], // group by promo so count works
             having: Sequelize.literal(`COUNT("promoCodeUsage"."id") < "PromoCode"."limit"`)
+            // ✅ only show promos where customer has used it less than allowed limit
         });
 
-        if (promoCodes.length === 0) {
+
+        if (!promoCodes) {
             res.status(200).json({
                 success: false,
-                message: "No valid promo codes found",
-                data: []
+                message: "No valid promo codes found"
             });
             return;
         }
 
         res.status(200).json({
-            success: true,
+            succuss: true,
             message: "Promo codes fetched",
             data: promoCodes
         });
@@ -120,7 +111,7 @@ export const getPromoCodeById = async (req: Request, res: Response): Promise<voi
 
 
         res.status(200).json({
-            success: true,
+            succuss: true,
             message: "Promo code fetched",
             data: promoCode
         });

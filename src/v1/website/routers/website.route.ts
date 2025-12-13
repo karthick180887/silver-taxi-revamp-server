@@ -12,6 +12,7 @@ import {
     getAllBlogs,
     getSingleBlog
 } from "../controller/website.controller";
+import { redisConfigController } from "../controller/config.controller";
 import { distancePriceController } from "../controller/distancePrice.controller";
 // import { calculationController } from "../controller/calculation.controller";
 import { offersController } from "../controller/offers.controller";
@@ -48,6 +49,8 @@ router.post("/ip-address", storeIpAddress);
 router.get("/include-exclude/service/:id", getIncludeAndExclude);
 
 // router.post("/", calculationController);
+
+router.get('/', redisConfigController);
 
 router.post("/", distancePriceController);
 

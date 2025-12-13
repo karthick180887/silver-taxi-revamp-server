@@ -1,19 +1,6 @@
 import { DataTypes, Model, Optional } from "sequelize";
 import { sequelize } from "../../../common/db/postgres";
 
-interface AppObject {
-  link: string;
-  version: string;
-  buildNo: string;
-}
-
-interface VersionsAttributes {
-  customerAppVersion: AppObject;
-  driverAppVersion: AppObject;
-  vendorAppVersion: AppObject;
-  adminPanelVersion: string;
-}
-
 export interface AdminAttributes {
   id: number;
   adminId?: string;
@@ -23,7 +10,6 @@ export interface AdminAttributes {
   phone: string;
   role: string;
   domain?: string;
-  versions?: VersionsAttributes;
 }
 
 interface AdminCreationAttributes extends Optional<AdminAttributes, "id"> { }
@@ -40,7 +26,6 @@ class Admin
   public role!: string;
   public domain!: string;
 
-  public versions?: VersionsAttributes;
 
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -89,28 +74,6 @@ Admin.init(
       type: DataTypes.STRING(255),
       allowNull: true,
     },
-    versions: {
-      type: DataTypes.JSONB,
-      allowNull: true,
-      defaultValue: {
-        customerAppVersion: {
-          link: "",
-          version: "1.0.1",
-          buildNo: "12",
-        },
-        driverAppVersion: {
-          link: "",
-          version: "1.3.0",
-          buildNo: "110",
-        },
-        vendorAppVersion: {
-          link: "",
-          version: "2.1.1",
-          buildNo: "14",
-        },
-        adminPanelVersion: "1.0.0",
-      }
-    },
   },
   {
     sequelize,
@@ -121,19 +84,7 @@ Admin.init(
     indexes: [
       {
         unique: true,
-        fields: ["adminId"],
-      },
-      {
-        fields: ["email"],
-        unique: true,
-      },
-      {
-        fields: ["phone"],
-        unique: true,
-      },
-      {
-        fields: ["domain"],
-        unique: true,
+        fields: ["adminId", "email", "phone", "domain"],
       },
     ],
     comment: "Table for storing admin details",

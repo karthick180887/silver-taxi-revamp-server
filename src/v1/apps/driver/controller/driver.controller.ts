@@ -3,15 +3,13 @@ import {
     DriverBookingLog,
     Driver,
     CompanyProfile,
-    DriverBankDetails,
-    Admin
+    DriverBankDetails
 } from "../../../core/models";
 import dayjs from "../../../../utils/dayjs";
 import { driverPaymentDetailsSchema, driverPaymentDetailsUpdateSchema } from "../../../../common/validations/driverSchema";
 import { infoLogger as log, debugLogger as debug } from "../../../../utils/logger";
 import { driverLocationUpdate } from "../../../core/function/driverFunctions";
 import { getConfigKey } from "../../../../common/services/node-cache";
-import { redis } from "../../../../common/db/redis";
 
 
 export const getDriverDetails = async (req: Request, res: Response) => {
@@ -88,8 +86,9 @@ export const fcmTokenUpdate = async (req: Request, res: Response) => {
     }
 
     try {
-        const key = `${adminId}:drivers:${driverId}`;
-        const rawDriver = await redis.get(key);
+        const driver = await Driver.findOne({
+            where: { driverId },
+        });
 
         if (!fcmToken) {
             res.status(400).json({
@@ -99,7 +98,7 @@ export const fcmTokenUpdate = async (req: Request, res: Response) => {
             return;
         }
 
-        if (!rawDriver) {
+        if (!driver) {
             res.status(404).json({
                 success: false,
                 message: "Driver not found",
@@ -107,26 +106,12 @@ export const fcmTokenUpdate = async (req: Request, res: Response) => {
             return;
         }
 
-        let driverObj: any;
-        try {
-            driverObj = JSON.parse(rawDriver);
-        } catch (parseErr) {
-            console.error("Error parsing driver from Redis:", parseErr);
-            res.status(500).json({
-                success: false,
-                message: "Error reading driver data",
-            });
-            return;
-        }
-
-        driverObj.fcmToken = fcmToken;
-        driverObj.updatedAt = new Date().toISOString();
-
-        await redis.set(key, JSON.stringify(driverObj));
-
+        driver.fcmToken = fcmToken;
+        await driver.save();
         res.status(200).json({
             success: true,
             message: "FCM token updated successfully",
+            data: driver,
         });
 
     } catch (error) {
@@ -166,8 +151,8 @@ export const onlineStatusUpdate = async (req: Request, res: Response) => {
         }
 
         if (driver.isOnline === isOnline) {
-            res.status(400).json({
-                success: false,
+            res.status(200).json({
+                success: true,
                 message: "Given online status is the same",
             });
             return;
@@ -246,7 +231,6 @@ export const onlineStatusUpdate = async (req: Request, res: Response) => {
 };
 
 export const locationUpdate = async (req: Request, res: Response) => {
-    const adminId = req.body.adminId ?? req.query.adminId;
     const driverId = req.body.driverId ?? req.query.driverId;
     const { lat, lng } = req.body;
 
@@ -261,39 +245,26 @@ export const locationUpdate = async (req: Request, res: Response) => {
 
     try {
         log.info(`Updating location for driverId: ${driverId} latitude: ${lat} longitude: ${lng} entry $>>`);
-        const key = `${adminId}:drivers:${driverId}`;
-        const rawDriver = await redis.get(key);
-        if (!rawDriver) {
+        const driver = await Driver.findOne({ where: { driverId } });
+        if (!driver) {
             res.status(404).json({
                 success: false,
                 message: "Driver not found",
             });
             return;
         }
-        
-        let driverObj: any;
-        try {
-            driverObj = JSON.parse(rawDriver);
-        } catch (parseErr) {
-            console.error("Error parsing driver from Redis:", parseErr);
-            res.status(500).json({
-                success: false,
-                message: "Error reading driver data",
-            });
-            return;
-        }
 
-        driverObj.geoLocation = {
+        driver.geoLocation = {
             latitude: lat,
             longitude: lng,
-            timestamp: new Date().toISOString(),
+            timestamp: new Date(),
         };
-
-        await redis.set(key, JSON.stringify(driverObj));
+        await driver.save();
 
         res.status(200).json({
             success: true,
             message: "Driver location updated successfully",
+            data: driver,
         });
         log.info(`Driver location updated successfully for driverId: ${driverId} exit <<$`);
         return;
@@ -724,38 +695,4 @@ export const getConfigKeys = async (req: Request, res: Response) => {
             message: "Internal error"
         });
     }
-}
-
-export const getVersions = async (req: Request, res: Response) => {
-    const adminId = req.query.adminId ?? req.body.adminId;
-
-    if (!adminId) {
-        res.status(401).json({
-            success: false,
-            message: "Admin id is required",
-        });
-        return;
-    }
-
-    try {
-        const admin = await Admin.findOne({
-            where: { adminId },
-            attributes: ["versions"]
-        });
-
-
-        res.status(200).json({
-            success: true,
-            message: "Driver app version fetched successfully",
-            data: admin?.versions?.driverAppVersion
-        });
-    } catch (err) {
-        res.status(500).json({
-            success: false,
-            message: "Internal error",
-            error: err
-        });
-    }
-
-
 }

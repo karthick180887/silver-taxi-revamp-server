@@ -155,6 +155,29 @@ export const vehicleSchema = z.object({
         .refine(isFutureDate, "Pollution certificate has expired")
 });
 
+// Schema for initial vehicle creation (without documents)
+export const vehicleCreateSchema = z.object({
+    vehicleName: z.string().min(2, "Vehicle name must be at least 2 characters long"),
+    vehicleType: z.string().min(1, "Vehicle type is required"),
+    vehicleNumber: z.string().min(1, "Vehicle number is required"), // Relaxed regex for initial creation
+    vehicleYear: z.number()
+        .min(1900, "Invalid year")
+        .max(new Date().getFullYear() + 1, "Year cannot be in the future")
+        .optional(),
+    fuelType: z.enum(["Petrol", "Diesel", "Electric", "Hybrid"], {
+        errorMap: () => ({ message: "Invalid fuel type" })
+    }).optional(),
+
+    // Document Images and Expiry Dates - Optional for initial creation
+    rcBookImageFront: z.string().url("Invalid RC Book front image URL").optional(),
+    rcBookImageBack: z.string().url("Invalid RC Book back image URL").optional(),
+    rcExpiryDate: z.string().optional(),
+    insuranceImage: z.string().url("Invalid insurance image URL").optional(),
+    insuranceExpiryDate: z.string().optional(),
+    pollutionImage: z.string().url("Invalid pollution certificate image URL").optional(),
+    pollutionExpiryDate: z.string().optional()
+});
+
 // Optional version of the schema for partial updates
 export const vehicleUpdateSchema = vehicleSchema.partial();
 

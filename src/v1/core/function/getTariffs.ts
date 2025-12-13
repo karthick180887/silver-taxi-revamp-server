@@ -64,7 +64,7 @@ const getTariffs = async (adminId: string, serviceId: string): Promise<any> => {
         return tariffs;
     } catch (error) {
         console.error("Error fetching tariffs:", error);
-        return null;
+        throw new Error("Error fetching tariffs");
     }
 };
 

@@ -220,41 +220,9 @@ DriverBookingLog.init({
     modelName: 'DriverBookingLog',
     paranoid: true,
     indexes: [
-        // Unique constraint
         {
             unique: true,
             fields: ['adminId', 'driverId', 'minuteId', 'bookingId'],
-        },
-        // Common query patterns - optimized for high concurrency
-        {
-            fields: ['adminId', 'driverId', 'createdAt'], // driver booking logs with pagination
-        },
-        {
-            fields: ['adminId', 'driverId'], // driver booking logs
-        },
-        {
-            fields: ['driverId', 'tripStatus', 'createdAt'], // filter by trip status with pagination
-        },
-        {
-            fields: ['driverId', 'tripStatus'], // filter by trip status
-        },
-        {
-            fields: ['driverId', 'createdAt'], // driver logs by date
-        },
-        {
-            fields: ['bookingId'], // booking lookup
-        },
-        {
-            fields: ['adminId', 'createdAt'], // admin view with pagination
-        },
-        {
-            fields: ['tripStatus'], // status filtering
-        },
-        {
-            fields: ['tripStartedTime'], // trip start time queries
-        },
-        {
-            fields: ['tripCompletedTime'], // trip completion time queries
         },
     ],
 });

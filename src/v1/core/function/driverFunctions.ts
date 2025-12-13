@@ -1,6 +1,5 @@
 import { Driver } from "../models/driver";
 import { infoLogger as log, debugLogger as debug } from "../../../utils/logger";
-import { redis } from "../../../common/db/redis";
 
 const verifiedFieldMapping: Record<string, string> = {
   rcBookImageBack: 'rcBackVerified',
@@ -97,48 +96,22 @@ export function vehicleUpdateWithDocumentStatus(
 }
 
 
-export const driverLocationUpdate = async (driverId: string, lat: number, lng: number, adminId?: string) => {
+export const driverLocationUpdate = async (driverId: string, lat: number, lng: number) => {
   try {
     log.info(`Updating location for driverId: ${driverId} latitude: ${lat} longitude: ${lng} entry $>>`);
-    
-    // Get adminId from driver if not provided
-    let driverAdminId = adminId;
-    if (!driverAdminId) {
-      const driver = await Driver.findOne({ where: { driverId }, attributes: ["adminId"] });
-      if (!driver) {
-        debug.info(`Driver not found for driverId: ${driverId}`);
-        return null;
-      }
-      driverAdminId = driver.adminId;
-    }
-
-    if (!driverAdminId) {
-      debug.info(`AdminId not found for driverId: ${driverId}`);
+    const driver = await Driver.findOne({ where: { driverId } });
+    if (!driver) {
+      debug.info(`Driver not found for driverId: ${driverId}`);
       return null;
     }
-
-    // Update geoLocation in Redis
-    await redis.json.set(`${driverAdminId}:drivers:${driverId}`, ".geoLocation", {
+    driver.geoLocation = {
       latitude: lat,
       longitude: lng,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Also update updatedAt timestamp
-    await redis.json.set(`${driverAdminId}:drivers:${driverId}`, ".updatedAt", new Date().toISOString());
-
-    log.info(`Driver location updated successfully in Redis for driverId: ${driverId} exit <<$`);
-    
-    // Return the updated location data
-    return {
-      driverId,
-      adminId: driverAdminId,
-      geoLocation: {
-        latitude: lat,
-        longitude: lng,
-        timestamp: new Date().toISOString(),
-      }
+      timestamp: new Date(),
     };
+    await driver.save();
+    log.info(`Driver location updated successfully for driverId: ${driverId} exit <<$`);
+    return driver;
   } catch (error) {
     debug.error(`Error updating location for driverId: ${driverId} error: ${error}`);
     return null;

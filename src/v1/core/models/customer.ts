@@ -180,34 +180,6 @@ Customer.init(
                 unique: true,
                 fields: ["adminId", "customerId", "phone", "vendorId"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "vendorId", "createdAt"], // vendor customers with pagination
-            },
-            {
-                fields: ["adminId", "vendorId"], // vendor customers
-            },
-            {
-                fields: ["phone"], // phone search (already unique but index helps with LIKE queries)
-            },
-            {
-                fields: ["name"], // name search
-            },
-            {
-                fields: ["email"], // email search
-            },
-            {
-                fields: ["customerId"], // customerId lookup
-            },
-            {
-                fields: ["referralCode"], // referral code lookup
-            },
-            {
-                fields: ["referredBy"], // referred by lookup
-            },
         ],
     }
 )

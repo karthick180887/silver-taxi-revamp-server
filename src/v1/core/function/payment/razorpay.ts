@@ -35,11 +35,10 @@ export const handleWalletPayment = async (payment: any, orderId: string) => {
         });
 
         if (!transaction) {
-            console.log("Transaction not found for orderId:", orderId);
-            return;
+            throw new Error("Transaction not found");
         }
 
-        if (transaction?.tnxPaymentStatus && ["Success"].includes(transaction.tnxPaymentStatus)) {
+        if (transaction?.tnxPaymentStatus && ["Success", "Failed"].includes(transaction.tnxPaymentStatus)) {
             console.log("Already processed transaction:", transaction.tnxOrderId);
             return;
         }
@@ -47,15 +46,7 @@ export const handleWalletPayment = async (payment: any, orderId: string) => {
         const wallet = await DriverWallet.findOne({ where: { walletId: transaction.walletId } });
 
         if (!wallet) {
-            console.log("Wallet not found for orderId:", orderId);
-            return;
-        }
-
-        const fareBreakup = {
-            previousWalletBalance: wallet.balance,
-            amount: transaction.amount,
-            prefix: "+",
-            postWalletBalance: wallet.balance + transaction.amount,
+            throw new Error("Wallet not found");
         }
 
         // Update wallet balance
@@ -72,7 +63,6 @@ export const handleWalletPayment = async (payment: any, orderId: string) => {
         transaction.initiatedBy = "self";
         transaction.tnxPaymentMethod = payment.method;
         transaction.tnxPaymentTime = new Date(payment.created_at * 1000);
-        transaction.fareBreakdown = fareBreakup
         await transaction.save();
 
         console.log("✅ Wallet updated successfully for orderId:", orderId);
@@ -93,24 +83,12 @@ export const handleWalletPaymentFailure = async (payment: any, orderId: string) 
         });
 
         if (!transaction) {
-            console.log("Transaction not found for orderId:", orderId);
-            return;
+            throw new Error("Transaction not found");
         }
 
-        // Increment retry count for failed payments
-        // Each payment.failed event represents a retry attempt
-        const retryCount = (transaction.retryCount || 0) + 1;
-
-        if (transaction?.tnxPaymentStatus && ["Success"].includes(transaction.tnxPaymentStatus)) {
+        if (transaction?.tnxPaymentStatus && ["Success", "Failed"].includes(transaction.tnxPaymentStatus)) {
             console.log("Already processed transaction:", transaction.tnxOrderId);
             return;
-        }
-
-        const fareBreakup = {
-            previousWalletBalance: transaction.fareBreakdown?.previousWalletBalance || 0,
-            amount: transaction.amount,
-            prefix: "-",
-            postWalletBalance: (transaction.fareBreakdown?.previousWalletBalance || 0) - transaction.amount,
         }
 
         // Update transaction
@@ -121,11 +99,9 @@ export const handleWalletPaymentFailure = async (payment: any, orderId: string) 
         transaction.initiatedBy = "self";
         transaction.tnxPaymentMethod = payment.method;
         transaction.tnxPaymentTime = new Date(payment.created_at * 1000);
-        transaction.fareBreakdown = fareBreakup;
-        transaction.retryCount = retryCount;
         await transaction.save()
 
-        console.log(`✅ Wallet payment failed for orderId: ${orderId}, retry count: ${retryCount}`);
+        console.log("✅ Wallet updated successfully for orderId:", orderId);
     }
     catch (error) {
         console.error("❌ Error updating wallet for orderId:", orderId);
@@ -145,11 +121,10 @@ export const handleBookingPayment = async (payment: any, orderId: string, notes:
         });
 
         if (!transaction) {
-            console.log("Transaction not found for orderId:", orderId);
-            return;
+            throw new Error("Transaction not found");
         }
 
-        if (transaction?.tnxPaymentStatus && ["Success"].includes(transaction.tnxPaymentStatus)) {
+        if (transaction?.tnxPaymentStatus && ["Success", "Failed"].includes(transaction.tnxPaymentStatus)) {
             console.log("Already processed transaction:", transaction.tnxOrderId);
             return;
         }
@@ -295,7 +270,7 @@ export const handleBookingPayment = async (payment: any, orderId: string, notes:
                 dropDateObj: booking.dropDate,
                 estimatedAmount: booking.estimatedAmount,
                 discountAmount: booking.discountAmount,
-                taxAmount: booking.taxAmount,
+                taxAmount: booking.taxAmount,                
                 toll: 0,
                 hill: 0,
                 permitCharge: 0,
@@ -347,14 +322,10 @@ export const handleBookingPaymentFailure = async (payment: any, orderId: string,
         });
 
         if (!transaction) {
-            console.log("Transaction not found for orderId:", orderId);
-            return;
+            throw new Error("Transaction not found");
         }
 
-        // Increment retry count for failed payments
-        const retryCount = (transaction.retryCount || 0) + 1;
-
-        if (transaction?.tnxPaymentStatus && ["Success"].includes(transaction.tnxPaymentStatus)) {
+        if (transaction?.tnxPaymentStatus && ["Success", "Failed"].includes(transaction.tnxPaymentStatus)) {
             console.log("Already processed transaction:", transaction.tnxOrderId);
             return;
         }
@@ -368,10 +339,9 @@ export const handleBookingPaymentFailure = async (payment: any, orderId: string,
         transaction.initiatedBy = "self";
         transaction.tnxPaymentMethod = payment.method;
         transaction.tnxPaymentTime = new Date(payment.created_at * 1000);
-        transaction.retryCount = retryCount;
         await transaction.save()
 
-        console.log(`✅ Booking payment failed for orderId: ${orderId}, retry count: ${retryCount}`);
+        console.log("✅ Booking failed for orderId:", orderId);
     }
     catch (error) {
         console.error("❌ Error updating booking for orderId:", orderId);
@@ -394,7 +364,7 @@ export const tripCompletedPayment = async (payment: any, orderId: string, notes:
             return;
         }
 
-        if (transaction?.tnxPaymentStatus && ["Success"].includes(transaction.tnxPaymentStatus)) {
+        if (transaction?.tnxPaymentStatus && ["Success", "Failed"].includes(transaction.tnxPaymentStatus)) {
             console.log("Already processed transaction:", transaction.tnxOrderId);
             return;
         }
@@ -580,7 +550,7 @@ export const tripCompletedPayment = async (payment: any, orderId: string, notes:
                     });
                 }
             }
-
+            
             if (adminNotificationResponse.success) {
                 sendNotification(booking.adminId, {
                     notificationId: adminNotificationResponse.notificationId ?? undefined,
@@ -695,7 +665,7 @@ export const tripCompletedPayment = async (payment: any, orderId: string, notes:
                 status: booking.paymentStatus,
                 paymentMethod: booking.paymentMethod,
                 paymentDetails: booking.paymentMethod
-            }, null);
+            })
 
             console.log("invoice response >> ", invoice);
         }
@@ -725,10 +695,7 @@ export const handleTripCompletedPaymentFailure = async (payment: any, orderId: s
             return;
         }
 
-        // Increment retry count for failed payments
-        const retryCount = (transaction.retryCount || 0) + 1;
-
-        if (transaction?.tnxPaymentStatus && ["Success"].includes(transaction.tnxPaymentStatus)) {
+        if (transaction?.tnxPaymentStatus && ["Success", "Failed"].includes(transaction.tnxPaymentStatus)) {
             console.log("Already processed transaction:", transaction.tnxOrderId);
             return;
         }
@@ -742,7 +709,6 @@ export const handleTripCompletedPaymentFailure = async (payment: any, orderId: s
         transaction.initiatedBy = "self";
         transaction.tnxPaymentMethod = payment.method;
         transaction.tnxPaymentTime = new Date(payment.created_at * 1000);
-        transaction.retryCount = retryCount;
         await transaction.save();
 
         if (notes.bookingId) {
@@ -778,7 +744,7 @@ export const handleTripCompletedPaymentFailure = async (payment: any, orderId: s
 
         }
 
-        console.log(`✅ Trip completed payment failed for orderId: ${orderId}, retry count: ${retryCount}`);
+        console.log("✅ Trip completed payment failed for orderId:", orderId);
     }
     catch (error) {
         console.error("❌ Error updating trip completed payment failure for orderId:", orderId);

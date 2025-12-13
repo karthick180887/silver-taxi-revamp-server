@@ -3,10 +3,10 @@ kind: ConfigMap
 metadata:
   name: backend-go-config
 data:
-  PORT: "3060"
+  PORT: "8081"
   NODE_ENV: development
   # External URL for mobile app to access images via API proxy
-  BASE_URL: http://10.81.238.22:30060
+  BASE_URL: http://10.0.6.2:30060
   FRONT_END_BASE_URL: http://localhost:3000
   TZ: UTC
   POSTGRES_DB: MaxPool2
@@ -40,8 +40,8 @@ spec:
     app: backend-go-app
   ports:
     - name: http
-      port: 3060
-      targetPort: 3060
+      port: 8081
+      targetPort: 8081
       nodePort: 30060
 ---
 apiVersion: apps/v1
@@ -49,7 +49,7 @@ kind: Deployment
 metadata:
   name: backend-go-app
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: backend-go-app
@@ -62,8 +62,15 @@ spec:
         - name: app
           image: backend-go:dev
           imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1024Mi"
           ports:
-            - containerPort: 3060
+            - containerPort: 8081
           envFrom:
             - configMapRef:
                 name: backend-go-config
@@ -72,12 +79,12 @@ spec:
           readinessProbe:
             httpGet:
               path: /health/ready
-              port: 3060
+              port: 8081
             periodSeconds: 10
             initialDelaySeconds: 10
           livenessProbe:
             httpGet:
               path: /health/live
-              port: 3060
+              port: 8081
             periodSeconds: 20
             initialDelaySeconds: 20

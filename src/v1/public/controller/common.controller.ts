@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { uploadFileToDOS3 } from "../../../utils/minio.image";
+import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
 import { signInToken } from "../../../common/services/jwt/jwt";
 import { debugLogger as debug } from "../../../utils/logger";
 import { findDistanceAndTime } from "../../../common/functions/distanceAndTime";
@@ -35,7 +35,7 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
         const { nanoid } = await import("nanoid")
         const companyId = nanoid(10);
         const imageBuffer = await fs.readFile(image.path);
-        const imageUrl = await uploadFileToDOS3(imageBuffer, `${pathName ? pathName.trim() : "others"}/${id ? `${id.trim()}/` : ``}${companyId}.webp`);
+        const imageUrl = await uploadFileToMiniIOS3(imageBuffer, `${pathName ? pathName.trim() : "others"}/${id ? `${id.trim()}/` : ``}${companyId}.webp`);
         await fs.unlink(image.path).catch((err: Error) =>
             console.error("Error deleting temporary file:", err)
         );

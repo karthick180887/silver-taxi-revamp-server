@@ -4,7 +4,7 @@ import { Op } from "sequelize";
 import schedule from 'node-schedule';
 import { logger } from "../../../utils/logger";
 import fs from 'fs/promises';
-import { uploadFileToDOS3 } from "../../../utils/minio.image";
+import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
 import { configDotenv } from "dotenv";
 const isValidDate = (date: any): boolean => {
     return date instanceof Date && !isNaN(date.getTime());
@@ -193,7 +193,7 @@ export const createPromoCode = async (req: Request, res: Response) => {
                 const imageBuffer = await fs.readFile(bannerImage.path);
 
                 // Upload to MinIO
-                const imageUrl = await uploadFileToDOS3(imageBuffer, `promo-codes/${newPromoCode.codeId}.webp`);
+                const imageUrl = await uploadFileToMiniIOS3(imageBuffer, `promo-codes/${newPromoCode.codeId}.webp`);
 
                 // Update promo code with image URL
                 newPromoCode.bannerImage = imageUrl ?? '';

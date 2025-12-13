@@ -38,30 +38,64 @@ class _TripSummaryScreenState extends State<TripSummaryScreen> {
       );
 
       if (res.success && res.body['data'] != null) {
-        final tripData = Map<String, dynamic>.from(res.body['data']);
-        // Debug: Print received data to check charges
+        final responseData = Map<String, dynamic>.from(res.body['data']);
+        
+        // Extract tripDetails and tripSummary from nested structure
+        final tripDetails = responseData['tripDetails'] as Map<String, dynamic>? ?? {};
+        final tripSummary = responseData['tripSummary'] as Map<String, dynamic>? ?? {};
+        final customerDetails = responseData['customerDetails'] as Map<String, dynamic>? ?? {};
+        
+        // Merge tripDetails and tripSummary into a single map for TripModel
+        final mergedTripData = <String, dynamic>{
+          ...tripDetails,
+          ...tripSummary,
+          // Ensure bookingId/tripId is present
+          'bookingId': tripDetails['bookingId'] ?? widget.trip.id,
+          'tripId': tripDetails['bookingId'] ?? widget.trip.id,
+          // Map customer details
+          'customerName': customerDetails['name'] ?? '',
+          'customerPhone': customerDetails['phone'] ?? '',
+          // Map distance from tripDetails or tripSummary
+          'distance': tripDetails['distance'] ?? tripSummary['totalKm'] ?? tripDetails['tripCompletedDistance'],
+          // Map fare from tripDetails or tripSummary
+          'fare': tripDetails['finalAmount'] ?? tripSummary['finalAmount'] ?? tripDetails['tripCompletedFinalAmount'],
+          // Map duration
+          'duration': tripDetails['duration'] ?? tripSummary['duration'],
+          // Map base rate
+          'baseRatePerKm': tripDetails['pricePerKm'] ?? tripSummary['pricePerKm'],
+          'vehicleBaseRate': tripSummary['baseFare'] ?? tripDetails['estimatedAmount'],
+          // Map extra charges from tripDetails or tripSummary
+          'extraCharges': tripDetails['extraCharges'] ?? tripSummary['additionalCharges'] ?? {},
+          // Map individual charges if available
+          'hillCharge': tripDetails['extraHill'] ?? tripSummary['hillCharge'],
+          'tollCharge': tripDetails['extraToll'] ?? tripSummary['tollCharge'],
+          'permitCharge': tripDetails['extraPermitCharge'] ?? tripSummary['permitCharge'],
+          // Status
+          'status': tripDetails['status'] ?? tripDetails['paymentStatus'] ?? widget.trip.status,
+        };
+        
+        // Debug: Print received data
         _log('[TripSummary] ========================================');
-        _log('[TripSummary] Received trip data keys: ${tripData.keys.toList()}');
-        _log('[TripSummary] ExtraCharges: ${tripData['extraCharges']}');
-        _log('[TripSummary] HillCharge: ${tripData['hillCharge']} (type: ${tripData['hillCharge'].runtimeType})');
-        _log('[TripSummary] TollCharge: ${tripData['tollCharge']} (type: ${tripData['tollCharge'].runtimeType})');
-        _log('[TripSummary] PetCharge: ${tripData['petCharge']}');
-        _log('[TripSummary] PermitCharge: ${tripData['permitCharge']}');
-        _log('[TripSummary] ParkingCharge: ${tripData['parkingCharge']}');
-        _log('[TripSummary] WaitingCharge: ${tripData['waitingCharge']}');
-        _log('[TripSummary] Full trip data: $tripData');
+        _log('[TripSummary] Response keys: ${responseData.keys.toList()}');
+        _log('[TripSummary] TripDetails keys: ${tripDetails.keys.toList()}');
+        _log('[TripSummary] TripSummary keys: ${tripSummary.keys.toList()}');
+        _log('[TripSummary] Merged trip data keys: ${mergedTripData.keys.toList()}');
+        _log('[TripSummary] Booking ID: ${mergedTripData['bookingId']}');
+        _log('[TripSummary] Distance: ${mergedTripData['distance']}');
+        _log('[TripSummary] Fare: ${mergedTripData['fare']}');
+        _log('[TripSummary] Pickup: ${mergedTripData['pickup']}');
+        _log('[TripSummary] Drop: ${mergedTripData['drop']}');
+        
         setState(() {
-          _trip = TripModel.fromJson(tripData);
+          _trip = TripModel.fromJson(mergedTripData);
           _loading = false;
         });
-        // Debug: Print parsed charges
-        _log('[TripSummary] Parsed charges:');
-        _log('[TripSummary]   - hillCharge: ${_trip?.hillCharge}');
-        _log('[TripSummary]   - tollCharge: ${_trip?.tollCharge}');
-        _log('[TripSummary]   - petCharge: ${_trip?.petCharge}');
-        _log('[TripSummary]   - permitCharge: ${_trip?.permitCharge}');
-        _log('[TripSummary]   - parkingCharge: ${_trip?.parkingCharge}');
-        _log('[TripSummary]   - waitingCharge: ${_trip?.waitingCharge}');
+        
+        _log('[TripSummary] Parsed trip ID: ${_trip?.id}');
+        _log('[TripSummary] Parsed distance: ${_trip?.distance}');
+        _log('[TripSummary] Parsed fare: ${_trip?.fare}');
+        _log('[TripSummary] Parsed pickup: ${_trip?.pickup.address}');
+        _log('[TripSummary] Parsed drop: ${_trip?.drop.address}');
         _log('[TripSummary] ========================================');
       } else {
         setState(() {
@@ -147,7 +181,7 @@ class _TripSummaryScreenState extends State<TripSummaryScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Trip #${trip.id.substring(0, 8)}',
+                  'Trip #${trip.id.length > 8 ? trip.id.substring(0, 8) : trip.id}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,

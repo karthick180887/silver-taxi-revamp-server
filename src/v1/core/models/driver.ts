@@ -178,17 +178,14 @@ Driver.init(
         address: {
             type: DataTypes.STRING(255),
             allowNull: true,
-            defaultValue: null,
         },
         gender: {
             type: DataTypes.ENUM("Male", "Female", "Other"),
             allowNull: true,
-            defaultValue: null,
         },
         dateOfBirth: {
             type: DataTypes.DATE,
             allowNull: true,
-            defaultValue: null,
         },
         assigned: {
             type: DataTypes.BOOLEAN,
@@ -213,37 +210,30 @@ Driver.init(
         driverImageUrl: {
             type: DataTypes.TEXT,
             allowNull: true,
-            defaultValue: null,
         },
         panCardImage: {
             type: DataTypes.TEXT,
             allowNull: true,
-            defaultValue: null,
         },
         aadharImageFront: {
             type: DataTypes.TEXT,
             allowNull: true,
-            defaultValue: null,
         },
         aadharImageBack: {
             type: DataTypes.TEXT,
             allowNull: true,
-            defaultValue: null,
         },
         licenseImageFront: {
             type: DataTypes.TEXT,
             allowNull: true,
-            defaultValue: null,
         },
         licenseImageBack: {
             type: DataTypes.TEXT,
             allowNull: true,
-            defaultValue: null,
         },
         licenseValidity: {
             type: DataTypes.DATE,
             allowNull: true,
-            defaultValue: null,
         },
         vehicleId: {
             type: DataTypes.STRING(255),
@@ -361,17 +351,14 @@ Driver.init(
         state: {
             type: DataTypes.STRING(255),
             allowNull: true,
-            defaultValue: null,
         },
         city: {
             type: DataTypes.STRING(255),
             allowNull: true,
-            defaultValue:null,
         },
         pinCode: {
             type: DataTypes.STRING(255),
             allowNull: true,
-            defaultValue: null,
         },
         isUpdated: {
             type: DataTypes.BOOLEAN,
@@ -425,43 +412,11 @@ Driver.init(
                 unique: true,
                 fields: ["driverId", "adminId", "walletId", "referralCode"],
             },
-            // Common query patterns
             {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "isActive", "createdAt"], // active drivers with pagination
-            },
-            {
-                fields: ["adminId", "isActive"], // active drivers
-            },
-            {
-                fields: ["adminId", "isOnline", "createdAt"], // online drivers with pagination
-            },
-            {
-                fields: ["adminId", "isOnline"], // online drivers
-            },
-            {
-                fields: ["adminId", "adminVerified", "createdAt"], // verification status
-            },
-            {
-                fields: ["adminId", "adminVerified"], // verification status
-            },
-            {
-                fields: ["phone"], // phone search (already unique but index helps with LIKE queries)
-            },
-            {
-                fields: ["name"], // name search
-            },
-            {
-                fields: ["driverId"], // driverId lookup
-            },
-            {
-                fields: ["referralCode"], // referral code lookup (already unique)
-            },
-            {
-                fields: ["vehicleId"], // vehicle lookup
-            },
+               fields:["geoLocation"],
+               using:"GIN",
+               name:"idx_geo_location"
+            }
         ],
         comment: "Table for drivers",
     }

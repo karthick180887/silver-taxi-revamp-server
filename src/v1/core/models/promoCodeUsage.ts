@@ -105,33 +105,9 @@ PromoCodeUsage.init({
     timestamps: true,
     paranoid: true,
     indexes: [
-        // Unique constraint
-        {
-            unique: true,
-            fields: ["promoCodeUsageId"],
-        },
         {
             unique: true,
             fields: ["promoCodeUsageId", "bookingId"],
-        },
-        // Common query patterns - optimized for high concurrency
-        {
-            fields: ['adminId', 'createdAt'], // pagination queries
-        },
-        {
-            fields: ['adminId', 'codeId', 'createdAt'], // promo code usage with pagination
-        },
-        {
-            fields: ['customerId', 'createdAt'], // customer promo usage
-        },
-        {
-            fields: ['bookingId'], // booking lookup
-        },
-        {
-            fields: ['codeId'], // promo code lookup
-        },
-        {
-            fields: ['promoCode'], // promo code search
         },
     ],
 });

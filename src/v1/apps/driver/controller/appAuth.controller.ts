@@ -11,7 +11,6 @@ import { updateWithDocumentStatus } from "../../../core/function/driverFunctions
 import { phoneNumberSchema, signUpSchema, step1Schema, step2Schema, step3Schema, step4Schema } from "../../../../common/validations/driverSchema";
 import { debugLogger as debug, infoLogger as log } from "../../../../utils/logger";
 import { generateReferralCode } from "../../../core/function/referCode";
-import { setRedisDrivers } from "../../../../utils/redis.configs";
 
 const sms = SMSService();
 
@@ -81,30 +80,11 @@ export const accessToken = async (req: Request, res: Response) => {
 
         const accessToken = await generatedDriverToken(adminId, driverId, username);
 
-        const driver = await Driver.findOne({
-            where: {
-                adminId,
-                driverId,
-            },
-            attributes: ['adminVerified', 'driverId', 'name'],
-        });
-
-        if (!driver) {
-            res.status(404).json({
-                success: false,
-                message: "Driver not found",
-            });
-            return;
-        }
-
-        const isDocumentsVerified = driver.adminVerified === "Approved";
-
         res.status(200).json({
             success: true,
             message: "Access token generated successfully",
             data: {
-                token: accessToken,
-                isDocumentsVerified
+                token: accessToken
             },
         });
 
@@ -192,7 +172,10 @@ export const driverLogin = async (req: Request, res: Response): Promise<void> =>
     try {
         switch (type.toLowerCase()) {
             case "send":
-                const driver = await Driver.findOne({ where: { adminId, phone } });
+                const sendWhere: any = { phone };
+                if (adminId) sendWhere.adminId = adminId;
+
+                const driver = await Driver.findOne({ where: sendWhere });
                 if (!driver) {
                     res.status(404).json({
                         success: false,
@@ -263,11 +246,12 @@ export const driverLogin = async (req: Request, res: Response): Promise<void> =>
                 }
 
                 const id = driverId || smsResponse.id;
+
+                const verifyWhere: any = { driverId: id };
+                if (adminId) verifyWhere.adminId = adminId;
+
                 const driverData = await Driver.findOne({
-                    where: {
-                        adminId,
-                        driverId: id
-                    },
+                    where: verifyWhere,
                     attributes: { exclude: ['updatedAt', 'deletedAt'] },
                     include: [
                         {
@@ -475,22 +459,8 @@ export const driverSignup = async (req: Request, res: Response): Promise<void> =
                     driver.walletId = wallet.walletId;
                     await driver.save({ transaction: t });
 
-                    await setRedisDrivers(driver.adminId, driver.driverId, {
-                        driverId: driver.driverId,
-                        adminId: driver.adminId,
-                        name: driver.name,
-                        phone: driver.phone,
-                        adminVerified: "Pending",
-                        geoLocation: null,
-                        isActive: false,
-                        fcmToken: driver.fcmToken,
-                        walletId: driver.walletId,
-                    });
-
                     return { driver, wallet };
                 });
-
-
 
                 const authToken = await generatedDriverToken(
                     result.driver.adminId,
@@ -573,7 +543,7 @@ export const driverSignupSteps = async (req: Request, res: Response): Promise<vo
                 }
 
 
-                const allowedFields = ["name", "phone"];
+                const allowedFields = ["name", "phone", "address", "gender", "dateOfBirth", "state", "city", "pinCode"];
                 const incomingData = allowedFields.reduce((acc, key) => {
                     if (req.body[key] !== undefined) acc[key] = req.body[key];
                     return acc;
@@ -600,11 +570,7 @@ export const driverSignupSteps = async (req: Request, res: Response): Promise<vo
                     await driver.save();
                 }
 
-                res.status(200).json({
-                    success: true,
-                    message: "Driver basic info processed",
-                    data: driver
-                });
+                res.status(200).json({ success: true, message: "Driver basic info processed", data: driver });
                 log.info(`Driver signup for adminId: ${adminId} step ${step} exit <<`);
                 return;
             }
@@ -618,7 +584,7 @@ export const driverSignupSteps = async (req: Request, res: Response): Promise<vo
                     return;
                 }
 
-                const allowedFields = ["vehicleType", "vehicleNumber", "fuelType"];
+                const allowedFields = ["vehicleName", "vehicleType", "vehicleNumber", "vehicleYear", "fuelType"];
 
                 const incomingData = allowedFields.reduce((acc, key) => {
                     if (req.body[key] !== undefined) acc[key] = req.body[key];
@@ -639,15 +605,15 @@ export const driverSignupSteps = async (req: Request, res: Response): Promise<vo
                         return;
                     }
 
-                    // Use vehicleType as name since database requires name field to be NOT NULL
                     const createVehicle = await Vehicle.create({
                         adminId,
                         driverId,
                         isActive: true,
                         isAdminVehicle: false,
-                        name: incomingData.vehicleType,
+                        name: incomingData.vehicleName,
                         type: incomingData.vehicleType,
                         vehicleNumber: incomingData.vehicleNumber,
+                        vehicleYear: incomingData.vehicleYear,
                         fuelType: incomingData.fuelType
                     })
 

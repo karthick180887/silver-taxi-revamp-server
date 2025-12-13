@@ -11,6 +11,7 @@ import '../services/trip_service.dart';
 import 'payment_details_page.dart';
 import 'payment_processing_page.dart';
 import 'wallet_page.dart';
+import 'all_trips_page.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({
@@ -609,7 +610,14 @@ class _HomeTabState extends State<HomeTab> {
                       Colors.orange.shade400,
                       Colors.orange.shade50,
                       const Color(0xFFFF6B35),
-                      () => widget.onNavigate(1, subTabIndex: 0),
+                      () {
+                        // Navigate to new page showing all trips
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AllTripsPage(token: widget.token),
+                          ),
+                        );
+                      },
                     ),
                     _buildStatCard(
                       'Upcoming',

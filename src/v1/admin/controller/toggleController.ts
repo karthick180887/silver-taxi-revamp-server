@@ -126,10 +126,7 @@ export const getColumnVisibilityController = async (req: Request, res: Response)
         const columnVisibility = await TableConfig.findOne({
             where: {
                 adminId,
-                pageName: table,
-            },
-            attributes: {
-                exclude: ['id', 'createdAt', 'updatedAt', 'deletedAt']
+                pageName: table
             }
         });
 

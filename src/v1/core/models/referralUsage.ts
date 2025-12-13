@@ -114,39 +114,9 @@ ReferralUsage.init({
     timestamps: true,
     paranoid: true,
     indexes: [
-        // Unique constraint
         {
-            unique: true,
-            fields: ['referralUsageId'],
-        },
-        {
-            unique: true,
             fields: ['adminId', 'referralUsageId'],
-        },
-        // Common query patterns - optimized for high concurrency
-        {
-            fields: ['adminId', 'createdAt'], // pagination queries
-        },
-        {
-            fields: ['adminId', 'status', 'createdAt'], // filter by status with pagination
-        },
-        {
-            fields: ['adminId', 'status'], // filter by status
-        },
-        {
-            fields: ['referralCode', 'createdAt'], // referral code usage
-        },
-        {
-            fields: ['senderId', 'createdAt'], // sender referral history
-        },
-        {
-            fields: ['receiverId', 'createdAt'], // receiver referral history
-        },
-        {
-            fields: ['referrerType', 'createdAt'], // filter by referrer type
-        },
-        {
-            fields: ['status'], // status filtering
+            unique: true,
         },
     ],
 });

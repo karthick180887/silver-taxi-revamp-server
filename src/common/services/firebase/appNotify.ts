@@ -7,6 +7,7 @@ interface NotificationPayload {
   ids: any;
   data?: Record<string, string>;
   image?: string;
+  priority?: 'high' | 'normal';
 }
 
 // Track sent notifications to prevent duplicates
@@ -48,6 +49,9 @@ export const sendToSingleToken = async (token: string, payload: NotificationPayl
       } : {},
       data: payload.data || {},
       token,
+      android: {
+        priority: payload.priority || 'high',
+      }
     };
 
     // console.log("Sending notification to app >> :", message);
@@ -210,7 +214,7 @@ const sendBatch = async (tokens: string[], payload: NotificationPayload) => {
 
     const messaging = admin.messaging();
     const response: BatchResponse = await messaging.sendEachForMulticast(message);
-    
+
     // Extract invalid tokens for cleanup
     const invalidTokens: string[] = [];
     response.responses.forEach((resp, idx: number) => {
@@ -250,7 +254,7 @@ export const sendBatchNotifications = async (
   try {
     // Filter out empty tokens
     const validTokens = tokens.filter(token => token && token.trim() !== '');
-    
+
     if (validTokens.length === 0) {
       console.error("No valid FCM tokens provided for batch send");
       return {
@@ -268,12 +272,12 @@ export const sendBatchNotifications = async (
 
     // Simple concurrency limiter
     const pool = new Array(CONCURRENCY).fill(Promise.resolve());
-    
+
     const worker = async () => {
       while (cursor < batches.length) {
         const batchIndex = cursor++;
         const batchTokens = batches[batchIndex];
-        
+
         try {
           const res = await sendBatch(batchTokens, payload);
           results.push({ batchIndex, ...res });

@@ -12,7 +12,7 @@ export interface InvoiceResponse {
 
 
 
-export const createInvoice = async (data: any, invoiceId: string | null): Promise<InvoiceResponse> => {
+export const createInvoice = async (data: any): Promise<InvoiceResponse> => {
     try {
 
         const {
@@ -113,57 +113,6 @@ export const createInvoice = async (data: any, invoiceId: string | null): Promis
         const paymentType: "Wallet" | "UPI" | "Bank" | "Cash" | "Card" =
             (paymentMethodsObj[methodKey] as "Wallet" | "UPI" | "Bank" | "Cash" | "Card") || "UPI";
 
-
-        if (invoiceId) {
-            const invoice = await Invoice.findOne({
-                where: { bookingId: bookingId, adminId },
-            })
-
-            if (!invoice) {
-               console.log("Invoice not found");
-                return {
-                    success: false,
-                    message: "Invoice not found",
-                };
-            }
-
-            const updateInvoice = await invoice.update({
-                adminId,
-                vendorId: createdBy === "Vendor" ? vendorId : null,
-                bookingId,
-                companyId: companyId ?? company?.companyId,
-                invoiceNo: invoiceNo ?? optionalInvoiceNo,
-                invoiceDate: invoiceDateObj,
-                name,
-                phone,
-                email,
-                serviceType,
-                vehicleType,
-                totalKm,
-                pricePerKm,
-                travelTime,
-                address,
-                GSTNumber,
-                pickup: pickup ?? null,
-                drop: drop ?? null,
-                estimatedAmount,
-                advanceAmount,
-                totalAmount,
-                otherCharges,
-                paymentDetails,
-                paymentMethod: paymentType ?? "UPI",
-                createdBy: createdBy === "User" ? "Admin" : createdBy ?? "Admin",
-                status: status ?? "Unpaid",
-                note
-            });
-            updateInvoice.save();
-
-            return {
-                success: true,
-                message: "Invoice updated successfully",
-                data: updateInvoice,
-            };
-        }
 
         const newInvoice = await Invoice.create({
             adminId,

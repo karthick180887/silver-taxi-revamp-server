@@ -129,35 +129,15 @@ DayPackage.init(
         tableName: "day_packages",
         timestamps: true,
         indexes: [
-            // Unique constraint on packageId only (the 7-column unique was inefficient)
             {
                 unique: true,
-                fields: ["packageId"],
-            },
-            // Common query patterns - optimized for high concurrency
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "status", "createdAt"], // status filtering with pagination
-            },
-            {
-                fields: ["adminId", "status"], // status filtering
-            },
-            {
-                fields: ["adminId", "vendorId", "createdAt"], // vendor packages with pagination
-            },
-            {
-                fields: ["adminId", "vendorId"], // vendor packages
-            },
-            {
-                fields: ["adminId", "serviceId", "vehicleId", "status"], // service and vehicle lookup (most common for pricing)
-            },
-            {
-                fields: ["adminId", "serviceId", "vehicleId"], // service and vehicle lookup
-            },
-            {
-                fields: ["adminId", "noOfDays", "distanceLimit"], // package lookup by days and distance
+                fields: [
+                    "serviceId",
+                    "packageId",
+                    "adminId",
+                    "vehicleId",
+                    "createdBy",
+                    "vendorId", "status"],
             },
         ],
         comment: "Table for storing day packages",

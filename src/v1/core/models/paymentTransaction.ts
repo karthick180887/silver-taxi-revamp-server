@@ -154,40 +154,6 @@ PaymentTransaction.init(
                 unique: true,
                 fields: ["gatewayTransactionId", "transactionId", "adminId", "senderId", "receiverId"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "status", "createdAt"], // status filtering with pagination
-            },
-            {
-                fields: ["adminId", "status"], // status filtering
-            },
-            {
-                fields: ["senderId", "createdAt"], // sender transactions with pagination
-            },
-            {
-                fields: ["senderId"], // sender transactions
-            },
-            {
-                fields: ["receiverId", "createdAt"], // receiver transactions with pagination
-            },
-            {
-                fields: ["receiverId"], // receiver transactions
-            },
-            {
-                fields: ["transactionId"], // transaction lookup (already in unique but separate for faster lookups)
-            },
-            {
-                fields: ["gatewayTransactionId"], // gateway transaction lookup
-            },
-            {
-                fields: ["sender"], // sender type filtering
-            },
-            {
-                fields: ["transactionType"], // transaction type filtering
-            },
         ],
     }
 );

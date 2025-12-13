@@ -111,38 +111,6 @@ BookingActivityLog.init(
         tableName: 'booking_activity_logs',
         timestamps: true,
         paranoid: true,
-        indexes: [
-            // Unique constraint
-            {
-                unique: true,
-                fields: ['eventId'],
-            },
-            // Common query patterns - optimized for high concurrency
-            {
-                fields: ['bookingId', 'createdAt'], // booking activity logs with pagination
-            },
-            {
-                fields: ['bookingId', 'eventDateTime'], // booking activity by date
-            },
-            {
-                fields: ['bookingId', 'type', 'createdAt'], // filter by activity type
-            },
-            {
-                fields: ['bookingId', 'level', 'createdAt'], // filter by log level (errors, warnings)
-            },
-            {
-                fields: ['adminId', 'createdAt'], // admin view of all logs
-            },
-            {
-                fields: ['eventDateTime'], // date range queries
-            },
-            {
-                fields: ['type'], // activity type filtering
-            },
-            {
-                fields: ['level'], // log level filtering (for error monitoring)
-            },
-        ],
     }
 );
 

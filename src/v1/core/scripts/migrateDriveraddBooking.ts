@@ -68,14 +68,16 @@ async function updateBookingsWithDriverInfo() {
                 }
 
                 // Check if update is needed
-                if (booking.driverName === driverInfo.name && booking.driverPhone === driverInfo.phone) {
+                // Explicitly cast to any to access potentially raw properties from query
+                const b = booking as any;
+                if (b.driverName === driverInfo.name && b.driverPhone === driverInfo.phone) {
                     skippedCount++;
                     continue;
                 }
 
                 // Update booking
                 await sequelize.transaction(async (t: Transaction) => {
-                    await booking.update({
+                    await (booking as any).update({
                         driverName: driverInfo.name,
                         driverPhone: driverInfo.phone
                     }, { transaction: t });

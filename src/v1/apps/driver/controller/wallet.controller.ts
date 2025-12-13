@@ -168,13 +168,6 @@ export const addWalletAmount = async (req: Request, res: Response) => {
 
         console.log("Order created: >> ", order);
 
-        const fareBreakup = {
-            previousWalletBalance: wallet.balance,
-            amount: amount,
-            prefix: "+",
-            postWalletBalance: wallet.balance + amount,
-        }
-
         const transaction = await WalletTransaction.create({
             adminId: driver.adminId,
             transactionId: customId,
@@ -190,7 +183,6 @@ export const addWalletAmount = async (req: Request, res: Response) => {
             remark: remark ?? null,
             tnxOrderId: order.id,
             tnxPaymentStatus: "Pending",
-            fareBreakdown: fareBreakup,
         });
 
         await transaction.save();

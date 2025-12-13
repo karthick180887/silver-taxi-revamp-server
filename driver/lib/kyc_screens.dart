@@ -111,10 +111,18 @@ class _VerificationDashboardState extends State<VerificationDashboard> {
 
   bool _isPersonalDocsCompleted() {
     if (_driverData == null) return false;
-    final docs = _driverData!['documents'];
-    if (docs == null || docs is! Map) return false;
-    return docs['panCard'] != null && docs['panCard'].toString().isNotEmpty &&
-           docs['dlFront'] != null && docs['dlFront'].toString().isNotEmpty;
+    // Backend stores documents with field names: panCardImage, licenseImageFront, licenseImageBack, driverImageUrl
+    // Check for backend field names (primary) and Flutter field names (fallback for backward compatibility)
+    final panCard = _driverData!['panCardImage'] ?? _driverData!['panCard'];
+    final dlFront = _driverData!['licenseImageFront'] ?? _driverData!['dlFront'];
+    final dlBack = _driverData!['licenseImageBack'] ?? _driverData!['dlBack'];
+    final photo = _driverData!['driverImageUrl'] ?? _driverData!['driverCurrentPhoto'];
+    
+    // All four documents must be present and non-empty
+    return panCard != null && panCard.toString().isNotEmpty &&
+           dlFront != null && dlFront.toString().isNotEmpty &&
+           dlBack != null && dlBack.toString().isNotEmpty &&
+           photo != null && photo.toString().isNotEmpty;
   }
 
   bool _isVehicleDetailsCompleted() {
@@ -124,10 +132,18 @@ class _VerificationDashboardState extends State<VerificationDashboard> {
   bool _isVehicleDocsCompleted() {
     if (_vehicles.isEmpty) return false;
     final v = _vehicles.first; // Assuming single vehicle for now
-    final docs = v['documents'];
-    if (docs == null || docs is! Map) return false;
-    return docs['rcFront'] != null && docs['rcFront'].toString().isNotEmpty &&
-           docs['insuranceDoc'] != null && docs['insuranceDoc'].toString().isNotEmpty;
+    // Backend stores documents directly on vehicle object with field names:
+    // rcBookImageFront, rcBookImageBack, insuranceImage, pollutionImage
+    final rcFront = v['rcBookImageFront'] ?? v['rcFront'];
+    final rcBack = v['rcBookImageBack'] ?? v['rcBack'];
+    final insurance = v['insuranceImage'] ?? v['insuranceDoc'];
+    final pollution = v['pollutionImage'] ?? v['pollutionDoc'];
+    
+    // All four documents must be present and non-empty
+    return rcFront != null && rcFront.toString().isNotEmpty &&
+           rcBack != null && rcBack.toString().isNotEmpty &&
+           insurance != null && insurance.toString().isNotEmpty &&
+           pollution != null && pollution.toString().isNotEmpty;
   }
 
   Future<void> _submitKYC() async {
@@ -221,7 +237,8 @@ class _VerificationDashboardState extends State<VerificationDashboard> {
                 return;
               }
               await Navigator.push(context, MaterialPageRoute(builder: (_) => VehicleDocumentsScreen(token: widget.token, vehicle: _vehicles.first)));
-              _fetchData();
+              // Refresh data after returning from vehicle documents screen to update completion status
+              await _fetchData();
             }),
             const SizedBox(height: 24),
             ElevatedButton(
@@ -402,12 +419,28 @@ class _PersonalDocumentsScreenState extends State<PersonalDocumentsScreen> {
   void initState() {
     super.initState();
     _api = ApiClient(baseUrl: kApiBaseUrl);
-    final docs = widget.data?['documents'] ?? {};
-    _panUrl = docs['panCard'];
-    _dlFrontUrl = docs['dlFront'];
-    _dlBackUrl = docs['dlBack'];
-    _photoUrl = docs['driverCurrentPhoto'];
-    _dlExpiryCtrl = TextEditingController(text: docs['dlExpiry']);
+    // Backend stores documents directly on driver object with field names: panCardImage, licenseImageFront, licenseImageBack, driverImageUrl
+    // Check for backend field names (primary) and Flutter field names (fallback for backward compatibility)
+    _panUrl = widget.data?['panCardImage'] ?? widget.data?['panCard'];
+    _dlFrontUrl = widget.data?['licenseImageFront'] ?? widget.data?['dlFront'];
+    _dlBackUrl = widget.data?['licenseImageBack'] ?? widget.data?['dlBack'];
+    _photoUrl = widget.data?['driverImageUrl'] ?? widget.data?['driverCurrentPhoto'];
+    _dlExpiryCtrl = TextEditingController(text: widget.data?['licenseValidity'] ?? widget.data?['dlExpiry'] ?? '');
+    
+    debugPrint('[PersonalDocuments] Initialized with driver data:');
+    debugPrint('[PersonalDocuments] - panCardImage: ${widget.data?['panCardImage']}');
+    debugPrint('[PersonalDocuments] - panCard: ${widget.data?['panCard']}');
+    debugPrint('[PersonalDocuments] - licenseImageFront: ${widget.data?['licenseImageFront']}');
+    debugPrint('[PersonalDocuments] - dlFront: ${widget.data?['dlFront']}');
+    debugPrint('[PersonalDocuments] - licenseImageBack: ${widget.data?['licenseImageBack']}');
+    debugPrint('[PersonalDocuments] - dlBack: ${widget.data?['dlBack']}');
+    debugPrint('[PersonalDocuments] - driverImageUrl: ${widget.data?['driverImageUrl']}');
+    debugPrint('[PersonalDocuments] - driverCurrentPhoto: ${widget.data?['driverCurrentPhoto']}');
+    debugPrint('[PersonalDocuments] Final URLs:');
+    debugPrint('[PersonalDocuments] - PAN: $_panUrl');
+    debugPrint('[PersonalDocuments] - DL Front: $_dlFrontUrl');
+    debugPrint('[PersonalDocuments] - DL Back: $_dlBackUrl');
+    debugPrint('[PersonalDocuments] - Photo: $_photoUrl');
   }
 
   Future<void> _upload(String type, Function(String) onUrl) async {
@@ -416,13 +449,57 @@ class _PersonalDocumentsScreenState extends State<PersonalDocumentsScreen> {
     setState(() => _loading = true);
     try {
       final res = await _api.uploadImage(token: widget.token, filePath: image.path, type: type);
+      debugPrint('[PersonalDocuments] Upload response: success=${res.success}, statusCode=${res.statusCode}');
+      debugPrint('[PersonalDocuments] res.data type: ${res.data.runtimeType}');
+      debugPrint('[PersonalDocuments] res.data: $res.data');
+      debugPrint('[PersonalDocuments] res.body type: ${res.body.runtimeType}');
+      debugPrint('[PersonalDocuments] res.body: $res.body');
+      
       if (res.success) {
-        setState(() => onUrl(res.data['url']));
+        // Backend returns: { success: true, message: "...", data: "https://..." }
+        // res.data is the entire response object, so we need res.data['data']
+        String? imageUrl;
+        
+        if (res.data is Map) {
+          // Try to get URL from response data
+          final dataMap = res.data as Map;
+          imageUrl = dataMap['data']?.toString() ?? dataMap['url']?.toString();
+          debugPrint('[PersonalDocuments] Extracted URL from res.data: $imageUrl');
+        } else if (res.data is String) {
+          // If data is directly a string (unlikely but handle it)
+          imageUrl = res.data as String;
+          debugPrint('[PersonalDocuments] res.data is String: $imageUrl');
+        }
+        
+        // Fallback to res.body
+        if ((imageUrl == null || imageUrl.isEmpty) && res.body is Map) {
+          imageUrl = res.body['data']?.toString();
+          debugPrint('[PersonalDocuments] Extracted URL from res.body: $imageUrl');
+        }
+        
+        if (imageUrl == null || imageUrl.isEmpty) {
+          debugPrint('[PersonalDocuments] ❌ Failed to extract URL. res.data: $res.data, res.body: $res.body');
+          throw Exception('Failed to get image URL from response. Please try again.');
+        }
+        
+        debugPrint('[PersonalDocuments] ✅ Final image URL: $imageUrl');
+        setState(() => onUrl(imageUrl!));
       } else {
-        throw Exception(res.body['message']);
+        final errorMsg = res.body is Map ? (res.body['message'] ?? res.message) : res.message;
+        debugPrint('[PersonalDocuments] ❌ Upload failed: $errorMsg');
+        throw Exception(errorMsg);
       }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    } catch (e, stackTrace) {
+      debugPrint('[PersonalDocuments] ❌ Exception during upload: $e');
+      debugPrint('[PersonalDocuments] Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: ${e.toString().replaceAll('Exception: ', '')}'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -450,6 +527,12 @@ class _PersonalDocumentsScreenState extends State<PersonalDocumentsScreen> {
     }
     setState(() => _loading = true);
     try {
+      debugPrint('[PersonalDocuments] Submitting documents...');
+      debugPrint('[PersonalDocuments] PAN URL: $_panUrl');
+      debugPrint('[PersonalDocuments] DL Front URL: $_dlFrontUrl');
+      debugPrint('[PersonalDocuments] DL Back URL: $_dlBackUrl');
+      debugPrint('[PersonalDocuments] Photo URL: $_photoUrl');
+      
       final res = await _api.updatePersonalDocuments(token: widget.token, data: {
         'panCard': _panUrl,
         'dlFront': _dlFrontUrl,
@@ -457,13 +540,28 @@ class _PersonalDocumentsScreenState extends State<PersonalDocumentsScreen> {
         'dlExpiry': _dlExpiryCtrl.text,
         'driverCurrentPhoto': _photoUrl,
       });
+      
+      debugPrint('[PersonalDocuments] Submit response: success=${res.success}, statusCode=${res.statusCode}');
+      debugPrint('[PersonalDocuments] Submit response body: ${res.body}');
+      
       if (res.success) {
         if (mounted) Navigator.pop(context);
       } else {
-        throw Exception(res.body['message']);
+        final errorMsg = res.body is Map ? (res.body['message'] ?? res.message) : res.message;
+        debugPrint('[PersonalDocuments] ❌ Submit failed: $errorMsg');
+        throw Exception(errorMsg);
       }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } catch (e, stackTrace) {
+      debugPrint('[PersonalDocuments] ❌ Exception during submit: $e');
+      debugPrint('[PersonalDocuments] Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString().replaceAll('Exception: ', '')}'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -496,27 +594,48 @@ class _PersonalDocumentsScreenState extends State<PersonalDocumentsScreen> {
             child: hasImage 
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(11),
-                  child: Image.network(
-                    transformImageUrl(url),
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
-                        child: CircularProgressIndicator(
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                              : null,
-                        ),
+                  child: Builder(
+                    builder: (context) {
+                      final imageUrl = transformImageUrl(url);
+                      debugPrint('[PersonalDocuments] Loading image for "$label"');
+                      debugPrint('[PersonalDocuments] Original URL: $url');
+                      debugPrint('[PersonalDocuments] Transformed URL: $imageUrl');
+                      return Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        headers: {
+                          'Accept': 'image/*',
+                        },
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) {
+                            debugPrint('[PersonalDocuments] ✅ Image loaded successfully: $imageUrl');
+                            return child;
+                          }
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          debugPrint('[PersonalDocuments] ❌ Image load failed for "$label"');
+                          debugPrint('[PersonalDocuments] URL: $imageUrl');
+                          debugPrint('[PersonalDocuments] Error: $error');
+                          debugPrint('[PersonalDocuments] Error type: ${error.runtimeType}');
+                          debugPrint('[PersonalDocuments] StackTrace: $stackTrace');
+                          return Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.broken_image, size: 40, color: Colors.red),
+                              const SizedBox(height: 4),
+                              Text('Failed to load', style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
+                            ],
+                          );
+                        },
                       );
                     },
-                    errorBuilder: (_, __, ___) => Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.broken_image, size: 40, color: Colors.red),
-                        const SizedBox(height: 4),
-                        Text('Failed to load', style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
-                      ],
-                    ),
                   ),
                 )
               : Column(
@@ -637,9 +756,14 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
     _api = ApiClient(baseUrl: kApiBaseUrl);
     if (widget.existingVehicles.isNotEmpty) {
       final v = widget.existingVehicles.first;
-      _modelCtrl = TextEditingController(text: v['model']);
-      _plateCtrl = TextEditingController(text: v['licensePlate']);
-      _selectedType = v['vehicleTypeId'];
+      _modelCtrl = TextEditingController(text: v['model']?.toString() ?? '');
+      _plateCtrl = TextEditingController(text: v['licensePlate']?.toString() ?? v['license_plate']?.toString() ?? '');
+      // Backend uses vTypeId for vehicle types, but vehicles might store vehicleTypeId
+      _selectedType = v['vehicleTypeId']?.toString() ?? 
+                     v['vehicle_type_id']?.toString() ?? 
+                     v['vTypeId']?.toString() ??
+                     v['v_type_id']?.toString() ??
+                     v['typeId']?.toString();
     } else {
       _modelCtrl = TextEditingController();
       _plateCtrl = TextEditingController();
@@ -650,18 +774,44 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
   Future<void> _fetchTypes() async {
     try {
       final res = await _api.getVehicleTypes(token: widget.token);
+      debugPrint('[VehicleDetails] Fetching vehicle types...');
+      debugPrint('[VehicleDetails] Response success: ${res.success}');
+      debugPrint('[VehicleDetails] Response body: ${res.body}');
+      debugPrint('[VehicleDetails] Response data: ${res.data}');
+      
       if (res.success) {
-        final typeData = res.body['data'];
+        // Try multiple possible data locations
+        dynamic typeData = res.body['data'] ?? res.body['types'] ?? res.body['vehicleTypes'] ?? res.data;
+        
+        debugPrint('[VehicleDetails] Type data: $typeData');
+        debugPrint('[VehicleDetails] Type data type: ${typeData.runtimeType}');
+        
         setState(() {
           if (typeData is List) {
             _vehicleTypes = typeData;
+            debugPrint('[VehicleDetails] Loaded ${_vehicleTypes.length} vehicle types');
+            if (_vehicleTypes.isNotEmpty) {
+              debugPrint('[VehicleDetails] First type: ${_vehicleTypes.first}');
+            }
+          } else if (typeData is Map && typeData['data'] is List) {
+            _vehicleTypes = typeData['data'] as List;
+            debugPrint('[VehicleDetails] Loaded ${_vehicleTypes.length} vehicle types from nested data');
           } else {
             _vehicleTypes = [];
+            debugPrint('[VehicleDetails] No vehicle types found, setting empty list');
           }
         });
+      } else {
+        debugPrint('[VehicleDetails] ❌ Failed to fetch vehicle types: ${res.message}');
       }
-    } catch (e) {
-      // ignore
+    } catch (e, stackTrace) {
+      debugPrint('[VehicleDetails] ❌ Exception fetching vehicle types: $e');
+      debugPrint('[VehicleDetails] StackTrace: $stackTrace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading vehicle types: $e')),
+        );
+      }
     }
   }
 
@@ -670,17 +820,24 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
     setState(() => _loading = true);
     try {
       final data = {
-        'vehicleTypeId': _selectedType,
-        'model': _modelCtrl.text,
-        'licensePlate': _plateCtrl.text,
-        'make': 'Unknown', // Optional
-        'year': 2023, // Optional
+        'vehicleType': _selectedType, // Backend expects vehicleType (vTypeId), not vehicleTypeId
+        'vehicleName': _modelCtrl.text, // Backend expects vehicleName, not model
+        'vehicleNumber': _plateCtrl.text, // Backend expects vehicleNumber, not licensePlate
+        'vehicleYear': 2023, // Optional
+        'fuelType': 'Petrol', // Optional, default
       };
+      
+      debugPrint('[VehicleDetails] Submitting vehicle data: $data');
 
       ApiResult res;
       if (widget.existingVehicles.isNotEmpty) {
-        final vId = widget.existingVehicles.first['vehicleId'];
-        res = await _api.updateVehicle(token: widget.token, vehicleId: vId, data: data);
+        final vId = widget.existingVehicles.first['vehicleId'] ?? widget.existingVehicles.first['vehicle_id'];
+        // Include vehicleId in data map
+        final updatedData = Map<String, dynamic>.from(data);
+        if (vId != null && vId.toString().isNotEmpty) {
+          updatedData['vehicleId'] = vId.toString();
+        }
+        res = await _api.updateVehicle(token: widget.token, data: updatedData);
       } else {
         res = await _api.addVehicle(token: widget.token, data: data);
       }
@@ -709,11 +866,48 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
             TextFormField(controller: _modelCtrl, decoration: const InputDecoration(labelText: 'Vehicle Model'), validator: (v) => v!.isEmpty ? 'Required' : null),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              initialValue: _selectedType,
-              items: _vehicleTypes.map((e) => DropdownMenuItem(value: e['typeId'] as String, child: Text(e['name']))).toList(),
-              onChanged: (v) => setState(() => _selectedType = v),
-              decoration: const InputDecoration(labelText: 'Vehicle Type'),
-              validator: (v) => v == null ? 'Required' : null,
+              value: _selectedType,
+              items: _vehicleTypes.isEmpty
+                  ? [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text('Loading vehicle types...', style: TextStyle(color: Colors.grey)),
+                        enabled: false,
+                      )
+                    ]
+                  : _vehicleTypes.map((e) {
+                      // Backend uses vTypeId (not typeId)
+                      final typeId = e['vTypeId']?.toString() ?? 
+                                   e['v_type_id']?.toString() ??
+                                   e['typeId']?.toString() ?? 
+                                   e['type_id']?.toString() ?? 
+                                   e['id']?.toString() ??
+                                   e['vehicleTypeId']?.toString();
+                      final name = e['name']?.toString() ?? 
+                                 e['typeName']?.toString() ?? 
+                                 e['vehicleType']?.toString() ??
+                                 'Unknown';
+                      debugPrint('[VehicleDetails] Processing type: id=$typeId, name=$name');
+                      if (typeId == null || typeId.isEmpty) {
+                        debugPrint('[VehicleDetails] ⚠️ Skipping type with null/empty ID: $e');
+                        return null;
+                      }
+                      return DropdownMenuItem<String>(
+                        value: typeId,
+                        child: Text(name),
+                      );
+                    }).whereType<DropdownMenuItem<String>>().toList(),
+              onChanged: _vehicleTypes.isEmpty 
+                  ? null 
+                  : (v) {
+                      debugPrint('[VehicleDetails] Selected vehicle type: $v');
+                      setState(() => _selectedType = v);
+                    },
+              decoration: const InputDecoration(
+                labelText: 'Vehicle Type',
+                hintText: 'Select vehicle type',
+              ),
+              validator: (v) => v == null || v.isEmpty ? 'Required' : null,
             ),
             const SizedBox(height: 16),
             TextFormField(controller: _plateCtrl, decoration: const InputDecoration(labelText: 'License Plate'), validator: (v) => v!.isEmpty ? 'Required' : null),
@@ -785,13 +979,57 @@ class _VehicleDocumentsScreenState extends State<VehicleDocumentsScreen> {
         type: type,
         vehicleId: _vehicleId,
       );
+      debugPrint('[VehicleDocuments] Upload response: success=${res.success}, statusCode=${res.statusCode}');
+      debugPrint('[VehicleDocuments] res.data type: ${res.data.runtimeType}');
+      debugPrint('[VehicleDocuments] res.data: $res.data');
+      debugPrint('[VehicleDocuments] res.body type: ${res.body.runtimeType}');
+      debugPrint('[VehicleDocuments] res.body: $res.body');
+      
       if (res.success) {
-        setState(() => onUrl(res.data['url']));
+        // Backend returns: { success: true, message: "...", data: "https://..." }
+        // res.data is the entire response object, so we need res.data['data']
+        String? imageUrl;
+        
+        if (res.data is Map) {
+          // Try to get URL from response data
+          final dataMap = res.data as Map;
+          imageUrl = dataMap['data']?.toString() ?? dataMap['url']?.toString();
+          debugPrint('[VehicleDocuments] Extracted URL from res.data: $imageUrl');
+        } else if (res.data is String) {
+          // If data is directly a string (unlikely but handle it)
+          imageUrl = res.data as String;
+          debugPrint('[VehicleDocuments] res.data is String: $imageUrl');
+        }
+        
+        // Fallback to res.body
+        if ((imageUrl == null || imageUrl.isEmpty) && res.body is Map) {
+          imageUrl = res.body['data']?.toString();
+          debugPrint('[VehicleDocuments] Extracted URL from res.body: $imageUrl');
+        }
+        
+        if (imageUrl == null || imageUrl.isEmpty) {
+          debugPrint('[VehicleDocuments] ❌ Failed to extract URL. res.data: $res.data, res.body: $res.body');
+          throw Exception('Failed to get image URL from response. Please try again.');
+        }
+        
+        debugPrint('[VehicleDocuments] ✅ Final image URL: $imageUrl');
+        setState(() => onUrl(imageUrl!));
       } else {
-        throw Exception(res.body['message']);
+        final errorMsg = res.body is Map ? (res.body['message'] ?? res.message) : res.message;
+        debugPrint('[VehicleDocuments] ❌ Upload failed: $errorMsg');
+        throw Exception(errorMsg);
       }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+    } catch (e, stackTrace) {
+      debugPrint('[VehicleDocuments] ❌ Exception during upload: $e');
+      debugPrint('[VehicleDocuments] Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: ${e.toString().replaceAll('Exception: ', '')}'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -819,17 +1057,24 @@ class _VehicleDocumentsScreenState extends State<VehicleDocumentsScreen> {
     }
     setState(() => _loading = true);
     try {
+      // Backend expects: rcBookImageFront, rcBookImageBack, insuranceImage, pollutionImage
+      // Also: rcExpiryDate, insuranceExpiryDate, pollutionExpiryDate
       final res = await _api.updateVehicleDocuments(token: widget.token, vehicleId: widget.vehicle['vehicleId'], data: {
-        'rcFront': _rcFront,
-        'rcBack': _rcBack,
-        'rcExpiry': _rcExpiryCtrl.text,
-        'insuranceDoc': _insurance,
-        'insuranceExpiry': _insExpiryCtrl.text,
-        'pollutionDoc': _pollution,
-        'pollutionExpiry': _polExpiryCtrl.text,
+        'rcBookImageFront': _rcFront,
+        'rcBookImageBack': _rcBack,
+        'rcExpiryDate': _rcExpiryCtrl.text,
+        'insuranceImage': _insurance,
+        'insuranceExpiryDate': _insExpiryCtrl.text,
+        'pollutionImage': _pollution,
+        'pollutionExpiryDate': _polExpiryCtrl.text,
       });
       if (res.success) {
-        if (mounted) Navigator.pop(context);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Vehicle documents uploaded successfully!'), backgroundColor: Colors.green),
+          );
+          Navigator.pop(context);
+        }
       } else {
         throw Exception(res.body['message']);
       }
@@ -867,27 +1112,48 @@ class _VehicleDocumentsScreenState extends State<VehicleDocumentsScreen> {
             child: hasImage 
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(11),
-                  child: Image.network(
-                    transformImageUrl(url),
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
-                        child: CircularProgressIndicator(
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                              : null,
-                        ),
+                  child: Builder(
+                    builder: (context) {
+                      final imageUrl = transformImageUrl(url);
+                      debugPrint('[PersonalDocuments] Loading image for "$label"');
+                      debugPrint('[PersonalDocuments] Original URL: $url');
+                      debugPrint('[PersonalDocuments] Transformed URL: $imageUrl');
+                      return Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        headers: {
+                          'Accept': 'image/*',
+                        },
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) {
+                            debugPrint('[PersonalDocuments] ✅ Image loaded successfully: $imageUrl');
+                            return child;
+                          }
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          debugPrint('[PersonalDocuments] ❌ Image load failed for "$label"');
+                          debugPrint('[PersonalDocuments] URL: $imageUrl');
+                          debugPrint('[PersonalDocuments] Error: $error');
+                          debugPrint('[PersonalDocuments] Error type: ${error.runtimeType}');
+                          debugPrint('[PersonalDocuments] StackTrace: $stackTrace');
+                          return Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.broken_image, size: 40, color: Colors.red),
+                              const SizedBox(height: 4),
+                              Text('Failed to load', style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
+                            ],
+                          );
+                        },
                       );
                     },
-                    errorBuilder: (_, __, ___) => Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.broken_image, size: 40, color: Colors.red),
-                        const SizedBox(height: 4),
-                        Text('Failed to load', style: TextStyle(color: Colors.red.shade700, fontSize: 12)),
-                      ],
-                    ),
                   ),
                 )
               : Column(

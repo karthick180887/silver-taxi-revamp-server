@@ -129,28 +129,7 @@ CustomerNotification.init(
                 unique: true,
                 fields: ["notifyId", "date", "customerId", "adminId"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "customerId", "createdAt"], // customer notifications with pagination
-            },
-            {
-                fields: ["adminId", "customerId"], // customer notifications
-            },
-            {
-                fields: ["adminId", "customerId", "read", "createdAt"], // unread notifications with pagination
-            },
-            {
-                fields: ["adminId", "customerId", "read"], // unread notifications
-            },
-            {
-                fields: ["notifyId"], // notifyId lookup (already in unique but separate for faster lookups)
-            },
-            {
-                fields: ["date"], // date-based queries
-            },
-            {
-                fields: ["type"], // type filtering
-            },
+
         ],
     }
 );

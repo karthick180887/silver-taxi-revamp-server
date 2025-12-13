@@ -6,7 +6,6 @@ import { Op } from 'sequelize';
 import { createNotification } from "./notificationCreate";
 import { infoLogger as log, debugLogger as debug } from "../../../utils/logger";
 import { sendToSingleToken } from "../../../common/services/firebase/appNotify";
-import { getDriverFcmToken } from "../../../utils/redis.configs";
 
 export const handlePriceUpdate = async () => {
     const now = new Date();
@@ -325,39 +324,32 @@ export const checkDocumentExpiry = async () => {
             }
 
             // Send FCM notification if any documents are expired
-            if (hasExpiredDocuments) {
-                const redisFcmToken = driver.adminId
-                    ? await getDriverFcmToken(String(driver.adminId), String(driver.driverId))
-                    : null;
-                const targetFcmToken = redisFcmToken || driver.fcmToken;
+            if (hasExpiredDocuments && driver.fcmToken) {
+                try {
+                    const notificationTitle = "Document Expiry Alert";
+                    const notificationMessage = `Dear ${driver.name}, the following documents have expired: ${expiredDocuments.join(', ')}. Please renew them immediately to continue your services.`;
 
-                if (targetFcmToken) {
-                    try {
-                        const notificationTitle = "Document Expiry Alert";
-                        const notificationMessage = `Dear ${driver.name}, the following documents have expired: ${expiredDocuments.join(', ')}. Please renew them immediately to continue your services.`;
+                    await sendToSingleToken(driver.fcmToken, {
+                        ids: {
+                            driverId: driver.driverId,
+                            adminId: driver.adminId,
+                        },
+                        data: {
+                            title: notificationTitle,
+                            message: notificationMessage,
+                            type: "document-expiry",
+                            channelKey: "other_channel",
+                        }
+                    });
 
-                        await sendToSingleToken(targetFcmToken, {
-                            ids: {
-                                driverId: driver.driverId,
-                                adminId: driver.adminId,
-                            },
-                            data: {
-                                title: notificationTitle,
-                                message: notificationMessage,
-                                type: "document-expiry",
-                                channelKey: "other_channel",
-                            }
-                        });
-
-                        log.info(`📱 FCM notification sent to driver ${driver.driverId} for expired documents: ${expiredDocuments.join(', ')}`);
-                        totalNotificationsSent++;
-                    } catch (fcmError) {
-                        debug.error(`FCM notification failed for driver ${driver.driverId}: ${fcmError}`);
-                        totalNotificationsFailed++;
-                    }
-                } else {
-                    debug.info(`Driver ${driver.driverId} has expired documents but no FCM token: ${expiredDocuments.join(', ')}`);
+                    log.info(`📱 FCM notification sent to driver ${driver.driverId} for expired documents: ${expiredDocuments.join(', ')}`);
+                    totalNotificationsSent++;
+                } catch (fcmError) {
+                    debug.error(`FCM notification failed for driver ${driver.driverId}: ${fcmError}`);
+                    totalNotificationsFailed++;
                 }
+            } else if (hasExpiredDocuments && !driver.fcmToken) {
+                debug.info(`Driver ${driver.driverId} has expired documents but no FCM token: ${expiredDocuments.join(', ')}`);
             }
         }
 

@@ -1,0 +1,8 @@
+.bg-accent {
+    --tw-bg-opacity: 1;
+    background-color: rgba(var(--color-accent), var(--tw-bg-opacity));
+}
+.border-accent {
+    --tw-border-opacity: 1;
+    border-color: rgba(var(--color-accent), var(--tw-border-opacity));
+}

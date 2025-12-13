@@ -1,8 +1,6 @@
 
 
 import { Model, ModelStatic } from "sequelize";
-import { getRedisDrivers, setRedisDrivers } from "../../../utils/redis.configs";
-import { updateRedisDriverStatus } from "./updateRedisDriverStatus";
 
 export const toggleStatus = async (
     Model: ModelStatic<Model>, tableCol: string, id: string, status: boolean, reason?: string
@@ -18,8 +16,7 @@ export const toggleStatus = async (
 
     // Step 2: Check if the item exists
     if (!item) {
-        console.log("Item not found");
-        return { item: null, newStatus: null };
+        throw new Error("Item not found");
     }
 
     // Step 3: Toggle the `isActive` status
@@ -29,16 +26,13 @@ export const toggleStatus = async (
     // Step 4: Update the `isActive` field with the new status
     item.set("isActive", newStatus);
 
-    const driverId = item.get("driverId") as string | undefined;
-    if (driverId) {
+    if (item.get("driverId")) {
         console.log("Updating last active/inactive date for driver...");
         if (newStatus === true) item.set("lastActiveDate", new Date());
         if (newStatus === false) item.set("lastInActiveDate", new Date());
-        const adminId = item.get('adminId') as string;
-        await updateRedisDriverStatus(adminId, driverId, newStatus);
     }
 
-    if (reason) {
+    if (reason) {568
         item.set("inActiveReason", reason);
     }
     // Step 5: Save the updated item back to the database

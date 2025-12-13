@@ -88,17 +88,31 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 app.use("/image/v1", async (req, res) => {
     try {
-        const fileKey = req.path.replace(/^\//, ""); // remove leading slash if any
-        const fileUrl = `${env.DO_BUCKET_ENDPOINT}/${env.DO_BUCKET_NAME}/${fileKey}`;
+        let fileKey = req.path.replace(/^\//, ""); // remove leading slash if any
+
+        // If fileKey doesn't start with "silver-taxi-images/", add it
+        // This handles both old paths (without prefix) and new paths (with prefix)
+        if (!fileKey.startsWith("silver-taxi-images/")) {
+            fileKey = `silver-taxi-images/${fileKey}`;
+        }
+
+        // DigitalOcean Spaces URL format: https://{endpoint}/{folder}/{file}
+        // The bucket name is part of the endpoint domain, not in the path
+        const endpoint = env.DO_BUCKET_ENDPOINT || "silvertaxi.blr1.digitaloceanspaces.com";
+        const cleanEndpoint = endpoint.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        const fileUrl = `https://${cleanEndpoint}/${fileKey}`;
 
         const fetchResponse = await fetch(fileUrl);
         if (!fetchResponse.ok) {
             return res.status(fetchResponse.status).json({ message: "File not found" });
         }
 
-        // Stream image back to client
+        // Stream image back to client with CORS headers
         const contentType = fetchResponse.headers.get("content-type") || "application/octet-stream";
         res.setHeader("Content-Type", contentType);
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+        res.setHeader("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
         //@ts-ignore
         Readable.fromWeb(fetchResponse.body).pipe(res);
     } catch (error) {
@@ -124,7 +138,7 @@ app.use('/website', websiteAuth, websiteRouter)
 // app.use('/website', websiteRouter)
 
 // app.use('/*', auth);
-app.use('/v1', auth, adminRouter)
+app.use(['/v1', '/'], auth, adminRouter)
 
 
 app.use('/*', (_req: Request, res: Response) => {

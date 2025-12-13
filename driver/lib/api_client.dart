@@ -84,6 +84,7 @@ class DriverApiClient extends BaseApiClient {
     required String phone,
     required String otp,
     required String smsToken,
+    required String fcmToken, // Backend requires this field
     String? name,
     String? email,
     String type = 'verify',
@@ -92,6 +93,7 @@ class DriverApiClient extends BaseApiClient {
       'phone': phone,
       'otp': otp,
       'smsToken': smsToken,
+      'fcmToken': fcmToken, // Required by backend
     };
     if (name != null) body['name'] = name;
     if (email != null) body['email'] = email;
@@ -129,7 +131,8 @@ class DriverApiClient extends BaseApiClient {
     required String token,
     required String fcmToken,
   }) {
-    return post('/app/driver/fcm-token', {'token': fcmToken}, token: token);
+    // Backend expects PUT /app/driver/fcm-token/update with { fcmToken }
+    return put('/app/driver/fcm-token/update', {'fcmToken': fcmToken}, token: token);
   }
 
   Future<ApiResult> updateLocation({
@@ -137,7 +140,8 @@ class DriverApiClient extends BaseApiClient {
     required double latitude,
     required double longitude,
   }) {
-    return post('/app/driver/location', {
+    // Backend expects PUT /app/driver/location-update
+    return put('/app/driver/location-update', {
       'latitude': latitude,
       'longitude': longitude,
     }, token: token);
@@ -215,7 +219,7 @@ class DriverApiClient extends BaseApiClient {
   Future<Map<String, dynamic>> getConfigKeys({
     required String token,
   }) async {
-    final result = await get('/app/config/keys', token: token);
+    final result = await get('/app/config-keys', token: token);
     return result.body;
   }
 
@@ -243,17 +247,6 @@ class DriverApiClient extends BaseApiClient {
     return result.body;
   }
 
-  Future<ApiResult> getTransactionHistory({
-    required String token,
-    int page = 1,
-    int limit = 20,
-  }) {
-    return get('/app/wallet/transactions',
-      token: token,
-      queryParams: {'page': page.toString(), 'limit': limit.toString()},
-    );
-  }
-
   Future<ApiResult> createPaymentOrder({
     required String token,
     required double amount,
@@ -279,6 +272,29 @@ class DriverApiClient extends BaseApiClient {
       token: token,
       queryParams: {'limit': limit.toString(), 'offset': offset.toString()},
     );
+  }
+
+  /// Alias for fetchWalletHistory (backward compatibility)
+  Future<ApiResult> getTransactionHistory({
+    required String token,
+    int page = 1,
+    int limit = 20,
+  }) {
+    // Backend uses offset, not page
+    final offset = (page - 1) * limit;
+    return fetchWalletHistory(token: token, limit: limit, offset: offset);
+  }
+
+  Future<ApiResult> addWalletAmount({
+    required String token,
+    required double amount,
+    String? remark,
+  }) {
+    final body = <String, dynamic>{'amount': amount};
+    if (remark != null && remark.isNotEmpty) {
+      body['remark'] = remark;
+    }
+    return post('/app/wallet/amount/add', body, token: token);
   }
 
   Future<ApiResult> verifyPayment({
@@ -309,10 +325,17 @@ class DriverApiClient extends BaseApiClient {
     );
   }
 
+  Future<ApiResult> getWalletRequests({
+    required String token,
+  }) {
+    return get('/app/wallet/requests', token: token);
+  }
+
+  /// Alias for getWalletRequests (backward compatibility)
   Future<ApiResult> getPayoutRequests({
     required String token,
   }) {
-    return get('/app/wallet/payout-requests', token: token);
+    return getWalletRequests(token: token);
   }
 
   Future<ApiResult> requestPayout({
@@ -328,16 +351,22 @@ class DriverApiClient extends BaseApiClient {
   }
 
   // Vehicle endpoints
+  Future<ApiResult> getVehicles({required String token}) {
+    return get('/app/vehicle/get-details', token: token);
+  }
+
+  /// Alias for getVehicles (backward compatibility)
   Future<ApiResult> getDriverVehicles({required String token}) {
-    return get('/app/vehicle', token: token);
+    return getVehicles(token: token);
+  }
+
+  /// Alias for getVehicles (backward compatibility)
+  Future<ApiResult> getVehicleList({required String token}) {
+    return getVehicles(token: token);
   }
 
   Future<ApiResult> getVehicleTypes({required String token}) {
     return get('/app/vehicle/types', token: token);
-  }
-
-  Future<ApiResult> getVehicleList({required String token}) {
-    return get('/app/vehicle/list', token: token);
   }
 
   Future<ApiResult> uploadDocument({
@@ -358,7 +387,7 @@ class DriverApiClient extends BaseApiClient {
     required String token,
     required Map<String, dynamic> data,
   }) {
-    return post('/app/vehicle', data, token: token);
+    return post('/app/vehicle/add', data, token: token);
   }
 
   /// Alias for createVehicle (backward compatibility)
@@ -371,21 +400,44 @@ class DriverApiClient extends BaseApiClient {
 
   Future<ApiResult> updateVehicle({
     required String token,
-    required String vehicleId,
     required Map<String, dynamic> data,
   }) {
-    return put('/app/vehicle/$vehicleId', data, token: token);
+    // Backend expects PUT /app/vehicle/update (no vehicleId in path)
+    return put('/app/vehicle/update', data, token: token);
+  }
+
+  Future<ApiResult> setVehicleStatus({
+    required String token,
+    required Map<String, dynamic> data,
+  }) {
+    return put('/app/vehicle/change-status', data, token: token);
+  }
+
+  Future<ApiResult> deleteVehicleType({
+    required String token,
+    required String type,
+  }) {
+    return delete('/app/vehicle/types/$type', {}, token: token);
   }
 
   /// Alias for updateVehicle (backward compatibility for KYC document updates)
+  /// Note: vehicleId should be included in the data map if needed
   Future<ApiResult> updateVehicleDocuments({
     required String token,
     required String vehicleId,
     required Map<String, dynamic> data,
   }) {
-    return updateVehicle(token: token, vehicleId: vehicleId, data: data);
+    // Include vehicleId in data if not already present
+    final updatedData = Map<String, dynamic>.from(data);
+    if (!updatedData.containsKey('vehicleId') && vehicleId.isNotEmpty) {
+      updatedData['vehicleId'] = vehicleId;
+    }
+    return updateVehicle(token: token, data: updatedData);
   }
 
+  // Note: Vehicle deletion endpoint not found in backend routes
+  // Keeping for backward compatibility but may not work
+  @Deprecated('Vehicle deletion endpoint not available in backend')
   Future<ApiResult> deleteVehicle({
     required String token,
     required String vehicleId,
@@ -456,12 +508,24 @@ class DriverApiClient extends BaseApiClient {
     );
   }
 
+  /// Accept or reject a booking
+  /// Backend expects: POST /app/booking/accept/:id with optional { action: 'accept' | 'reject' }
+  Future<ApiResult> acceptOrRejectBooking({
+    required String token,
+    required String bookingId,
+    String action = 'accept', // 'accept' or 'reject'
+  }) {
+    return post('/app/booking/accept/$bookingId', {
+      'action': action,
+    }, token: token);
+  }
+
+  /// Accept a booking (alias for acceptOrRejectBooking with action='accept')
   Future<ApiResult> acceptTrip({
     required String token,
     required String tripId,
   }) {
-    // Accept booking endpoint (converts booking to trip when accepted)
-    return post('/app/booking/accept/$tripId', {}, token: token);
+    return acceptOrRejectBooking(token: token, bookingId: tripId, action: 'accept');
   }
 
   Future<ApiResult> sendOtp({
@@ -486,41 +550,43 @@ class DriverApiClient extends BaseApiClient {
     required String tripId,
     required String otp,
     required double startOdometer,
+    String? startOdometerImage,
   }) {
     final Map<String, dynamic> body = {
-      'otp': otp,
-      'startOdometer': startOdometer,
+      'startOtp': otp,  // Backend expects 'startOtp', not 'otp'
+      'startOdometerValue': startOdometer,  // Backend expects 'startOdometerValue', not 'startOdometer'
     };
+    if (startOdometerImage != null && startOdometerImage.isNotEmpty) {
+      body['startOdometerImage'] = startOdometerImage;
+    }
     return post('/app/trip/start/$tripId', body, token: token);
   }
 
   Future<ApiResult> endTrip({
     required String token,
     required String tripId,
-    String? endOtp,
+    required String endOtp,
     double? distance,
     int? duration,
     required double endOdometer,
+    String? endOdometerImage,
   }) {
     final Map<String, dynamic> body = {
-      'endOdometer': endOdometer,
+      'endOtp': endOtp,  // Backend expects 'endOtp'
+      'endOdometerValue': endOdometer,  // Backend expects 'endOdometerValue', not 'endOdometer'
     };
-    if (endOtp != null) body['endOtp'] = endOtp;
+    if (endOdometerImage != null && endOdometerImage.isNotEmpty) {
+      body['endOdometerImage'] = endOdometerImage;
+    }
     if (distance != null) body['distance'] = distance;
     if (duration != null) body['duration'] = duration;
     return post('/app/trip/end/$tripId', body, token: token);
   }
 
-  Future<ApiResult> getTripOtp({
-    required String token,
-    required String tripId,
-  }) {
-    return get('/app/trip/otp/$tripId', token: token);
-  }
-
   Future<ApiResult> completeTrip({
     required String token,
     required String tripId,
+    required String paymentMethod, // Backend requires: "Cash", "Link", or "UPI"
     double? fare,
     double? tollCharges,
     double? parkingCharges,
@@ -532,7 +598,10 @@ class DriverApiClient extends BaseApiClient {
     double? parkingCharge,
     double? waitingCharge,
   }) {
-    final Map<String, dynamic> body = {'fare': fare};
+    final Map<String, dynamic> body = {
+      'paymentMethod': paymentMethod, // Backend requires this field
+      'fare': fare,
+    };
     if (tollCharges != null) body['tollCharges'] = tollCharges;
     if (parkingCharges != null) body['parkingCharges'] = parkingCharges;
     if (waitingCharges != null) body['waitingCharges'] = waitingCharges;
@@ -557,11 +626,14 @@ class DriverApiClient extends BaseApiClient {
     return post('/app/trip/cancel/$tripId', body, token: token);
   }
 
+  /// Get trip details - use getTripSummary or getSingleBooking instead
+  @Deprecated('Use getTripSummary or getSingleBooking instead')
   Future<ApiResult> getTripDetails({
     required String token,
     required String tripId,
   }) {
-    return get('/app/trip/$tripId', token: token);
+    // Backend doesn't have /app/trip/:id, use summary instead
+    return getTripSummary(token: token, tripId: tripId);
   }
 
   Future<ApiResult> getTripSummary({
@@ -571,15 +643,21 @@ class DriverApiClient extends BaseApiClient {
     return get('/app/trip/summary/$tripId', token: token);
   }
 
+  Future<ApiResult> getOrCreateRazorpayOrder({
+    required String token,
+    required String tripId,
+  }) {
+    return get('/app/trip/payment/order/$tripId', token: token);
+  }
+
+  /// Get all trips - use getAllBookings instead
+  @Deprecated('Backend doesn\'t have /app/trip/all, use getAllBookings instead')
   Future<ApiResult> getAllTrips({
     required String token,
     int page = 1,
     int limit = 10,
   }) {
-    return get('/app/trip/all',
-      token: token,
-      queryParams: {'page': page.toString(), 'limit': limit.toString()},
-    );
+    return getAllBookings(token: token, page: page, limit: limit);
   }
 
   Future<ApiResult> verifyTripPayment({
@@ -602,7 +680,7 @@ class DriverApiClient extends BaseApiClient {
     String? startDate,
     String? endDate,
   }) {
-    return get('/app/driver/analytics',
+    return get('/app/analytics/get',
       token: token,
       queryParams: {
         if (startDate != null) 'startDate': startDate,
@@ -616,14 +694,20 @@ class DriverApiClient extends BaseApiClient {
     return getAnalytics(token: token);
   }
 
-  /// Get earnings graph data (alias for getAnalytics with period)
+  /// Get earnings graph data
+  /// Note: Backend uses weekDayStart (DD/MM/YYYY format) and state parameters
+  /// If no parameters provided, backend defaults to previous week
   Future<ApiResult> getEarningsGraph({
     required String token,
-    String period = 'weekly',
+    String? weekDayStart,
+    String? state,
   }) {
-    return get('/app/driver/analytics',
+    return get('/app/analytics/get/graph',
       token: token,
-      queryParams: {'period': period},
+      queryParams: {
+        if (weekDayStart != null) 'weekDayStart': weekDayStart,
+        if (state != null) 'state': state,
+      },
     );
   }
 
@@ -632,7 +716,7 @@ class DriverApiClient extends BaseApiClient {
     String? startDate,
     String? endDate,
   }) {
-    return get('/app/driver/earnings',
+    return get('/app/earnings/get',
       token: token,
       queryParams: {
         if (startDate != null) 'startDate': startDate,
@@ -641,77 +725,107 @@ class DriverApiClient extends BaseApiClient {
     );
   }
 
+  /// Get booking/trip counts
   Future<ApiResult> getTripCounts({required String token}) {
-    return get('/app/trip/counts', token: token);
-  }
-
-  /// Alias for booking counts (backward compatibility)
-  Future<ApiResult> fetchTripCounts({required String token}) {
     return get('/app/booking/counts', token: token);
   }
 
-  Future<ApiResult> getMonthlyEarnings({required String token}) {
-    return get('/app/driver/monthly-earnings', token: token);
+  /// Alias for getTripCounts (backward compatibility)
+  Future<ApiResult> fetchTripCounts({required String token}) {
+    return getTripCounts(token: token);
   }
 
-  /// Accept or reject a booking
+  // Note: Monthly earnings endpoint not found in backend
+  // Removing to avoid confusion
+  @Deprecated('Monthly earnings endpoint not available in backend')
+  Future<ApiResult> getMonthlyEarnings({required String token}) {
+    return get('/app/earnings/get', token: token);
+  }
+
+  /// Accept or reject a booking (alias for acceptOrRejectBooking)
   Future<ApiResult> respondBooking({
     required String token,
     required String bookingId,
     required bool accept,
   }) {
-    return post('/app/booking/accept/$bookingId', {
-      'accept': accept,
-    }, token: token);
+    return acceptOrRejectBooking(
+      token: token,
+      bookingId: bookingId,
+      action: accept ? 'accept' : 'reject',
+    );
   }
 
   // Common endpoints
   Future<ApiResult> getStates({required String token}) {
-    return get('/app/common/state/all', token: token);
+    return get('/app/states', token: token);
   }
 
   Future<ApiResult> getCities({
     required String token,
-    required String stateId,
+    String? stateId,
   }) {
-    return get('/app/common/city/all/$stateId', token: token);
+    return get('/app/cities',
+      token: token,
+      queryParams: {
+        if (stateId != null) 'stateId': stateId,
+      },
+    );
   }
 
+  Future<ApiResult> getCharges({required String token}) {
+    return get('/app/charges', token: token);
+  }
+
+  /// Alias for getCharges (backward compatibility)
   Future<ApiResult> getChargesByCity({
     required String token,
     required String cityId,
   }) {
-    return get('/app/common/charges/$cityId', token: token);
+    return getCharges(token: token);
+  }
+
+  Future<ApiResult> getVersion({required String token}) {
+    return get('/app/version/get', token: token);
   }
 
   // Booking endpoints
+  Future<ApiResult> getSingleBooking({
+    required String token,
+    required String bookingId,
+  }) {
+    return get('/app/booking/single/$bookingId', token: token);
+  }
+
+  /// Alias for getSingleBooking (backward compatibility)
   Future<ApiResult> getBookingDetails({
     required String token,
     required String bookingId,
   }) {
-    return get('/app/booking/$bookingId', token: token);
+    return getSingleBooking(token: token, bookingId: bookingId);
   }
 
+  /// Accept a booking (alias - driverId comes from token)
   Future<ApiResult> acceptBooking({
     required String token,
     required String bookingId,
-    required String driverId,
-    required String vehicleId,
+    String? driverId, // Optional, comes from token
+    String? vehicleId, // Optional, not used by backend
   }) {
-    return post('/app/booking/accept/$bookingId', {
-      'driverId': driverId,
-      'vehicleId': vehicleId,
-    }, token: token);
+    final body = <String, dynamic>{'action': 'accept'};
+    // Backend gets driverId from token, but include if provided for clarity
+    if (driverId != null) body['driverId'] = driverId;
+    return post('/app/booking/accept/$bookingId', body, token: token);
   }
 
+  /// Reject a booking (alias for acceptOrRejectBooking with action='reject')
   Future<ApiResult> rejectBooking({
     required String token,
     required String bookingId,
-    required String reason,
+    String? reason, // Optional, not used by backend currently
   }) {
-    return post('/app/booking/reject/$bookingId', {
-      'reason': reason,
-    }, token: token);
+    final body = <String, dynamic>{'action': 'reject'};
+    if (reason != null) body['reason'] = reason;
+    return post('/app/booking/accept/$bookingId', body, token: token);
   }
 
   // Notifications
@@ -731,26 +845,36 @@ class DriverApiClient extends BaseApiClient {
     return getNotifications(token: token);
   }
 
-  Future<ApiResult> getNotificationSettings({required String token}) {
-    return get('/app/notification/settings', token: token);
-  }
-
-  Future<ApiResult> updateNotificationSettings({
+  Future<ApiResult> getSingleNotification({
     required String token,
-    required Map<String, dynamic> settings,
+    required String notificationId,
   }) {
-    return put('/app/notification/settings', settings, token: token);
+    return get('/app/notification/$notificationId', token: token);
   }
 
   Future<ApiResult> markNotificationAsRead({
     required String token,
     required String notificationId,
   }) {
-    return patch('/app/notification/read/$notificationId', {}, token: token);
+    return put('/app/notification/read/$notificationId', {}, token: token);
   }
 
   Future<ApiResult> markAllNotificationsRead({required String token}) {
     return put('/app/notification/read-all', {}, token: token);
+  }
+
+  // Note: Notification settings endpoints not found in backend
+  @Deprecated('Notification settings endpoints not available in backend')
+  Future<ApiResult> getNotificationSettings({required String token}) {
+    return get('/app/notification/settings', token: token);
+  }
+
+  @Deprecated('Notification settings endpoints not available in backend')
+  Future<ApiResult> updateNotificationSettings({
+    required String token,
+    required Map<String, dynamic> settings,
+  }) {
+    return put('/app/notification/settings', settings, token: token);
   }
 
   Future<ApiResult> deleteNotifications({
@@ -760,6 +884,43 @@ class DriverApiClient extends BaseApiClient {
     return delete('/app/notification/delete', {
       'notificationIds': notificationIds,
     }, token: token);
+  }
+
+  // V2 Booking endpoints
+  Future<ApiResult> getV2AllBookings({
+    required String token,
+    int? page,
+    int? limit,
+  }) {
+    final queryParams = <String, String>{};
+    if (page != null) queryParams['page'] = page.toString();
+    if (limit != null) queryParams['limit'] = limit.toString();
+    return get('/app/v2/booking/all',
+      token: token,
+      queryParams: queryParams.isNotEmpty ? queryParams : null,
+    );
+  }
+
+  Future<ApiResult> getV2BookingsByStatus({
+    required String token,
+    required String status,
+    int? page,
+    int? limit,
+  }) {
+    final queryParams = <String, String>{'status': status};
+    if (page != null) queryParams['page'] = page.toString();
+    if (limit != null) queryParams['limit'] = limit.toString();
+    return get('/app/v2/booking/specific',
+      token: token,
+      queryParams: queryParams,
+    );
+  }
+
+  Future<ApiResult> getV2SingleBooking({
+    required String token,
+    required String bookingId,
+  }) {
+    return get('/app/v2/booking/single/$bookingId', token: token);
   }
 
   /// Helper: Transform image URL (from shared ApiConfig)

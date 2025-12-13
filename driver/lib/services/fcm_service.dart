@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'overlay_notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -78,10 +79,9 @@ class FcmService {
           }
           
           // Check for trip offers to trigger overlay
-          if (message.data['type'] == 'NEW_TRIP_OFFER') {
+          if (message.data['type'] == 'NEW_TRIP_OFFER' || message.data['type'] == 'new-booking') {
              debugPrint('[FCM] New Trip Offer received via FCM!');
-             // The OverlayService listens to Socket.IO, but we can also trigger it here if needed.
-             // However, Socket.IO is faster for foreground. FCM is backup.
+             OverlayNotificationService().handleFcmMessage(message.data);
           }
         });
       } else {

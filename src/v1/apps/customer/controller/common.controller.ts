@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { Service } from "../../../core/models/services";
 import { getConfigKey } from "../../../../common/services/node-cache";
-import { Admin } from "../../../core/models";
 
 
 export const getServices = async (req: Request, res: Response) => {
@@ -64,38 +63,4 @@ export const getConfigKeys = async (req: Request, res: Response) => {
             message: "Internal error"
         });
     }
-}
-
-export const getVersions = async (req: Request, res: Response) => {
-    const adminId = req.query.adminId ?? req.body.adminId;
-
-    if (!adminId) {
-        res.status(401).json({
-            success: false,
-            message: "Admin id is required",
-        });
-        return;
-    }
-
-    try {
-        const admin = await Admin.findOne({
-            where: { adminId },
-            attributes: ["versions"]
-        });
-
-
-        res.status(200).json({
-            success: true,
-            message: "Customer app version fetched successfully",
-            data: admin?.versions?.customerAppVersion
-        });
-    } catch (err) {
-        res.status(500).json({
-            success: false,
-            message: "Internal error",
-            error: err
-        });
-    }
-
-
 }

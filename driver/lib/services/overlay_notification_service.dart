@@ -267,7 +267,9 @@ class OverlayNotificationService {
       debugPrint('[OverlayNotification] 🔄 _createTripModelFromEvent() called');
       debugPrint('[OverlayNotification] Event data keys: ${eventData.keys.toList()}');
       debugPrint('[OverlayNotification] Event data type: ${eventData.runtimeType}');
-      debugPrint('[OverlayNotification] Full event data (first 500 chars): ${eventData.toString().substring(0, eventData.toString().length > 500 ? 500 : eventData.toString().length)}');
+      final eventDataStr = eventData.toString();
+      final maxLen = eventDataStr.length > 500 ? 500 : eventDataStr.length;
+      debugPrint('[OverlayNotification] Full event data (first $maxLen chars): ${maxLen > 0 ? eventDataStr.substring(0, maxLen) : eventDataStr}');
       debugPrint('[OverlayNotification] ========================================');
       
       // Backend sends Go struct field names (BookingID, PickupLocation, etc.)
@@ -620,6 +622,67 @@ class OverlayNotificationService {
     _overlayContext = null;
     _shownTripIds.clear();
     _pendingAcceptTripId = null;
+  }
+  /// Handle FCM message data to show overlay
+  void handleFcmMessage(Map<String, dynamic> data) {
+    debugPrint('[OverlayNotification] ========================================');
+    debugPrint('[OverlayNotification] 📨 RECEIVED FCM MESSAGE');
+    debugPrint('[OverlayNotification] Data keys: ${data.keys.toList()}');
+    debugPrint('[OverlayNotification] click_action: ${data['click_action']}');
+    debugPrint('[OverlayNotification] ========================================');
+
+    // Check if this is a booking notification
+    if (data['type'] == 'new-booking' || 
+        data['click_action'] == 'FLUTTER_NOTIFICATION_CLICK') {
+      
+      debugPrint('[OverlayNotification] ✅ Accepted FCM overlay trigger');
+      
+      if (_currentToken == null || _tripService == null) {
+        debugPrint('[OverlayNotification] ⚠️ Service not initialized yet, cannot show overlay');
+        return;
+      }
+
+      // Convert FCM data to TripModel
+      // FCM data comes as strings (key: value), while socket data has types
+      // We need to parse accordingly
+      
+      final tripId = data['ids.bookingId']?.toString() ?? 
+                     data['bookingId']?.toString() ?? 
+                     data['tripId']?.toString() ?? '';
+                     
+      if (tripId.isEmpty) {
+        debugPrint('[OverlayNotification] ❌ No trip ID in FCM data');
+        return;
+      }
+      
+      if (_shownTripIds.contains(tripId)) {
+        debugPrint('[OverlayNotification] ⚠️ Trip $tripId already shown, skipping');
+        return;
+      }
+
+      // Construct event data formatted like socket event for reuse
+      final eventData = <String, dynamic>{
+        'bookingId': tripId,
+        'pickup': data['pickup'] ?? data['pickupLocation'] ?? 'Pickup Location',
+        'drop': data['drop'] ?? data['dropLocation'] ?? 'Drop Location',
+        'estimatedFare': data['fare'] ?? data['estimatedFare'] ?? '0',
+        'customerName': data['customerName'] ?? 'Customer',
+        'status': 'Booking Confirmed',
+        // Add other fields as needed
+      };
+      
+      final trip = _createTripModelFromEvent(eventData);
+      
+      if (trip != null) {
+        debugPrint('[OverlayNotification] 🚀 Showing overlay from FCM trigger');
+        _showOverlayNotification(trip);
+        _shownTripIds.add(tripId);
+        
+        Timer(const Duration(minutes: 5), () {
+          _shownTripIds.remove(tripId);
+        });
+      }
+    }
   }
 }
 

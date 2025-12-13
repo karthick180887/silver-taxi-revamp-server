@@ -107,16 +107,6 @@ DriverWallet.init(
                 unique: true,
                 fields: ["walletId", "driverId"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["driverId"], // driver wallet lookup
-            },
-            {
-                fields: ["walletId"], // walletId lookup (already unique but separate for faster lookups)
-            },
         ],
     }
 );

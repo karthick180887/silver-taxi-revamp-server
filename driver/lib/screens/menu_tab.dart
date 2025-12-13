@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import '../api_client.dart';
+import '../services/storage_service.dart';
+import '../main.dart' show LoginPage;
 import 'analytics_page.dart';
 import 'earnings_page.dart';
 import 'notification_settings_page.dart';
 import 'payment_details_page.dart';
 import 'payout_request_page.dart';
 import 'vehicle_details_page.dart';
+import 'driver_details_page.dart';
 
 class MenuTab extends StatefulWidget {
   const MenuTab({super.key, required this.token});
@@ -230,6 +233,14 @@ class _MenuTabState extends State<MenuTab> {
                   MaterialPageRoute(builder: (_) => PayoutRequestPage(token: widget.token)),
                 ),
               ),
+              _MenuItem(
+                'Driver Details',
+                Icons.person,
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => DriverDetailsPage(token: widget.token)),
+                ),
+              ),
             ]),
             const SizedBox(height: 24),
 
@@ -241,7 +252,41 @@ class _MenuTabState extends State<MenuTab> {
             const SizedBox(height: 24),
 
             _buildMenuSection([
-              _MenuItem('Log Out', Icons.logout, () => Navigator.of(context).popUntil((r) => r.isFirst), isDestructive: true),
+              _MenuItem('Log Out', Icons.logout, () async {
+                // Show confirmation dialog
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Log Out'),
+                    content: const Text('Are you sure you want to log out?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Log Out'),
+                      ),
+                    ],
+                  ),
+                );
+                
+                if (confirm == true && mounted) {
+                  // Clear local storage
+                  await StorageService.clearAll();
+                  
+                  // Navigate to login page and clear navigation stack
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const LoginPage()),
+                    (route) => false,
+                  );
+                }
+              }, isDestructive: true),
             ]),
           ],
         ),

@@ -249,36 +249,10 @@ Invoice.init(
                 unique: true,
                 fields: ["invoiceId", "adminId", "bookingId", "companyId", "invoiceNo"],
             },
-            // Common query patterns
             {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "status", "createdAt"], // status filtering with pagination
-            },
-            {
-                fields: ["adminId", "status"], // status filtering
-            },
-            {
-                fields: ["adminId", "vendorId", "createdAt"], // vendor invoices with pagination
-            },
-            {
-                fields: ["adminId", "vendorId"], // vendor invoices
-            },
-            {
-                fields: ["bookingId"], // booking lookup (already in unique but separate index for faster lookups)
-            },
-            {
-                fields: ["invoiceNo"], // invoice number search
-            },
-            {
-                fields: ["phone"], // phone search
-            },
-            {
-                fields: ["name"], // name search
-            },
-            {
-                fields: ["invoiceDate"], // date range queries
+                fields: ["otherCharges"],
+                using: 'GIN',
+                name: 'idx_invoice_otherCharges',
             },
         ],
         comment: "Table for invoices",

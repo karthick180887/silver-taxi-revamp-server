@@ -150,28 +150,6 @@ Offers.init(
                 unique: true,
                 fields: ["offerId", "adminId","category","type","status"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "status", "createdAt"], // status filtering with pagination
-            },
-            {
-                fields: ["adminId", "status"], // status filtering
-            },
-            {
-                fields: ["adminId", "category", "createdAt"], // category filtering with pagination
-            },
-            {
-                fields: ["adminId", "category"], // category filtering
-            },
-            {
-                fields: ["offerId"], // offerId lookup (already in unique but separate for faster lookups)
-            },
-            {
-                fields: ["startDate", "endDate"], // date range queries for active offers
-            },
         ],
     }
 );

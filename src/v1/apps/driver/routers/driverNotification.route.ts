@@ -16,6 +16,7 @@ router.get('/all', getAllNotification);
 
 // Route to get all notifications with offset
 router.get('/offset', getAllOffsetNotification);
+router.get('/', getAllOffsetNotification);
 
 router.get('/:id', getSingleNotification);
 

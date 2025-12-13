@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Booking, Customer, Service, HourlyPackage, DayPackage, Enquiry, Tariff, Vehicle, CustomerWallet, CompanyProfile, Invoice } from '../../core/models';
+import { Booking, Customer, Service, HourlyPackage, DayPackage, Enquiry, Tariff, Vehicle, CustomerWallet, CompanyProfile } from '../../core/models';
 import { createNotification } from '../../core/function/notificationCreate';
 import { sendNotification } from '../../../common/services/socket/websocket';
 // import { sendBooking } from '../../../common/services/mail';
@@ -187,7 +187,7 @@ export const bookingCreate = async (req: Request, res: Response): Promise<void> 
             toll: toll ?? null,
             hill: hill ?? null,
             permitCharge: permitCharge ?? null,
-            taxPercentage: Number(taxPercentage) ?? null,
+            taxPercentage: taxPercentage ?? null,
             taxAmount: taxAmount ?? null,
             pricePerKm: pricePerKm ?? null,
             startOtp,
@@ -263,7 +263,7 @@ export const bookingCreate = async (req: Request, res: Response): Promise<void> 
             } catch (error) {
                 await t.rollback();
                 console.error("Transaction failed:", error);
-                return;
+                throw error;
             }
         } else {
             await customer.update({
@@ -431,7 +431,7 @@ export const bookingCreate = async (req: Request, res: Response): Promise<void> 
                 template: "customer_booking_acknowledgement",
                 data: {
                     contact: `${(companyProfile?.name ?? "silvercalltaxi.in")}`,
-                    location: `${pickup}${drop ? `→${drop}` : ""}`,
+                    location: `${pickup} ${stops.length > 0 ? ` → ${stops.join(" → ")} → ${drop}` : drop ? ` → ${drop}` : ""}`,
                     pickupDateTime: new Date(
                         new Date(pickupDateTime).getTime() - IST_OFFSET
                     ).toLocaleString("en-IN", {
@@ -725,7 +725,7 @@ export const bookingSave = async (req: Request, res: Response): Promise<void> =>
             toll: toll ?? null,
             hill: hill ?? null,
             permitCharge: permitCharge ?? null,
-            taxPercentage: Number(taxPercentage) ?? null,
+            taxPercentage: taxPercentage ?? null,
             taxAmount: taxAmount ?? null,
             pricePerKm: pricePerKm ?? null,
             startOtp,
@@ -782,7 +782,7 @@ export const bookingSave = async (req: Request, res: Response): Promise<void> =>
             } catch (error) {
                 await t.rollback();
                 console.error("Transaction failed:", error);
-                return;
+                throw error;
             }
         } else {
             await customer.update({
@@ -828,47 +828,3 @@ export const bookingSave = async (req: Request, res: Response): Promise<void> =>
         });
     }
 };
-
-export const getBookingInvoice = async (req: Request, res: Response): Promise<void> => {
-    const adminId = req.query.adminId as string;
-    const { id } = req.params;
-
-    console.log("Invoice ID >> ", id);
-    try {
-        if (!id) {
-            res.status(400).json({
-                success: false,
-                message: "Invoice ID is required"
-            });
-            return;
-        }
-
-        const invoice = await Invoice.findOne({
-            where: { adminId, invoiceNo: id },
-            attributes: {
-                exclude: ['id', 'updatedAt', 'deletedAt']
-            }
-        });
-
-        if (invoice) {
-            res.status(200).json({
-                success: true,
-                message: "Invoice retrieved successfully",
-                data: invoice
-            });
-        } else {
-            res.status(404).json({
-                success: false,
-                message: "Invoice not found"
-            });
-        }
-
-    } catch (error) {
-        console.error("Error fetching invoice:", error);
-        res.status(500).json({
-            success: false,
-            message: "Error fetching invoice"
-        });
-    }
-}
-``

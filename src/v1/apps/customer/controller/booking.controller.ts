@@ -24,14 +24,12 @@ import { CustomerTransaction } from "../../../core/models/customerTransactions";
 import { generateTransactionId } from "../../../core/function/commissionCalculation";
 import { createCustomerNotification, createDriverNotification } from "../../../core/function/notificationCreate";
 import { sendToSingleToken } from "../../../../common/services/firebase/appNotify";
-import { getDriverFcmToken } from "../../../../utils/redis.configs";
 import { debugLogger as debug, infoLogger as log } from "../../../../utils/logger";
 import { applyOffer, applyPromoCode, sendBookingEmail, sendBookingNotifications, deductWallet } from "../../../core/function/postBookingCreation";
 import SMSService from "../../../../common/services/sms/sms";
 import { Op } from "sequelize";
 import { publishNotification } from "../../../../common/services/rabbitmq/publisher";
 import { toLocalTime } from "../../../core/function/dataFn";
-import { QueryParams } from "../../../../common/types/global.types";
 
 
 
@@ -42,12 +40,6 @@ export const specificBooking = async (req: Request, res: Response) => {
     const adminId = req.body.adminId ?? req.query.adminId;
     const customerId = req.body.customerId ?? req.query.customerId;
     const status = req.query.status ?? req.body.status;
-    const {
-        page = 1,
-        limit = 10,
-        sortBy = 'createdAt',
-        sortOrder = 'DESC',
-    }: QueryParams = req.query;
 
     if (!customerId) {
         res.status(401).json({
@@ -61,70 +53,31 @@ export const specificBooking = async (req: Request, res: Response) => {
 
         console.log("status >> ", status);
 
-        const offset = (page - 1) * limit;
-
-
-        let totalCount: number;
-        let totalPages: number;
-        let hasNext: boolean;
-        let hasPrev: boolean;
-
         let bookings: Booking[] | any;
         switch (status.toLowerCase().trim()) {
             case "recent":
                 bookings = await Booking.findOne({
                     where: { customerId: customerId, adminId },
-                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order: [[sortBy, sortOrder]],
-                    limit: Number(limit),
-                    offset: Number(offset),
+                    order: [['createdAt', 'DESC']], // ensures it's the latest booking
+                    limit: 1,
+                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
                 })
-                totalCount = await Booking.count({ where: { customerId: customerId, adminId } });
-                totalPages = Math.ceil(totalCount / limit);
-                hasNext = page < totalPages;
-                hasPrev = page > 1;
                 res.status(200).json({
                     success: true,
                     message: "Recent Booking fetched successfully",
-                    data: {
-                        bookings,
-                        pagination: {
-                            currentPage: Number(page),
-                            totalPages: totalPages,
-                            totalCount: totalCount,
-                            hasNext: hasNext,
-                            hasPrev: hasPrev,
-                            limit: Number(limit)
-                        }
-                    }
+                    data: bookings,
                 });
                 break;
-            case "recent":
+            case "current":
                 bookings = await Booking.findAll({
                     where: { customerId: customerId, adminId, status: "Started" },
-                    order: [[sortBy, sortOrder]],
-                    limit: Number(limit),
-                    offset: Number(offset),
+                    order: [['createdAt', 'DESC']],
                     attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
                 });
-                totalCount = await Booking.count({ where: { customerId: customerId, adminId, status: "Started" } });
-                totalPages = Math.ceil(totalCount / limit);
-                hasNext = page < totalPages;
-                hasPrev = page > 1;
                 res.status(200).json({
                     success: true,
                     message: "Current Booking fetched successfully",
-                    data: {
-                        bookings,
-                        pagination: {
-                            currentPage: Number(page),
-                            totalPages: totalPages,
-                            totalCount: totalCount,
-                            hasNext: hasNext,
-                            hasPrev: hasPrev,
-                            limit: Number(limit)
-                        }
-                    }
+                    data: bookings,
                 });
                 break;
             case "upcoming":
@@ -135,84 +88,36 @@ export const specificBooking = async (req: Request, res: Response) => {
                         [Op.or]: [{ status: "Booking Confirmed" }, { status: "Not-Started" }]
                     },
                     attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order: [[sortBy, sortOrder]],
-                    limit: Number(limit),
-                    offset: Number(offset),
+                    order: [['createdAt', 'DESC']]
                 });
-                totalCount = await Booking.count({ where: { customerId: customerId, adminId, [Op.or]: [{ status: "Booking Confirmed" }, { status: "Not-Started" }] } });
-                totalPages = Math.ceil(totalCount / limit);
-                hasNext = page < totalPages;
-                hasPrev = page > 1;
                 res.status(200).json({
                     success: true,
                     message: "Upcoming Booking fetched successfully",
-                    data: {
-                        bookings,
-                        pagination: {
-                            currentPage: Number(page),
-                            totalPages: totalPages,
-                            totalCount: totalCount,
-                            hasNext: hasNext,
-                            hasPrev: hasPrev,
-                            limit: Number(limit)
-                        }
-                    }
+                    data: bookings,
                 });
                 break;
             case "completed":
                 bookings = await Booking.findAll({
                     where: { customerId: customerId, adminId, status: "Completed" },
                     attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order: [[sortBy, sortOrder]],
-                    limit: Number(limit),
-                    offset: Number(offset),
+                    order: [['updatedAt', 'DESC']]
                 });
-                totalCount = await Booking.count({ where: { customerId: customerId, adminId, status: "Completed" } });
-                totalPages = Math.ceil(totalCount / limit);
-                hasNext = page < totalPages;
-                hasPrev = page > 1;
                 res.status(200).json({
                     success: true,
                     message: "Completed Booking fetched successfully",
-                    data: {
-                        bookings,
-                        pagination: {
-                            currentPage: Number(page),
-                            totalPages: totalPages,
-                            totalCount: totalCount,
-                            hasNext: hasNext,
-                            hasPrev: hasPrev,
-                            limit: Number(limit)
-                        }
-                    }
+                    data: bookings,
                 });
                 break;
             case "cancelled":
                 bookings = await Booking.findAll({
                     where: { customerId: customerId, adminId, status: "Cancelled" },
                     attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order: [[sortBy, sortOrder]],
-                    limit: Number(limit),
-                    offset: Number(offset),
+                    order: [['updatedAt', 'DESC']]
                 });
-                totalCount = await Booking.count({ where: { customerId: customerId, adminId, status: "Cancelled" } });
-                totalPages = Math.ceil(totalCount / limit);
-                hasNext = page < totalPages;
-                hasPrev = page > 1;
                 res.status(200).json({
                     success: true,
                     message: "Cancelled Booking fetched successfully",
-                    data: {
-                        bookings,
-                        pagination: {
-                            currentPage: Number(page),
-                            totalPages: totalPages,
-                            totalCount: totalCount,
-                            hasNext: hasNext,
-                            hasPrev: hasPrev,
-                            limit: Number(limit)
-                        }
-                    }
+                    data: bookings,
                 });
                 break;
 
@@ -220,29 +125,14 @@ export const specificBooking = async (req: Request, res: Response) => {
                 bookings = await Booking.findAll({
                     where: { customerId: customerId, adminId },
                     attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order: [[sortBy, sortOrder]],
-                    limit: Number(limit),
-                    offset: Number(offset),
+                    order: [['createdAt', 'DESC']]
                 });
-                totalCount = await Booking.count({ where: { customerId: customerId, adminId } });
-                totalPages = Math.ceil(totalCount / limit);
-                hasNext = page < totalPages;
-                hasPrev = page > 1;
+
                 if (bookings.length == 0) {
                     res.status(200).json({
                         success: true,
                         message: "No bookings found",
-                        data: {
-                            bookings,
-                            pagination: {
-                                currentPage: Number(page),
-                                totalPages: totalPages,
-                                totalCount: totalCount,
-                                hasNext: hasNext,
-                                hasPrev: hasPrev,
-                                limit: Number(limit)
-                            }
-                        }
+                        data: bookings,
                     });
                     return;
                 }
@@ -261,46 +151,19 @@ export const specificBooking = async (req: Request, res: Response) => {
                 res.status(200).json({
                     success: true,
                     message: "All Bookings fetched successfully",
-                    data: {
-                        bookings: modifiedBookings,
-                        pagination: {
-                            currentPage: Number(page),
-                            totalPages: totalPages,
-                            totalCount: totalCount,
-                            hasNext: hasNext,
-                            hasPrev: hasPrev,
-                            limit: Number(limit)
-                        }
-                    }
+                    data: modifiedBookings,
                 });
                 break;
             default:
                 bookings = await Booking.findAll({
                     where: { customerId: customerId, adminId, status: "Not-Started" },
-                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order: [[sortBy, sortOrder]],
-                    limit: Number(limit),
-                    offset: Number(offset),
+                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
                 });
 
-                totalCount = await Booking.count({ where: { customerId: customerId, adminId, status: "Not-Started" } });
-                totalPages = Math.ceil(totalCount / limit);
-                hasNext = page < totalPages;
-                hasPrev = page > 1;
                 res.status(200).json({
                     success: true,
                     message: "Booking fetched successfully",
-                    data: {
-                        bookings,
-                        pagination: {
-                            currentPage: Number(page),
-                            totalPages: totalPages,
-                            totalCount: totalCount,
-                            hasNext: hasNext,
-                            hasPrev: hasPrev,
-                            limit: Number(limit)
-                        }
-                    },
+                    data: bookings,
                 });
                 break;
         }
@@ -572,7 +435,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             hill: hill ?? null,
             permitCharge: permitCharge ?? null,
             pricePerKm: pricePerKm ?? null,
-            taxPercentage: Number(taxPercentage) ?? null,
+            taxPercentage: taxPercentage ?? null,
             taxAmount: taxAmount ?? null,
             driverBeta: driverBeta ?? null,
             duration: convertedDuration ?? null,
@@ -1025,7 +888,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
                 template: "customer_booking_acknowledgement",
                 data: {
                     contact: `${(companyProfile?.name ?? "silvercalltaxi.in")}`,
-                    location: `${pickup}${drop ? `→${drop}` : ""}`,
+                    location: `${pickup} ${stops.length > 0 ? ` → ${stops.join(" → ")} → ${drop}` : drop ? ` → ${drop}` : ""}`,
                     pickupDateTime: new Date(
                         new Date(pickupDateTime).getTime() - IST_OFFSET
                     ).toLocaleString("en-IN", {
@@ -1163,10 +1026,9 @@ export const cancelBooking = async (req: Request, res: Response) => {
         }
 
 
-        const driverId = booking.driverId;
-        if (driverId) {
+        if (booking?.driverId) {
             const driver = await Driver.findOne({
-                where: { driverId: driverId }
+                where: { driverId: booking.driverId }
             });
 
             if (!driver) {
@@ -1209,13 +1071,10 @@ export const cancelBooking = async (req: Request, res: Response) => {
 
 
             try {
-                const redisFcmToken = booking.adminId
-                    ? await getDriverFcmToken(String(booking.adminId), String(driver.driverId))
-                    : null;
-                const targetFcmToken = redisFcmToken || driver.fcmToken;
-
-                if (bookingAssignNotification && targetFcmToken) {
-                    const tokenResponse = await sendToSingleToken(targetFcmToken, {
+                if (bookingAssignNotification) {
+                    const tokenResponse = await sendToSingleToken(driver.fcmToken, {
+                        // title: 'New Booking Arrived',
+                        // message: `Mr ${driver.name} You have received a new booking`,
                         ids: {
                             adminId: booking.adminId,
                             bookingId: booking.bookingId,
@@ -1230,7 +1089,7 @@ export const cancelBooking = async (req: Request, res: Response) => {
                     });
                     debug.info(`FCM Notification Response: ${tokenResponse}`);
                 } else {
-                    debug.info(`Booking cancelled by customer notification skipped due to missing token`);
+                    debug.info(`booking cancelled  by customer notification is false`);
                 }
             } catch (err: any) {
                 debug.info(`FCM Notification Error: ${err}`);

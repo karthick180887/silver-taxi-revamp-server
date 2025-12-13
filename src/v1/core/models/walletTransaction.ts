@@ -30,7 +30,6 @@ export interface WalletTransactionAttributes {
 
     fareBreakdown?: any;
     status?: "Paid" | "Unpaid";
-    retryCount?: number;
 
 }
 
@@ -64,7 +63,6 @@ class WalletTransaction extends Model<WalletTransactionAttributes, WalletTransac
 
     public fareBreakdown?: any;
     public status?: "Paid" | "Unpaid";
-    public retryCount?: number;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -190,11 +188,6 @@ WalletTransaction.init(
             allowNull: true,
             defaultValue: "Unpaid",
         },
-        retryCount: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            defaultValue: 0,
-        },
     },
     {
         sequelize,
@@ -206,43 +199,11 @@ WalletTransaction.init(
             {
                 fields: ["transactionId", "type", "date", "vendorId", "driverId", "ownedBy", "adminId"],
             },
-            // Common query patterns
             {
-                fields: ["adminId", "date"], // date-based queries
-            },
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "type", "date"], // type filtering with date
-            },
-            {
-                fields: ["adminId", "type", "createdAt"], // type filtering with pagination
-            },
-            {
-                fields: ["vendorId", "date"], // vendor transactions by date
-            },
-            {
-                fields: ["vendorId", "createdAt"], // vendor transactions with pagination
-            },
-            {
-                fields: ["driverId", "date"], // driver transactions by date
-            },
-            {
-                fields: ["driverId", "createdAt"], // driver transactions with pagination
-            },
-            {
-                fields: ["ownedBy", "date"], // ownedBy filtering with date
-            },
-            {
-                fields: ["transactionId"], // transaction lookup (already in composite but separate for faster lookups)
-            },
-            {
-                fields: ["walletId"], // wallet lookup
-            },
-            {
-                fields: ["status"], // status filtering
-            },
+                fields: ["fareBreakdown"],
+                using: 'GIN',
+                name: 'fare_breakdown_gin_index'
+            }
         ],
     }
 );

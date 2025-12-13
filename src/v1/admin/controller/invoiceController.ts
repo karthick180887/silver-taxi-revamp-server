@@ -1,118 +1,32 @@
 import { Request, Response } from "express";
 import { Booking, Invoice, CompanyProfile } from "../../core/models"
 import { Op } from "sequelize";
-import { QueryParams } from "common/types/global.types";
 
 
 export const getAllInvoices = async (req: Request, res: Response) => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
-        const {
-            page = 1,
-            limit = 30,
-            search = '',
-            status = '',
-            sortBy = 'createdAt',
-            sortOrder = 'DESC'
-        }: QueryParams = req.query;
-
-        if (!adminId) {
-            res.status(400).json({
-                success: false,
-                message: "adminId is required in Invoices",
-            });
-            return;
-        }
-
-        const offset = (page - 1) * limit;
-
-        const whereClause: any = { adminId };
-
-        const searchConditions: any[] = [];
-
-        if (search) {
-
-            const isNumeric = !isNaN(Number(search));
-            const num = Number(search);
-
-            searchConditions.push(
-                { invoiceId: { [Op.iLike]: `%${search}%` } },
-                { invoiceNo: { [Op.iLike]: `%${search}%` } },
-                { name: { [Op.iLike]: `%${search}%` } },
-                { phone: { [Op.iLike]: `%${search}%` } },
-                ...(isNumeric
-                    ? [
-                        { totalAmount: num },
-                        { pricePerKm: num },
-                        { totalKm: num },
-                    ]
-                    : [])
-            );
-        }
-
-        if (searchConditions.length > 0) {
-            whereClause[Op.or] = searchConditions;
-        }
-
-        // Define sort order mapping
-        const order: any[] = [];
-        order.push([sortBy, sortOrder]);
-
-        const baseWhereClause = { ...whereClause };
-        delete baseWhereClause.status;
-
-        // Run critical queries (must succeed) and count queries (can fail gracefully) in parallel
-        const [
-            criticalResults,
-            countResults
-        ] = await Promise.all([
-            Promise.all([
-                Invoice.findAll({
-                    where: whereClause,
-                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                    order,
-                    limit: parseInt(limit as any),
-                    offset: offset,
-                }),
-                Invoice.count({ where: whereClause })
-            ]),
-            Promise.allSettled([
-                Invoice.count({ where: { ...baseWhereClause, status: 'Paid' } }),
-                Invoice.count({ where: { ...baseWhereClause, status: 'Unpaid' } }),
-                Invoice.count({ where: { ...baseWhereClause, status: 'Partial Paid' } }),
-            ])
-        ]);
-
-        // Extract critical results
-        const [invoices, totalCount] = criticalResults;
-
-        const invoicesCount = {
-            total: totalCount ?? 0,
-            paid: countResults[0].status === 'fulfilled' ? countResults[0].value : 0,
-            unpaid: countResults[1].status === 'fulfilled' ? countResults[1].value : 0,
-            partiallyPaid: countResults[2].status === 'fulfilled' ? countResults[2].value : 0,
-        }
-
-        // console.log("invoices-->", invoicesCount);
-        const totalPages = Math.ceil(totalCount / parseInt(limit as any));
-        const hasNext = page < totalPages;
-        const hasPrev = page > 1;
+        const invoices = await Invoice.findAll({
+            where: { adminId },
+            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+            include: [
+                {
+                    model: CompanyProfile,
+                    as: 'companyProfile',
+                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
+                },
+                {
+                    model: Booking,
+                    as: 'booking',
+                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
+                }
+            ]
+        });
 
         res.status(200).json({
             success: true,
             message: "Invoices retrieved successfully",
-            data: {
-                invoices,
-                invoicesCount,
-                pagination: {
-                    currentPage: parseInt(page as any),
-                    totalPages: Math.ceil(totalCount / parseInt(limit as any)),
-                    totalCount,
-                    hasNext,
-                    hasPrev,
-                    limit: parseInt(limit as any)
-                }
-            }
+            data: invoices
         });
 
 
@@ -336,7 +250,7 @@ export const createInvoice = async (req: Request, res: Response) => {
             adminId,
             vendorId: createdBy === "Vendor" ? vendorId : null,
             bookingId,
-            companyId: company?.companyId || undefined,
+            companyId: companyId ?? company?.companyId,
             invoiceNo: invoiceNo ?? optionalInvoiceNo,
             invoiceDate: invoiceDateObj,
             name,

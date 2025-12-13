@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { Vehicle } from "../../core/models/vehicles";
 import { Tariff, VehicleTypes } from "../../core/models";
 import fs from 'fs/promises';
-import { uploadFileToDOS3 } from "../../../utils/minio.image";
+import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
 
 
 
@@ -163,7 +163,7 @@ export const createVehicle = async (req: Request, res: Response): Promise<void> 
             console.log("Processing image upload...");
             try {
                 const imageBuffer = await fs.readFile(imageUrl.path);
-                const uploadedImageUrl = await uploadFileToDOS3(imageBuffer, `vehicle/${newVehicle.vehicleId}.webp`);
+                const uploadedImageUrl = await uploadFileToMiniIOS3(imageBuffer, `vehicle/${newVehicle.vehicleId}.webp`);
 
                 newVehicle.imageUrl = uploadedImageUrl ?? '';
                 await newVehicle.save();

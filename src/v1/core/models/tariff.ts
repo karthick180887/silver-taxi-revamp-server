@@ -148,42 +148,24 @@ Tariff.init(
         paranoid: true,
 
         indexes: [
-            // Unique constraint on tariffId only (the 7-column unique was inefficient)
             {
-                unique: true,
-                fields: ["tariffId"],
-            },
-            // Common query patterns - optimized for high concurrency
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "status", "createdAt"], // status filtering with pagination (most common)
-            },
-            {
-                fields: ["adminId", "status"], // status filtering
+                fields: [
+                    "tariffId",
+                    "adminId",
+                    "serviceId",
+                    "vehicleId",
+                    "status",
+                    "createdBy",
+                    "vendorId"
+                ],
+                unique: true
             },
             {
-                fields: ["adminId", "vendorId", "createdAt"], // vendor tariffs with pagination
+                fields: ["includes"],
+                using: 'GIN',
+                name: 'idx_tariff_includes',
             },
-            {
-                fields: ["adminId", "vendorId"], // vendor tariffs
-            },
-            {
-                fields: ["adminId", "vendorId", "status"], // vendor active tariffs
-            },
-            {
-                fields: ["serviceId", "vehicleId", "status"], // service and vehicle lookup (most common for pricing)
-            },
-            {
-                fields: ["serviceId", "vehicleId"], // service and vehicle lookup
-            },
-            {
-                fields: ["serviceId", "status"], // service filtering
-            },
-            {
-                fields: ["vehicleId", "status"], // vehicle filtering
-            },
+
         ],
     }
 );

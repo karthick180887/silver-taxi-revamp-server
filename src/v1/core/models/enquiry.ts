@@ -166,37 +166,7 @@ Enquiry.init(
                 unique: true,
                 fields: ["enquiryId", "adminId", "pickupDateTime", "pickup", "drop", "serviceId", "vendorId"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "createdAt"], // pagination queries
-            },
-            {
-                fields: ["adminId", "status", "createdAt"], // status filtering with pagination
-            },
-            {
-                fields: ["adminId", "status"], // status filtering
-            },
-            {
-                fields: ["adminId", "vendorId", "createdAt"], // vendor enquiries with pagination
-            },
-            {
-                fields: ["adminId", "vendorId"], // vendor enquiries
-            },
-            {
-                fields: ["enquiryId"], // enquiryId lookup (already in unique but separate index for faster lookups)
-            },
-            {
-                fields: ["pickupDateTime"], // date range queries
-            },
-            {
-                fields: ["serviceId"], // service lookup
-            },
-            {
-                fields: ["phone"], // phone search
-            },
-            {
-                fields: ["name"], // name search
-            },
+
         ],
     }
 );

@@ -127,28 +127,7 @@ DriverNotification.init(
                 unique: true,
                 fields: ["notifyId", "date", "driverId", "adminId"],
             },
-            // Common query patterns
-            {
-                fields: ["adminId", "driverId", "createdAt"], // driver notifications with pagination
-            },
-            {
-                fields: ["adminId", "driverId"], // driver notifications
-            },
-            {
-                fields: ["adminId", "driverId", "read", "createdAt"], // unread notifications with pagination
-            },
-            {
-                fields: ["adminId", "driverId", "read"], // unread notifications
-            },
-            {
-                fields: ["notifyId"], // notifyId lookup (already in unique but separate for faster lookups)
-            },
-            {
-                fields: ["date"], // date-based queries
-            },
-            {
-                fields: ["type"], // type filtering
-            },
+
         ],
     }
 );

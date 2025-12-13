@@ -156,28 +156,6 @@ PromoCode.init({
             unique: true,
             fields: ["adminId", "codeId", "code", "status"],
         },
-        // Common query patterns
-        {
-            fields: ["adminId", "createdAt"], // pagination queries
-        },
-        {
-            fields: ["adminId", "status", "createdAt"], // status filtering with pagination
-        },
-        {
-            fields: ["adminId", "status"], // status filtering
-        },
-        {
-            fields: ["code"], // code lookup (already in unique but separate for faster lookups)
-        },
-        {
-            fields: ["codeId"], // codeId lookup
-        },
-        {
-            fields: ["startDate", "endDate"], // date range queries for active promos
-        },
-        {
-            fields: ["category"], // category filtering
-        },
     ],
 });
 

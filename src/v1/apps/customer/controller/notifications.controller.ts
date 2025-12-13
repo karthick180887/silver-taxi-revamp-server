@@ -172,35 +172,27 @@ export const bulkDeleteNotifications = async (req: Request, res: Response): Prom
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
         const customerId = req.body.customerId ?? req.query.customerId;
-        // const { ids } = req.body; // Assuming ids are passed in the request body
+        const { ids } = req.body; // Assuming ids are passed in the request body
 
-        // if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        //     res.status(400).json({
-        //         success: false,
-        //         message: "No notification IDs provided for deletion",
-        //     });
-        //     return;
-        // }
-
-        if (!customerId) {
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
             res.status(400).json({
                 success: false,
-                message: "Customer ID is required",
+                message: "No notification IDs provided for deletion",
             });
             return;
         }
 
         const notifications = await CustomerNotification.findAll({
             where: {
+                notifyId: { [Op.in]: ids },
                 adminId,
                 customerId
             },
         });
-
         if (notifications.length === 0) {
             res.status(404).json({
                 success: false,
-                message: "No notifications found",
+                message: "No notifications found with the provided IDs",
             });
             return;
         }

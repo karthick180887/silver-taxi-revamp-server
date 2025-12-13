@@ -13,15 +13,13 @@ import {
   DriverBookingLog,
   VehicleTypes,
   CustomerWallet,
-  DriverNotification,
 } from "../../../core/models/index";
 import {
   createNotification,
   createVendorNotification,
 } from "../../../core/function/notificationCreate";
 import {
-  sendToSingleToken,
-  sendBatchNotifications
+  sendToSingleToken
 } from "../../../../common/services/firebase/appNotify";
 import { NotificationManager } from "../../../../common/services/notification/notificationManager";
 import dayjs from "../../../../utils/dayjs";
@@ -42,7 +40,6 @@ import { customOTPGenerator } from "../../../core/function/commissionCalculation
 import { validatedVendorBooking } from "../../../../common/validations/bookingSchema";
 import { publishNotification } from "../../../../common/services/rabbitmq/publisher";
 import { toLocalTime } from "../../../core/function/dataFn";
-import { getAllRedisDrivers, getDriverFcmToken } from "../../../../utils/redis.configs";
 
 
 const sms = SMSService();
@@ -314,8 +311,9 @@ export const getVendorSpecificBookings = async (
             vendorId,
             [Op.or]: [
               { status: "Booking Confirmed" },
-            ],
-            driverAccepted: "pending"
+              { status: "Reassign" },
+              { driverAccepted: "pending" }
+            ]
           },
           attributes: { exclude: ["id", "updatedAt", "deletedAt"] },
           order: [["createdAt", "DESC"]],
@@ -424,6 +422,8 @@ export const getVendorSpecificBookings = async (
             vendorId,
             [Op.or]: [
               { status: "Booking Confirmed" },
+              { status: "Reassign" },
+              { driverAccepted: "pending" }
             ],
             driverAccepted: "pending",
           },
@@ -489,8 +489,11 @@ export const getVendorSpecificBookingCounts = async (req: Request, res: Response
       where: {
         adminId,
         vendorId,
-        status: "Booking Confirmed",
-        driverAccepted: "pending"
+        [Op.or]: [
+          { status: "Booking Confirmed" },
+          { status: "Reassign" },
+          { driverAccepted: "pending" }
+        ]
       },
     });
 
@@ -681,7 +684,7 @@ export const createVendorBookingController = async (req: Request, res: Response)
       tariffId: tariffId ?? null,
       serviceId: serviceId ?? null,
       vehicleId,
-      status: "Booking Confirmed" as const,
+      // status: "Booking Confirmed",
       type: type || "App",
       distance: Math.round(distance || 0),
       estimatedAmount: Math.ceil(estimatedAmount || 0),
@@ -700,7 +703,7 @@ export const createVendorBookingController = async (req: Request, res: Response)
       extraPermitCharge: extraPermitCharge || 0,
       pricePerKm: pricePerKm || 0,
       extraPricePerKm: extraPricePerKm || 0,
-      taxPercentage: Number(taxPercentage) || getService?.tax?.vendorGST || 0,
+      taxPercentage: taxPercentage || getService?.tax?.vendorGST || 0,
       taxAmount: taxAmount || Math.ceil((taxPercentage || getService?.tax?.vendorGST) * (estimatedAmount || 0) / 100),
       driverBeta: driverBeta || undefined,
       extraDriverBeta: extraDriverBeta || 0,
@@ -843,17 +846,17 @@ export const createVendorBookingController = async (req: Request, res: Response)
           },
           { type: "text", text: `${newBooking.pickup}${newBooking.stops.length > 0 ? `→ ${newBooking.stops.slice(0, 2).join("→")}` : ""}${newBooking.drop ? `→ ${newBooking.drop}` : ""}` },
           { type: "text", text: `${newBooking.serviceType === "Round trip" ? `${newBooking.serviceType} day(s)${newBooking.days}` : newBooking.serviceType}` },
-          { type: "text", text: newBooking?.modifiedFare?.distance.toString() || newBooking.distance.toString() },
-          { type: "text", text: newBooking?.modifiedFare?.minKm.toString() || newBooking.minKm.toString() },
-          { type: "text", text: newBooking?.modifiedFare?.pricePerKm.toString() || newBooking.pricePerKm.toString() },
-          { type: "text", text: newBooking?.modifiedFare?.driverBeta.toString() || newBooking.driverBeta.toString() },
+          { type: "text", text: newBooking.distance },
+          { type: "text", text: newBooking.minKm },
+          { type: "text", text: newBooking.pricePerKm },
+          { type: "text", text: newBooking.driverBeta },
           // { type: "text", text: newBooking.extraCharges["Toll"].toString() ?? "0" },
-          { type: "text", text: newBooking?.modifiedFare["hill"].toString() ?? "0" },
-          { type: "text", text: newBooking?.modifiedFare["permitCharge"].toString() ?? "0" },
-          { type: "text", text: newBooking?.modifiedFare?.estimatedAmount.toString() },
+          { type: "text", text: newBooking.extraCharges["Hill"].toString() ?? "0" },
+          { type: "text", text: newBooking.extraCharges["Permit Charge"].toString() ?? "0" },
+          { type: "text", text: newBooking.estimatedAmount.toString() },
           { type: "text", text: newBooking.taxAmount.toString() },
-          { type: "text", text: newBooking?.modifiedFare?.discountAmount.toString() || newBooking.discountAmount.toString() },
-          { type: "text", text: newBooking?.modifiedFare?.finalAmount.toString() || newBooking.finalAmount.toString() },
+          { type: "text", text: newBooking.discountAmount.toString() },
+          { type: "text", text: newBooking.finalAmount.toString() },
           { type: "text", text: vendor?.phone ?? "9876543210" },
           { type: "text", text: vendor?.website ?? "https://silvertaxi.in" },
         ],
@@ -874,7 +877,7 @@ export const createVendorBookingController = async (req: Request, res: Response)
         template: "customer_booking_acknowledgement",
         data: {
           contact: `${(vendor?.name ?? "silvercalltaxi.in")}`,
-          location: `${pickup}${drop ? `→${drop}` : ""}`,
+          location: `${pickup} ${stops.length > 0 ? ` → ${stops.join(" → ")} → ${drop}` : drop ? ` → ${drop}` : ""}`,
           pickupDateTime: new Date(
             new Date(pickupDateTime).getTime() - IST_OFFSET
           ).toLocaleString("en-IN", {
@@ -886,16 +889,16 @@ export const createVendorBookingController = async (req: Request, res: Response)
             hour12: true
           }),
           serviceType: `${newBooking.serviceType === "Round trip" ? `${newBooking.serviceType} day(s)${newBooking.days}` : newBooking.serviceType}`,
-          distance: newBooking?.modifiedFare.distance.toString() || newBooking.distance.toString(),
-          minKm: newBooking?.modifiedFare.minKm.toString() || newBooking.minKm.toString(),
-          pricePerKm: newBooking?.modifiedFare?.pricePerKm.toString() || newBooking.pricePerKm.toString(),
-          driverBeta: newBooking?.modifiedFare?.driverBeta.toString() || newBooking.driverBeta.toString(),
-          hill: newBooking.modifiedFare["hill"].toString() ?? "0",
-          permitCharges: newBooking?.modifiedFare["permitCharge"].toString() ?? "0",
-          estimatedAmount: newBooking?.modifiedFare?.estimatedAmount.toString() || newBooking.estimatedAmount.toString(),
+          distance: newBooking.distance,
+          minKm: newBooking.minKm,
+          pricePerKm: newBooking.pricePerKm,
+          driverBeta: newBooking.driverBeta,
+          hill: newBooking.extraCharges["Hill"].toString() ?? "0",
+          permitCharges: newBooking.extraCharges["Permit Charge"].toString() ?? "0",
+          estimatedAmount: newBooking.estimatedAmount.toString(),
           taxAmount: newBooking.taxAmount.toString(),
-          discountAmount: newBooking?.modifiedFare?.discountAmount.toString() || newBooking?.discountAmount.toString(),
-          finalAmount: newBooking?.modifiedFare?.finalAmount.toString() || newBooking.finalAmount.toString(),
+          discountAmount: newBooking.discountAmount.toString(),
+          finalAmount: newBooking.finalAmount.toString(),
           contactNumber: vendor?.phone ?? "9876543210",
           website: vendor?.website ?? "https://silvertaxi.in",
         }
@@ -1374,7 +1377,7 @@ export const fetchDrivers = async (req: Request, res: Response) => {
         where: {
           adminId,
           phone: {
-            [Op.iLike]: `${phone}%`, // Matches phone numbers starting with the provided digits (case-insensitive)
+            [Op.like]: `${phone}%`, // Matches phone numbers starting with the provided digits
           },
         },
         attributes: ["driverId", "name", "phone", "email", "assigned", "geoLocation"],
@@ -1466,238 +1469,125 @@ export const fetchDriversWithLocation = async (req: Request, res: Response) => {
 export const getVehicleTypes = async (req: Request, res: Response) => {
   const adminId = req.body.adminId ?? req.query.adminId;
 
-  const vehicles = await Vehicle.findAll({
-    where: { adminId, isAdminVehicle: true },
-    attributes: ['vehicleId', 'type', 'order'],
-    order: [['order', 'ASC']]
+  const vehicleTypes = await VehicleTypes.findAll({
+    where: { adminId },
+    attributes: ['vTypeId', 'name', 'order'],
+    order: [['createdAt', 'ASC']]
   });
-
-
-  const customVehicleType = [];
-  const seen = new Set();
-  for (const v of vehicles) {
-    const key = v.type; // or use just v.type if that's the unique field
-    if (!seen.has(key)) {
-      seen.add(key);
-      customVehicleType.push({
-        vTypeId: v.vehicleId,
-        name: v.type,
-        order: v.order
-      });
-    }
-  }
 
   res.status(200).json({
     success: true,
     message: "Vehicle types retrieved successfully",
-    data: customVehicleType,
+    data: vehicleTypes,
   });
 
 }
 
-export const assignDriver = async (req: Request, res: Response): Promise<void> => {
+export const assignDriver = async (req: Request, res: Response) => {
   const vendorId = req.body.vendorId ?? req.query.vendorId;
   const adminId = req.body.adminId ?? req.query.adminId;
-  const { bookingId, driverId } = req.body;
-
-  if (!adminId) {
-    res.status(400).json({
-      success: false,
-      message: 'adminId is required',
-    });
-    return;
-  }
-
-  if (!bookingId) {
-    res.status(400).json({
-      success: false,
-      message: 'bookingId is required',
-    });
-    return;
-  }
-
-  if (!driverId) {
-    res.status(400).json({
-      success: false,
-      message: 'driverId is required',
-    });
-    return;
-  }
+  // const { id: bookingId } = req.params; // Get bookingId from URL params
+  const { driverId, bookingId } = req.body; // Get driverId from request body
 
   const requestSentTime = dayjs().toDate();
-  log.info(`Assign driver for adminId: ${adminId}, vendorId: ${vendorId}, bookingId: ${bookingId}, driverId: ${driverId} entry $>>`);
 
-  const transaction = await sequelize.transaction();
-
+  log.info(
+    `Assign driver for vendorId: ${vendorId} and driverId: ${driverId} entry $>>`
+  );
   try {
-    // Find booking with lock to prevent concurrent modifications
-    const booking = await Booking.findOne({
-      where: { bookingId, adminId, vendorId },
-      transaction,
-      lock: transaction.LOCK.UPDATE,
-    });
-
+    const booking = await Booking.findOne({ where: { bookingId, vendorId } });
     if (!booking) {
-      await transaction.rollback();
-      debug.info(`Assign driver | Booking not found: bookingId=${bookingId}, adminId=${adminId}, vendorId=${vendorId}`);
+      debug.info(
+        `Assign driver for vendorId: ${vendorId} and driverId: ${driverId} Booking not found`
+      );
       res.status(404).json({
         success: false,
-        message: 'Booking not found',
+        message: "Booking not found",
       });
       return;
     }
 
-    // Validate booking status - don't allow assignment if booking is completed or cancelled
-    if (booking.status === 'Completed' || booking.status === 'Cancelled' || booking.status === 'Manual Completed') {
-      await transaction.rollback();
-      res.status(400).json({
-        success: false,
-        message: `Cannot assign driver to a ${booking.status.toLowerCase()} booking`,
-      });
-      return;
-    }
-
-    // Find driver
-    const driver = await Driver.findOne({
-      where: { driverId, adminId },
-      transaction,
-    });
-
-    if (!driver) {
-      await transaction.rollback();
-      debug.info(`Assign driver | Driver not found: driverId=${driverId}, adminId=${adminId}, vendorId=${vendorId}`);
-      res.status(404).json({
-        success: false,
-        message: 'Driver not found',
-      });
-      return;
-    }
-
-    // Check if driver is active
-    if (!driver.isActive) {
-      await transaction.rollback();
-      res.status(400).json({
-        success: false,
-        message: 'Cannot assign an inactive driver',
-      });
-      return;
-    }
-
-    // Check if driver is already assigned to another active booking
-    const existingBooking = await Booking.findOne({
-      where: {
-        adminId,
-        vendorId,
-        driverId,
-        driverAccepted: { [Op.in]: ['accepted'] },
-        status: { [Op.in]: ['Not-Started', 'Started'] },
-        bookingId: { [Op.ne]: bookingId },
-      },
-      transaction,
-    });
-
-    if (existingBooking) {
-      await transaction.rollback();
-      res.status(400).json({
-        success: false,
-        message: 'Driver is already assigned to another active booking',
-      });
-      return;
-    }
-
-    // Handle previous driver unassignment
+    // Check if a driver is already assigned
     const previousDriverId = booking.driverId;
     if (previousDriverId && previousDriverId !== driverId) {
+      // Unassign the previous driver
       const previousDriver = await Driver.findOne({
         where: { driverId: previousDriverId, adminId },
-        transaction,
       });
 
       if (previousDriver) {
-        previousDriver.assigned = false;
-        await previousDriver.save({ transaction });
+        await previousDriver.update({ assigned: false });
       }
     }
 
-    // Assign the new driver with driverName and driverPhone
-    const updateData: any = {
-      driverId,
-      driverName: driver.name,
-      driverPhone: driver.phone,
-      driverAccepted: 'pending',
-      assignAllDriver: false,
-      requestSentTime,
-    };
+    const driver = await Driver.findOne({
+      where: { driverId, adminId },
+      include: [{ model: DriverWallet, as: "wallet" }],
+    });
 
-    // Only update status if it's not already in a valid state
-    if (booking.status === 'Not-Started' || booking.status === 'Reassign') {
-      updateData.status = 'Booking Confirmed';
+    if (!driver) {
+      debug.info(
+        `Assign driver for adminId: ${adminId} and driverId: ${driverId} Driver not found`
+      );
+      res.status(404).json({
+        success: false,
+        message: "Driver not found",
+      });
+      return;
     }
 
-    await booking.update(updateData, { transaction });
+    // Assign the new driver
+    await booking.update({
+      driverId,
+      driverAccepted: "pending",
+      assignAllDriver: false,
+      requestSentTime,
+    });
 
-    // Commit transaction
-    await transaction.commit();
-
-    // Persist driver notification and push via FCM (non-blocking)
-    try {
-      const bookingAssignNotification = await createDriverNotification({
+    // Send driver notification using the notification manager
+    const message = {
+      type: "new-booking",
+      fcmToken: driver.fcmToken,
+      payload: {
         title: "New Booking Arrived",
         message: `Mr ${driver.name}, you have received a new booking.`,
         ids: {
           adminId: booking.adminId,
-          driverId: driver.driverId,
           bookingId: booking.bookingId,
+          driverId: driver.driverId,
         },
-        type: "booking",
-      });
+        data: {
+          title: "New Booking Arrived",
+          message: `Mr ${driver.name}, you have received a new booking.`,
+          type: "new-booking",
+          channelKey: "booking_channel",
+        },
+      },
+    };
 
-      // Get FCM token from Redis
-      const redisFcmToken = booking.adminId
-        ? await getDriverFcmToken(String(booking.adminId), String(driver.driverId))
-        : null;
-      const targetFcmToken = redisFcmToken || driver.fcmToken;
+    // Push message to RabbitMQ
+    publishNotification("notification.fcm.driver", message);
+    debug.info(`FCM Notification queued for driver ${driver.driverId}`);
 
-      if (bookingAssignNotification && targetFcmToken && targetFcmToken.trim() !== '') {
-        const tokenResponse = await sendToSingleToken(targetFcmToken, {
-          ids: {
-            adminId: booking.adminId,
-            bookingId: booking.bookingId,
-            driverId: driver.driverId,
-          },
-          data: {
-            title: 'New Booking Arrived',
-            message: `Mr ${driver.name}, you have received a new booking.`,
-            type: "new-booking",
-            channelKey: "booking_channel",
-          }
-        });
-        debug.info(`FCM Notification Response: ${tokenResponse}`);
-      } else {
-        debug.info(`Driver notification not created or FCM token missing for driverId=${driver.driverId}`);
-      }
-    } catch (err: any) {
-      // Log but don't fail the request if notification fails
-      debug.info(`FCM Notification Error: ${err}`);
-    }
-
-    log.info(`Assign driver for adminId: ${adminId}, bookingId: ${bookingId}, driverId: ${driverId} exit <<$`);
+    log.info(
+      `Assign driver for adminId: ${adminId} and driverId: ${driverId} exit <<$`
+    );
 
     res.status(200).json({
       success: true,
-      message: 'Driver assigned successfully',
+      message: "Driver assigned successfully",
       data: booking,
     });
   } catch (error) {
-    await transaction.rollback();
-    debug.info(`Assign driver error: adminId=${adminId}, bookingId=${bookingId}, driverId=${driverId}, error=${error}`);
+    debug.info(
+      `Assign driver for adminId: ${adminId} and driverId: ${driverId} error >> ${error}`
+    );
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Internal server error',
+      message: error instanceof Error ? error.message : "Internal server error",
     });
   }
 };
-
 
 export const assignAllDrivers = async (req: Request, res: Response) => {
   const adminId = req.body.adminId ?? req.query.adminId;
@@ -1726,47 +1616,37 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
     const requestSentTime = dayjs().toDate();
 
     if (booking.driverId) {
-      const previousDriver = await Driver.findOne({
+      const driver = await Driver.findOne({
         where: { driverId: booking.driverId, adminId },
       });
-      if (previousDriver) await previousDriver.update({ assigned: false });
+
+      if (driver) {
+        await driver.update({ assigned: false });
+      }
     }
 
-    const normalizedAdminId = adminId ? String(adminId) : "";
-    let broadcastDrivers: Array<{ driverId: string; adminId: string; name: string; fcmToken?: string | null }> = [];
+    // Get all active drivers for the admin
+    const drivers = await Driver.findAll({
+      where: { adminId, isActive: true },
+      attributes: [
+        "driverId",
+        "name",
+        "email",
+        "phone",
+        "assigned",
+        "isActive",
+        "fcmToken",
+      ],
+      include: [
+        {
+          model: DriverWallet,
+          as: "wallet",
+          attributes: ["walletId", "balance"],
+        },
+      ],
+    });
 
-    if (normalizedAdminId) {
-      const redisDrivers = await getAllRedisDrivers(normalizedAdminId);
-      broadcastDrivers = redisDrivers
-        .filter(driver => driver && driver.isActive)
-        .map(driver => ({
-          driverId: driver.driverId,
-          adminId: driver.adminId,
-          name: driver.name,
-          fcmToken: driver.fcmToken,
-        }));
-    }
-
-    if (!broadcastDrivers.length) {
-      const dbDrivers = await Driver.findAll({
-        where: { adminId, isActive: true },
-        attributes: [
-          "driverId",
-          "name",
-          "fcmToken",
-          "adminId",
-        ],
-      });
-
-      broadcastDrivers = dbDrivers.map(driver => ({
-        driverId: driver.driverId,
-        adminId: driver.adminId,
-        name: driver.name,
-        fcmToken: driver.fcmToken,
-      }));
-    }
-
-    if (!broadcastDrivers.length) {
+    if (!drivers || drivers.length === 0) {
       res.status(400).json({
         success: false,
         message: "No drivers found",
@@ -1783,124 +1663,40 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
     });
     await booking.save();
 
-    // Collect all valid FCM tokens and driver data
-    const validDrivers = broadcastDrivers.filter(driver => driver.fcmToken && driver.fcmToken.trim() !== '');
-    const fcmTokens: string[] = [];
-    const driverData: any[] = [];
-
-    // Collect tokens and driver data
-    for (const driver of validDrivers) {
-      if (driver.fcmToken) {
-        fcmTokens.push(driver.fcmToken);
-      }
-      driverData.push({
-        driverId: driver.driverId,
-        adminId: driver.adminId,
-        name: driver.name,
-      });
-    }
-
-    // Send batch notification directly (without queue)
-    if (fcmTokens.length > 0) {
-      // Prepare bulk notification data
-      const notificationData = driverData
-        .filter(driver => driver.driverId && driver.adminId)
-        .map(driver => ({
-          title: "New Booking Arrived",
-          message: `Mr ${driver.name || 'Driver'}, you have received a new booking.`,
-          driverId: driver.driverId,
-          adminId: driver.adminId,
-          route: "",
-          type: "booking",
-          read: false,
-          date: new Date(),
-          time: new Date().toLocaleTimeString(),
-        }));
-
-      // Prepare booking log data for parallel upserts
-      const bookingLogData = driverData
-        .filter(driver => booking.bookingId && driver.driverId && driver.adminId)
-        .map(driver => ({
-          adminId: driver.adminId,
-          driverId: driver.driverId,
-          bookingId: booking.bookingId,
-          requestSendTime: requestSentTime,
-        }));
-
-      // Execute all operations in parallel
-      const [notificationResult, logResults, batchResult] = await Promise.allSettled([
-        // Bulk create notifications
-        notificationData.length > 0
-          ? DriverNotification.bulkCreate(notificationData, {
-              returning: true,
-            }).then(notifications => {
-              // Update notifyId for each notification in parallel
-              return Promise.all(
-                notifications.map(async (notif) => {
-                  if (!notif.notifyId) {
-                    notif.notifyId = `notify-${notif.id}`;
-                    await notif.save();
-                  }
-                  return notif;
-                })
-              );
-            })
-          : Promise.resolve([]),
-
-        // Parallel upserts for booking logs
-        Promise.allSettled(
-          bookingLogData.map(logData =>
-            DriverBookingLog.upsert(logData).catch((err) => {
-              debug.info(`Failed to log for driver ${logData.driverId}:`, err);
-              return null;
-            })
-          )
-        ),
-
-        // Batch send FCM notifications
-        sendBatchNotifications(fcmTokens, {
-          title: "New Booking Arrived",
-          message: "You have received a new booking.",
-          ids: {
-            adminId: booking.adminId,
-            bookingId: booking.bookingId,
-          },
-          data: {
+    for (const driver of drivers) {
+      try {
+        const message = {
+          type: "new-booking",
+          fcmToken: driver.fcmToken,
+          payload: {
             title: "New Booking Arrived",
-            message: "You have received a new booking.",
-            type: "new-booking",
-            channelKey: "booking_channel",
-            bookingId: String(booking.bookingId),
+            message: `Mr ${driver.name}, you have received a new booking.`,
+            ids: {
+              adminId: booking.adminId,
+              bookingId: booking.bookingId,
+              driverId: driver.driverId,
+            },
+            data: {
+              title: "New Booking Arrived",
+              message: `Mr ${driver.name}, you have received a new booking.`,
+              type: "new-booking",
+              channelKey: "booking_channel",
+            },
           },
-        }),
-      ]);
+        };
 
-      // Log results
-      if (notificationResult.status === 'fulfilled') {
-        debug.info(`Bulk created ${notificationResult.value.length} notifications`);
-      } else {
-        debug.info(`Failed to bulk create notifications:`, notificationResult.reason);
-      }
+        // Push notification (async, no await)
+        publishNotification("notification.fcm.driver", message)
+          .catch((err) => debug.error(`❌ Failed to queue notification for ${driver.driverId}:`, err));
 
-      if (logResults.status === 'fulfilled') {
-        const successfulLogs = logResults.value.filter(r => r.status === 'fulfilled').length;
-        debug.info(`Created ${successfulLogs} booking logs`);
-      }
-
-      if (batchResult.status === 'fulfilled') {
-        const result = batchResult.value;
-        debug.info(`Batch FCM notification sent: ${result.successCount} success, ${result.failureCount} failed`);
-        if (result.invalidTokens && result.invalidTokens.length > 0) {
-          debug.info(`Invalid tokens detected: ${result.invalidTokens.length}`);
-        }
-      } else {
-        debug.info(`Failed to send batch FCM notifications:`, batchResult.reason);
+      } catch (err) {
+        debug.error(`⚠️ Error processing driver ${driver.driverId}:`, err);
       }
     }
 
     res.status(200).json({
       success: true,
-      message: `Batch notifications sent to ${validDrivers.length} drivers`,
+      message: `Notifications sent to ${drivers.length} drivers via queue`,
       booking,
     });
 
@@ -2074,13 +1870,8 @@ export const toggleChanges = async (
             }
 
             try {
-              const redisFcmToken = booking.adminId
-                ? await getDriverFcmToken(String(booking.adminId), String(driver.driverId))
-                : null;
-              const targetFcmToken = redisFcmToken || driver.fcmToken;
-
-              if (bookingAssignNotification && targetFcmToken) {
-                const tokenResponse = await sendToSingleToken(targetFcmToken, {
+              if (bookingAssignNotification && driver.fcmToken) {
+                const tokenResponse = await sendToSingleToken(driver.fcmToken, {
                   ids: {
                     adminId: booking.adminId,
                     bookingId: booking.bookingId,
@@ -2096,7 +1887,7 @@ export const toggleChanges = async (
                 debug.info(`FCM Notification Response: ${tokenResponse}`);
               } else {
                 debug.info(
-                  `Driver notification skipped due to missing FCM token`
+                  `Driver notification or FCM token not available`
                 );
               }
             } catch (err: any) {
@@ -2218,26 +2009,42 @@ export const cancelBookingByVendor = async (req: Request, res: Response) => {
       const driver = await Driver.findOne({
         where: { driverId, adminId },
       });
-
-      const activityLog = await DriverBookingLog.findOne({
-        where: {
-          bookingId: id,
-          adminId
-        },
-      });
-
-      if (activityLog) {
-        await activityLog.update({
-          tripStatus: "Cancelled",
-        });
-        activityLog.save();
-      }
-
-
       if (driver) {
         driver.assigned = false;
         await driver.save();
 
+        if (Number(driver.bookingCount) > 0) {
+          driver.bookingCount = Number(driver.bookingCount) - 1;
+          await driver.save();
+        }
+      }
+    }
+
+    await booking.update({ status: "Cancelled" });
+
+    // Send notification to driver
+    if (driverId) {
+      const driver = await Driver.findOne({
+        where: { driverId, adminId },
+      });
+
+      if (driver) {
+        const activityLog = await DriverBookingLog.findOne({
+          where: {
+            bookingId: id,
+            adminId
+          },
+        });
+
+        if (activityLog) {
+          await activityLog.update({
+            tripStatus: "Cancelled",
+          });
+          activityLog.save();
+        }
+      }
+
+      if (driver) {
         const bookingAssignNotification = await createDriverNotification({
           title: "Booking cancelled by vendor",
           message: `Mr ${driver.name}, Your booking has been cancelled`,
@@ -2249,13 +2056,8 @@ export const cancelBookingByVendor = async (req: Request, res: Response) => {
         });
 
         try {
-          const redisFcmToken = booking.adminId
-            ? await getDriverFcmToken(String(booking.adminId), String(driver.driverId))
-            : null;
-          const targetFcmToken = redisFcmToken || driver.fcmToken;
-
-          if (bookingAssignNotification && targetFcmToken) {
-            const tokenResponse = await sendToSingleToken(targetFcmToken, {
+          if (bookingAssignNotification && driver.fcmToken) {
+            const tokenResponse = await sendToSingleToken(driver.fcmToken, {
               ids: {
                 adminId: booking.adminId, driverId: driver.driverId,
               },
@@ -2269,7 +2071,7 @@ export const cancelBookingByVendor = async (req: Request, res: Response) => {
             debug.info(`FCM Notification Response: ${tokenResponse}`);
           } else {
             debug.info(
-              `Driver notification skipped due to missing FCM token`
+              `Driver notification or FCM token not available`
             );
           }
         } catch (err: any) {
@@ -2277,8 +2079,6 @@ export const cancelBookingByVendor = async (req: Request, res: Response) => {
         }
       }
     }
-
-    await booking.update({ status: "Cancelled" });
 
     res.status(200).json({
       success: true,

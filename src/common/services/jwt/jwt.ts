@@ -7,7 +7,20 @@ export const decodeToken = (token: string) => {
   return jwt.verify(token, env.JWT_SECRET) as any;
 };
 export const encodeToken = (data: any) => {
-  return jwt.sign({ ...data }, env.JWT_SECRET, { expiresIn: Number(env.JWT_EXPIRATION_TIME) }) as any;
+  // Parse JWT_EXPIRATION_TIME as number (seconds)
+  const expirationTime = env.JWT_EXPIRATION_TIME || "172800"; // Default: 2 days
+  let expiresIn: number;
+  
+  // Try to parse as number
+  const parsedNumber = Number(expirationTime);
+  if (!isNaN(parsedNumber) && parsedNumber > 0 && isFinite(parsedNumber)) {
+    expiresIn = parsedNumber; // Use as number of seconds
+  } else {
+    // Fallback: default to 2 days (172800 seconds)
+    expiresIn = 172800;
+  }
+  
+  return jwt.sign({ ...data }, env.JWT_SECRET, { expiresIn }) as any;
 };
 
 export const signInToken = (data: any) => {

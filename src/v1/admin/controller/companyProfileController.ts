@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { CompanyProfile } from "../../core/models"; // Ensure the import path is correct
-import { uploadFileToDOS3 } from "../../../utils/minio.image";
+import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
 import fs from "fs/promises";
 
 // Get all company profiles
@@ -314,7 +314,7 @@ export const uploadCompanyProfileImage = async (req: Request, res: Response): Pr
         const { nanoid } = await import("nanoid")
         const companyId = nanoid(10);
         const imageBuffer = await fs.readFile(image.path);
-        const imageUrl = await uploadFileToDOS3(imageBuffer, `company/${companyId}.webp`);
+        const imageUrl = await uploadFileToMiniIOS3(imageBuffer, `company/${companyId}.webp`);
         await fs.unlink(image.path).catch((err: Error) =>
             console.error("Error deleting temporary file:", err)
         );

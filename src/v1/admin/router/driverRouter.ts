@@ -11,13 +11,14 @@ import {
     getAllDriverWalletRequests,
     getDriverWalletRequestById,
     walletBulkRequest,
-    getAllDriversWithLocation
+    getDriverLocations
 } from '../controller/driverController';
 import upload from '../../../utils/multer.fileUpload';
 
 const router = express.Router();
 
 // Get specific filtered/static data
+router.get('/location', getDriverLocations);
 router.get('/active', getActiveDrivers);
 router.get('/wallet/transactions', getAllDriverWalletTrans);
 router.get('/wallet/requests', getAllDriverWalletRequests);
@@ -36,7 +37,6 @@ router.put('/wallet/request/:id', approveOrRejectDriverWalletRequest);
 
 // Core CRUD
 router.get('/', getAllDrivers);
-router.get('/location', getAllDriversWithLocation);
 router.post('/', upload.single("licenseImage"), createDriver);
 router.put('/:id', updateDriver);
 router.delete('/:id', deleteDriver);

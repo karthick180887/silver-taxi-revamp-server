@@ -1,7 +1,9 @@
 class ApiConfig {
-  // Use 10.0.2.2 for Android Emulator to access host machine
-  // Use localhost for iOS Simulator or Desktop
-  static const String baseUrl = "http://10.0.2.2:30060"; 
+  // API base URL - update this to match your server IP
+  // For physical device: use your machine's local IP (e.g., 192.168.0.102)
+  // For Android Emulator: use 10.0.2.2 to access host machine
+  // For iOS Simulator: use localhost or 127.0.0.1
+  static const String baseUrl = "http://10.0.6.3:30060"; 
   
   static String transformImageUrl(String? url) {
     if (url == null || url.isEmpty) return "";

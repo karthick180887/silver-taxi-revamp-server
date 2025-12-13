@@ -111,38 +111,6 @@ DriverActivityLog.init(
         tableName: 'driver_activity_logs',
         timestamps: true,
         paranoid: true,
-        indexes: [
-            // Unique constraint
-            {
-                unique: true,
-                fields: ['eventId'],
-            },
-            // Common query patterns - optimized for high concurrency
-            {
-                fields: ['driverId', 'createdAt'], // driver activity logs with pagination
-            },
-            {
-                fields: ['driverId', 'eventDateTime'], // driver activity by date
-            },
-            {
-                fields: ['driverId', 'type', 'createdAt'], // filter by activity type
-            },
-            {
-                fields: ['driverId', 'level', 'createdAt'], // filter by log level (errors, warnings)
-            },
-            {
-                fields: ['adminId', 'createdAt'], // admin view of all logs
-            },
-            {
-                fields: ['eventDateTime'], // date range queries
-            },
-            {
-                fields: ['type'], // activity type filtering
-            },
-            {
-                fields: ['level'], // log level filtering (for error monitoring)
-            },
-        ],
     }
 );
 

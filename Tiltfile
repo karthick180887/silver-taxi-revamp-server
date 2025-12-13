@@ -13,8 +13,12 @@ k8s_yaml("k8s/redis.yaml")
 k8s_yaml("k8s/rabbitmq.yaml")
 k8s_yaml("k8s/minio.yaml")
 k8s_yaml("k8s/secrets.yaml")
+k8s_yaml("k8s/hpa.yaml")
 
-# Port-forward the app service so you can hit http://192.168.1.100:30060 during tilt up
-k8s_resource("backend-go-app", port_forwards=port_forward(30060, 3060, host="0.0.0.0"))
+# Port-forward: 30060->8081 (for Flutter/Ext), 8081->8081 (for Dashboard)
+k8s_resource("backend-go-app", port_forwards=[
+    port_forward(30060, 8081, host="0.0.0.0"),
+    port_forward(8081, 8081, host="0.0.0.0")
+])
 k8s_resource("redis")
 

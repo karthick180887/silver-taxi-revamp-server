@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import { randomUUID } from "crypto";
 import {
     Driver, Admin,
     DriverWallet,
@@ -8,9 +7,8 @@ import {
     DriverBookingLog,
     DriverWalletRequest
 } from "../../core/models"; // Ensure the import path is correct
-import { VehicleAttributes } from "../../core/models/vehicles";
 import fs from 'fs/promises';
-import { uploadFileToDOS3 } from "../../../utils/minio.image";
+import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
 import { sequelize } from "../../../common/db/postgres";
 import { Op } from "sequelize";
 import { sendToSingleToken } from "../../../common/services/firebase/appNotify";
@@ -18,24 +16,15 @@ import { createDriverNotification } from "../../core/function/notificationCreate
 import { debugLogger as debug, infoLogger as log } from "../../../utils/logger";
 import { generateTransactionId } from "../../core/function/commissionCalculation";
 import { walletBulkRequestSchema } from "../../../common/validations/driverSchema";
-import { QueryParams } from "../../../common/types/global.types";
-import { getAllRedisDrivers, getDriverFcmToken, getRedisDrivers, setRedisDrivers } from "../../../utils/redis.configs";
 import { publishDriverWork } from "../../../common/services/rabbitmq/publisher";
 
+
 // Get all drivers
-
-
 export const getAllDrivers = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
-        const {
-            page = 1,
-            limit = 25,
-            search = '',
-            status = '',
-            sortBy = 'createdAt',
-            sortOrder = 'DESC'
-        }: QueryParams = req.query;
+
+        console.log(`[Drivers] Fetching drivers for adminId: ${adminId}`);
 
         if (!adminId) {
             res.status(400).json({
@@ -44,87 +33,39 @@ export const getAllDrivers = async (req: Request, res: Response): Promise<void> 
             });
             return;
         }
-
-        // Calculate offset for pagination
-        const offset = (page - 1) * limit;
-
-        // Build where clause
-        const whereClause: any = { adminId };
-
-        // Add status filter if provided
-        if (status) {
-            whereClause.status = status;
-        }
-
-        // Build search conditions
-        const searchConditions: any[] = [];
-        if (search) {
-            searchConditions.push(
-                { driverId: { [Op.iLike]: `%${search}%` } },
-                { name: { [Op.iLike]: `%${search}%` } },
-                { phone: { [Op.iLike]: `%${search}%` } }
-            );
-        }
-
-        // Add search conditions to where clause if they exist
-        if (searchConditions.length > 0) {
-            whereClause[Op.or] = searchConditions;
-        }
-
-        // Define sort order mapping
-        const order: any[] = [];
-        if (sortBy === 'walkerBalance') {
-            // Sort by associated model field
-            order.push([{ model: DriverWallet, as: 'wallet' }, 'balance', sortOrder]);
-        } else {
-            // Sort by driver field
-            order.push([sortBy, sortOrder]);
-        }
-
-        // Execute query with pagination
-        const { count, rows: drivers } = await Driver.findAndCountAll({
-            where: whereClause,
+        const drivers = await Driver.findAll({
+            where: { adminId },
             attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
             include: [{
                 model: DriverWallet,
                 as: 'wallet',
                 attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
-            }],
-            order,
-            limit: parseInt(limit as any),
-            offset: offset,
-            distinct: true // Important for count with includes
+            }]
         });
 
-        const [active, inactive] = await Promise.all([
-            Driver.count({ where: { ...whereClause, isActive: true } }),
-            Driver.count({ where: { ...whereClause, isActive: false } })
-        ]);
+        console.log(`[Drivers] Found ${drivers.length} drivers.`);
 
-        // Calculate pagination metadata
-        const totalPages = Math.ceil(count / limit);
-        const hasNext = page < totalPages;
-        const hasPrev = page > 1;
+        const driversCount = {
+            total: drivers.length,
+            active: drivers.filter(d => d.isActive).length,
+            inactive: drivers.filter(d => !d.isActive).length
+        };
 
         res.status(200).json({
             success: true,
             message: "Drivers retrieved successfully",
             data: {
-                drivers,
-                driversCount: {
-                    active,
-                    inactive,
-                    total: count
-                },
+                drivers: drivers,
+                driversCount: driversCount,
                 pagination: {
-                    currentPage: parseInt(page as any),
-                    totalPages,
-                    totalCount: count,
-                    hasNext,
-                    hasPrev,
-                    limit: parseInt(limit as any)
+                    currentPage: 1,
+                    totalPages: 1,
+                    totalCount: drivers.length,
+                    hasNext: false,
+                    hasPrev: false,
+                    limit: drivers.length
                 }
-            },
+            }
         });
 
     } catch (error) {
@@ -136,23 +77,37 @@ export const getAllDrivers = async (req: Request, res: Response): Promise<void> 
     }
 };
 
-export const getAllDriversWithLocation = async (req: Request, res: Response): Promise<void> => {
+// Get Driver Locations (for Map)
+export const getDriverLocations = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
-        const drivers = await getAllRedisDrivers(adminId);
+
+        if (!adminId) {
+            res.status(400).json({ success: false, message: "adminId is required" });
+            return;
+        }
+
+        const drivers = await Driver.findAll({
+            where: {
+                adminId,
+                isActive: true,
+                geoLocation: { [Op.ne]: null } // Ensure location exists
+            },
+            attributes: ['id', 'driverId', 'name', 'phone', 'geoLocation', 'isOnline'],
+        });
+
+        console.log(`[DriverLocations] AdminId: ${adminId}, Found: ${drivers.length} drivers with location`);
+
         res.status(200).json({
             success: true,
-            message: "Drivers with location fetched successfully",
+            message: "Driver locations retrieved",
             data: drivers
         });
     } catch (error) {
-        console.error("Error fetching drivers with location:", error);
-        res.status(500).json({
-            success: false,
-            message: "Error fetching drivers with location",
-        });
+        console.error("Error fetching driver locations:", error);
+        res.status(500).json({ success: false, message: "Error fetching driver locations" });
     }
-}
+};
 
 // Get all active drivers
 export const getActiveDrivers = async (req: Request, res: Response) => {
@@ -259,17 +214,13 @@ export const getAllDriverWalletTrans = async (req: Request, res: Response) => {
 export const getDriverWalletTrans = async (req: Request, res: Response) => {
     const adminId = req.body.adminId ?? req.query.adminId;
     const { id } = req.params;
-    const limit = Number(req.query.limit ?? 30);
-    const offset = Number(req.query.offset ?? 0);
     try {
         const walletTrans = await WalletTransaction.findAll({
             where: {
                 adminId,
                 driverId: id,
             },
-            order: [["createdAt", "DESC"]],
-            limit: limit,
-            offset: offset,
+            order: [["createdAt", "DESC"]]
         });
 
         res.status(200).json({
@@ -289,420 +240,212 @@ export const getDriverWalletTrans = async (req: Request, res: Response) => {
 };
 
 
-// Constants for verification status values
-const VERIFICATION_STATUS = {
-    PENDING: "pending",
-    ACCEPTED: "accepted",
-    REJECTED: "rejected",
-} as const;
 
-const ADMIN_VERIFICATION_STATUS = {
-    PENDING: "Pending",
-    APPROVED: "Approved",
-    REJECTED: "Rejected",
-} as const;
 
-type VerificationStatus = typeof VERIFICATION_STATUS[keyof typeof VERIFICATION_STATUS];
-type AdminVerificationStatus = typeof ADMIN_VERIFICATION_STATUS[keyof typeof ADMIN_VERIFICATION_STATUS];
 
-interface VerificationUpdateFields {
-    [key: string]: string | boolean | null | undefined;
-}
 
-interface VehicleVerificationFields {
-    vehicleProfileVerified?: VerificationStatus;
-    vehicleRemark?: string;
-    rcFrontVerified?: VerificationStatus;
-    rcFrontRemark?: string;
-    rcBackVerified?: VerificationStatus;
-    rcBackRemark?: string;
-    insuranceVerified?: VerificationStatus;
-    insuranceRemark?: string;
-}
-
-interface DriverVerificationFields {
-    profileVerified?: VerificationStatus;
-    remark?: string;
-    aadharImageFrontVerified?: VerificationStatus;
-    aadharImageFrontRemark?: string;
-    aadharBackVerified?: VerificationStatus;
-    aadharBackRemark?: string;
-    licenseImageFrontVerified?: VerificationStatus;
-    licenseImageFrontRemark?: string;
-    licenseImageBackVerified?: VerificationStatus;
-    licenseImageBackRemark?: string;
-}
-
-/**
- * Updates driver and/or vehicle verification status
- * @param req - Express request object containing verification fields
- * @param res - Express response object
- * @returns Promise<void>
- */
 export const verificationStatus = async (req: Request, res: Response): Promise<void> => {
-    const transaction = await sequelize.transaction();
-    
     try {
-        // Extract and validate required parameters
         const adminId = req.body.adminId ?? req.query.adminId;
-        const { id: driverId } = req.params;
+        const tenantId = req.body.tenantId ?? req.query.tenantId;
+        const { id } = req.params;
         const { vehicleId } = req.body;
 
-        if (!adminId) {
-            await transaction.rollback();
+        if (!vehicleId) {
             res.status(400).json({
                 success: false,
-                message: "adminId is required",
+                message: "vehicleId is required",
             });
             return;
         }
 
-        if (!driverId) {
-            await transaction.rollback();
-            res.status(400).json({
-                success: false,
-                message: "driverId is required in URL parameters",
-            });
-            return;
-        }
-
-        // Extract verification fields from request body
-        const driverFields: DriverVerificationFields = {
-            profileVerified: req.body.profileVerified,
-            remark: req.body.remark,
-            aadharImageFrontVerified: req.body.aadharImageFrontVerified,
-            aadharImageFrontRemark: req.body.aadharImageFrontRemark,
-            aadharBackVerified: req.body.aadharBackVerified,
-            aadharBackRemark: req.body.aadharBackRemark,
-            licenseImageFrontVerified: req.body.licenseImageFrontVerified,
-            licenseImageFrontRemark: req.body.licenseImageFrontRemark,
-            licenseImageBackVerified: req.body.licenseImageBackVerified,
-            licenseImageBackRemark: req.body.licenseImageBackRemark,
-        };
-
-        const vehicleFields: VehicleVerificationFields = {
-            vehicleProfileVerified: req.body.vehicleProfileVerified,
-            vehicleRemark: req.body.vehicleRemark,
-            rcFrontVerified: req.body.rcFrontVerified,
-            rcFrontRemark: req.body.rcFrontRemark,
-            rcBackVerified: req.body.rcBackVerified,
-            rcBackRemark: req.body.rcBackRemark,
-            insuranceVerified: req.body.insuranceVerified,
-            insuranceRemark: req.body.insuranceRemark,
-        };
-
-        debug.info("Verification status update request", { adminId, driverId, vehicleId, driverFields, vehicleFields });
-
-        // Check if any vehicle-related fields are being updated
-        const hasVehicleFields = Object.values(vehicleFields).some(value => value !== undefined);
-
-        // Only require vehicleId if vehicle fields are being updated
-        if (hasVehicleFields && !vehicleId) {
-            await transaction.rollback();
-            res.status(400).json({
-                success: false,
-                message: "vehicleId is required when updating vehicle verification fields",
-            });
-            return;
-        }
-
-        // Build the driver query with conditional vehicle inclusion
-        const driverQuery: any = {
-            where: { adminId, driverId },
+        const driver = await Driver.findOne({
+            where: { adminId, driverId: id },
             include: [{
                 model: Vehicle,
                 as: 'vehicle',
-                required: false, // Left join to allow driver without vehicle
-                ...(vehicleId && { where: { vehicleId } }),
+                where: { vehicleId },
                 order: [['createdAt', 'ASC']],
             }],
-        };
-
-        const driver = await Driver.findOne(driverQuery);
+        });
 
         if (!driver) {
-            await transaction.rollback();
             res.status(404).json({
                 success: false,
-                message: 'Driver not found',
+                message: 'Driver or vehicle is not found'
             });
             return;
         }
 
-        const vehicle = (driver as any)?.vehicle?.[0] as VehicleAttributes | undefined;
+        const {
+            vehicleProfileVerified, profileVerified,
+            remark, vehicleRemark,
+            panCardVerified, panCardRemark,
+            aadharImageFrontVerified, aadharImageFrontRemark,
+            aadharBackVerified, aadharBackRemark,
+            licenseImageFrontVerified, licenseImageFrontRemark,
+            licenseImageBackVerified, licenseImageBackRemark,
+            rcFrontVerified, rcFrontRemark,
+            rcBackVerified, rcBackRemark,
+            pollutionImageVerified, pollutionImageRemark,
+            insuranceVerified, insuranceRemark,
+        } = req.body;
 
-        // Validate vehicle exists if vehicle fields are being updated
-        if (hasVehicleFields && !vehicle) {
-            await transaction.rollback();
-            res.status(404).json({
-                success: false,
-                message: 'Vehicle not found for this driver',
-            });
-            return;
-        }
+        console.log("Request body:", req.body);
 
-        // Use vehicleId from request or from vehicle object
-        const actualVehicleId = vehicleId || vehicle?.vehicleId;
 
-        // Process driver verification updates
-        const driverUpdateFields: VerificationUpdateFields = {};
-        const vehicleUpdateFields: VerificationUpdateFields = {};
+        const driverUpdateFields: any = {};
+        const vehicleUpdateFields: any = {};
 
-        /**
-         * Handles verification status update logic
-         */
-        const handleVerificationUpdate = (
-            verifiedValue: VerificationStatus | undefined,
+
+        function handleVerificationUpdate(
+            verifiedValue: any,
             verifiedField: string,
             remarkField: string,
-            target: VerificationUpdateFields,
+            target: any,
             isProfileField: boolean
-        ): void => {
+
+        ) {
             if (verifiedValue !== undefined) {
                 target[verifiedField] = verifiedValue;
-                
-                // Clear remark when accepted
-                if (verifiedValue === VERIFICATION_STATUS.ACCEPTED) {
+                if (verifiedValue === "accepted") {
                     target[remarkField] = null;
                 }
-                
-                // Set parent verification status when rejected
-                if (verifiedValue === VERIFICATION_STATUS.REJECTED) {
+                if (verifiedValue === "rejected") {
                     if (isProfileField) {
-                        target.profileVerified = VERIFICATION_STATUS.REJECTED;
+                        target.profileVerified = "rejected";
                     } else {
-                        target.documentVerified = VERIFICATION_STATUS.REJECTED;
+                        target.documentVerified = "rejected";
                     }
                 }
             }
-        };
-
-        // Update driver fields
-        handleVerificationUpdate(
-            driverFields.profileVerified,
-            'profileVerified',
-            'profileRemark',
-            driverUpdateFields,
-            true
-        );
-        if (driverFields.remark !== undefined && driverFields.profileVerified !== VERIFICATION_STATUS.ACCEPTED) {
-            driverUpdateFields.remark = driverFields.remark;
         }
 
-        handleVerificationUpdate(
-            driverFields.aadharImageFrontVerified,
-            'aadharImageFrontVerified',
-            'aadharImageFrontRemark',
-            driverUpdateFields,
-            false
-        );
-        if (driverFields.aadharImageFrontRemark !== undefined && 
-            driverFields.aadharImageFrontVerified !== VERIFICATION_STATUS.ACCEPTED) {
-            driverUpdateFields.aadharImageFrontRemark = driverFields.aadharImageFrontRemark;
-        }
 
-        handleVerificationUpdate(
-            driverFields.aadharBackVerified,
-            'aadharImageBackVerified',
-            'aadharImageBackRemark',
-            driverUpdateFields,
-            false
-        );
-        if (driverFields.aadharBackRemark !== undefined && 
-            driverFields.aadharBackVerified !== VERIFICATION_STATUS.ACCEPTED) {
-            driverUpdateFields.aadharImageBackRemark = driverFields.aadharBackRemark;
-        }
+        // Only update fields present in the request
+        handleVerificationUpdate(profileVerified, 'profileVerified', 'profileRemark', driverUpdateFields, true);
+        if (remark !== undefined && profileVerified !== "accepted") driverUpdateFields.remark = remark;
 
-        handleVerificationUpdate(
-            driverFields.licenseImageFrontVerified,
-            'licenseImageFrontVerified',
-            'licenseImageFrontRemark',
-            driverUpdateFields,
-            false
-        );
-        if (driverFields.licenseImageFrontRemark !== undefined && 
-            driverFields.licenseImageFrontVerified !== VERIFICATION_STATUS.ACCEPTED) {
-            driverUpdateFields.licenseImageFrontRemark = driverFields.licenseImageFrontRemark;
-        }
+        handleVerificationUpdate(panCardVerified, 'panCardVerified', 'panCardRemark', driverUpdateFields, false);
+        if (panCardRemark !== undefined && panCardVerified !== "accepted") driverUpdateFields.panCardRemark = panCardRemark;
 
-        handleVerificationUpdate(
-            driverFields.licenseImageBackVerified,
-            'licenseImageBackVerified',
-            'licenseImageBackRemark',
-            driverUpdateFields,
-            false
-        );
-        if (driverFields.licenseImageBackRemark !== undefined && 
-            driverFields.licenseImageBackVerified !== VERIFICATION_STATUS.ACCEPTED) {
-            driverUpdateFields.licenseImageBackRemark = driverFields.licenseImageBackRemark;
-        }
+        handleVerificationUpdate(aadharImageFrontVerified, 'aadharImageFrontVerified', 'aadharImageFrontRemark', driverUpdateFields, false);
+        if (aadharImageFrontRemark !== undefined && aadharImageFrontVerified !== "accepted") driverUpdateFields.aadharImageFrontRemark = aadharImageFrontRemark;
 
-        // Update vehicle fields
-        if (hasVehicleFields && vehicle) {
-            handleVerificationUpdate(
-                vehicleFields.vehicleProfileVerified,
-                'profileVerified',
-                'remark',
-                vehicleUpdateFields,
-                true
-            );
-            if (vehicleFields.vehicleRemark !== undefined && 
-                vehicleFields.vehicleProfileVerified !== VERIFICATION_STATUS.ACCEPTED) {
-                vehicleUpdateFields.remark = vehicleFields.vehicleRemark;
+        handleVerificationUpdate(aadharBackVerified, 'aadharImageBackVerified', 'aadharImageBackRemark', driverUpdateFields, false);
+        if (aadharBackRemark !== undefined && aadharBackVerified !== "accepted") driverUpdateFields.aadharImageBackRemark = aadharBackRemark;
+
+        handleVerificationUpdate(licenseImageFrontVerified, 'licenseImageFrontVerified', 'licenseImageFrontRemark', driverUpdateFields, false);
+        if (licenseImageFrontRemark !== undefined && licenseImageFrontVerified !== "accepted") driverUpdateFields.licenseImageFrontRemark = licenseImageFrontRemark;
+
+        handleVerificationUpdate(licenseImageBackVerified, 'licenseImageBackVerified', 'licenseImageBackRemark', driverUpdateFields, false);
+        if (licenseImageBackRemark !== undefined && licenseImageBackVerified !== "accepted") driverUpdateFields.licenseImageBackRemark = licenseImageBackRemark;
+
+
+
+
+        handleVerificationUpdate(vehicleProfileVerified, 'profileVerified', 'remark', vehicleUpdateFields, true);
+        if (vehicleRemark !== undefined && vehicleProfileVerified !== "accepted") vehicleUpdateFields.remark = vehicleRemark;
+
+
+        handleVerificationUpdate(rcFrontVerified, 'rcFrontVerified', 'rcFrontRemark', vehicleUpdateFields, false);
+        if (rcFrontRemark !== undefined && rcFrontVerified !== "accepted") vehicleUpdateFields.rcFrontRemark = rcFrontRemark;
+
+        handleVerificationUpdate(rcBackVerified, 'rcBackVerified', 'rcBackRemark', vehicleUpdateFields, false);
+        if (rcBackRemark !== undefined && rcBackVerified !== "accepted") vehicleUpdateFields.rcBackRemark = rcBackRemark;
+
+        handleVerificationUpdate(pollutionImageVerified, 'pollutionImageVerified', 'pollutionImageRemark', vehicleUpdateFields, false);
+        if (pollutionImageRemark !== undefined && pollutionImageVerified !== "accepted") vehicleUpdateFields.pollutionImageRemark = pollutionImageRemark;
+
+        handleVerificationUpdate(insuranceVerified, 'insuranceVerified', 'insuranceRemark', vehicleUpdateFields, false);
+        if (insuranceRemark !== undefined && insuranceVerified !== "accepted") vehicleUpdateFields.insuranceRemark = insuranceRemark;
+
+        for (const [key, value] of Object.entries(driverUpdateFields)) {
+            if (typeof value === "string" && value.toLowerCase() === "rejected" && key.endsWith("Verified")) {
+                driverUpdateFields.isUpdated = true;
+                break;
             }
-
-            handleVerificationUpdate(
-                vehicleFields.rcFrontVerified,
-                'rcFrontVerified',
-                'rcFrontRemark',
-                vehicleUpdateFields,
-                false
-            );
-            if (vehicleFields.rcFrontRemark !== undefined && 
-                vehicleFields.rcFrontVerified !== VERIFICATION_STATUS.ACCEPTED) {
-                vehicleUpdateFields.rcFrontRemark = vehicleFields.rcFrontRemark;
-            }
-
-            handleVerificationUpdate(
-                vehicleFields.rcBackVerified,
-                'rcBackVerified',
-                'rcBackRemark',
-                vehicleUpdateFields,
-                false
-            );
-            if (vehicleFields.rcBackRemark !== undefined && 
-                vehicleFields.rcBackVerified !== VERIFICATION_STATUS.ACCEPTED) {
-                vehicleUpdateFields.rcBackRemark = vehicleFields.rcBackRemark;
-            }
-
-            handleVerificationUpdate(
-                vehicleFields.insuranceVerified,
-                'insuranceVerified',
-                'insuranceRemark',
-                vehicleUpdateFields,
-                false
-            );
-            if (vehicleFields.insuranceRemark !== undefined && 
-                vehicleFields.insuranceVerified !== VERIFICATION_STATUS.ACCEPTED) {
-                vehicleUpdateFields.insuranceRemark = vehicleFields.insuranceRemark;
+        }
+        for (const [key, value] of Object.entries(vehicleUpdateFields)) {
+            if (typeof value === "string" && value.toLowerCase() === "rejected" && key.endsWith("Verified")) {
+                vehicleUpdateFields.isUpdated = true;
+                break;
             }
         }
 
-        // Set isUpdated flag if any document is rejected
-        const hasRejectedDriverDoc = Object.entries(driverUpdateFields).some(
-            ([key, value]) => typeof value === "string" && 
-                              value.toLowerCase() === VERIFICATION_STATUS.REJECTED && 
-                              key.endsWith("Verified")
-        );
-        if (hasRejectedDriverDoc) {
-            driverUpdateFields.isUpdated = true;
-        }
-
-        const hasRejectedVehicleDoc = Object.entries(vehicleUpdateFields).some(
-            ([key, value]) => typeof value === "string" && 
-                              value.toLowerCase() === VERIFICATION_STATUS.REJECTED && 
-                              key.endsWith("Verified")
-        );
-        if (hasRejectedVehicleDoc) {
-            vehicleUpdateFields.isUpdated = true;
-        }
-
-        // Check if all driver documents are accepted
-        const driverDocumentFields: (VerificationStatus | undefined)[] = [
-            driverFields.aadharImageFrontVerified ?? driver.aadharImageFrontVerified,
-            driverFields.aadharBackVerified ?? driver.aadharImageBackVerified,
-            driverFields.licenseImageFrontVerified ?? driver.licenseImageFrontVerified,
-            driverFields.licenseImageBackVerified ?? driver.licenseImageBackVerified,
+        const driverDocumentFields = [
+            panCardVerified || driver.panCardVerified,
+            aadharImageFrontVerified || driver.aadharImageFrontVerified,
+            aadharBackVerified || driver.aadharImageBackVerified,
+            licenseImageFrontVerified || driver.licenseImageFrontVerified,
+            licenseImageBackVerified || driver.licenseImageBackVerified,
         ];
-        const allDriverDocsAccepted = driverDocumentFields.every(
-            field => field === VERIFICATION_STATUS.ACCEPTED
-        );
+        const allDriverDocsAccepted = driverDocumentFields.every(field => field === "accepted");
 
-        // Check if all vehicle documents are accepted (if vehicle exists)
-        let allVehicleDocsAccepted = true;
-        if (vehicle) {
-            const vehicleDocumentFields: (VerificationStatus | undefined)[] = [
-                vehicleFields.rcFrontVerified ?? vehicle.rcFrontVerified,
-                vehicleFields.rcBackVerified ?? vehicle.rcBackVerified,
-                vehicleFields.insuranceVerified ?? vehicle.insuranceVerified,
-            ];
-            allVehicleDocsAccepted = vehicleDocumentFields.every(
-                field => field === VERIFICATION_STATUS.ACCEPTED
-            );
-            debug.info("Vehicle document verification status", { vehicleDocumentFields, allVehicleDocsAccepted });
-        }
+        // Check if all vehicle docs are accepted
+        const vehicleDocumentFields = [
+            rcFrontVerified || (driver as any)?.vehicle?.[0]?.rcFrontVerified,
+            rcBackVerified || (driver as any)?.vehicle?.[0]?.rcBackVerified,
+            pollutionImageVerified || (driver as any)?.vehicle?.[0]?.pollutionImageVerified,
+            insuranceVerified || (driver as any)?.vehicle?.[0]?.insuranceVerified,
+        ];
 
-        // Auto-set documentVerified status
+        console.log("Vehicle Document Fields:", vehicleDocumentFields);
+        const allVehicleDocsAccepted = vehicleDocumentFields.every(field => field === "accepted");
+
+        // Add auto-set for documentVerified and vehicleDocumentVerified
         if (allDriverDocsAccepted) {
-            driverUpdateFields.documentVerified = VERIFICATION_STATUS.ACCEPTED;
+            driverUpdateFields.documentVerified = "accepted";
             driverUpdateFields.documentRemark = null;
         }
-
-        if (vehicle && allVehicleDocsAccepted) {
-            vehicleUpdateFields.documentVerified = VERIFICATION_STATUS.ACCEPTED;
+        if (allVehicleDocsAccepted) {
+            vehicleUpdateFields.documentVerified = "accepted";
             vehicleUpdateFields.documentRemark = null;
         }
 
-        debug.info("Document verification status", { 
-            allDriverDocsAccepted, 
-            allVehicleDocsAccepted,
-            hasVehicle: !!vehicle 
-        });
+        console.log("Driver Update Fields:", allDriverDocsAccepted);
+        console.log("Vehicle Update Fields:", allVehicleDocsAccepted);
 
-        // Set adminVerified = Approved if everything is accepted
-        const shouldApproveDriver = vehicle 
-            ? (allDriverDocsAccepted && allVehicleDocsAccepted)
-            : allDriverDocsAccepted;
+        // Set adminVerified = accepted if everything is accepted
 
-        if (shouldApproveDriver) {
-            driverUpdateFields.adminVerified = ADMIN_VERIFICATION_STATUS.APPROVED;
+
+        if (
+            allDriverDocsAccepted &&
+            allVehicleDocsAccepted
+        ) {
+            driverUpdateFields.adminVerified = "Approved";
             driverUpdateFields.isActive = true;
-            
-            if (vehicle) {
-                vehicleUpdateFields.adminVerified = ADMIN_VERIFICATION_STATUS.APPROVED;
+            vehicleUpdateFields.adminVerified = "Approved";
+        }
+
+
+        const t = await sequelize.transaction();
+        try {
+            if (Object.keys(driverUpdateFields).length > 0) {
+                await driver.update(driverUpdateFields, { transaction: t });
             }
 
-            // Update Redis cache
-            await setRedisDrivers(driver.adminId, driver.driverId, {
-                driverId: driver.driverId,
-                adminId: driver.adminId,
-                name: driver.name,
-                phone: driver.phone,
-                adminVerified: ADMIN_VERIFICATION_STATUS.APPROVED,
-                geoLocation: null,
-                isActive: true,
-                fcmToken: driver.fcmToken,
-                walletId: driver.walletId,
-            });
+            if ((driver as any)?.vehicle?.[0]?.vehicleId && Object.keys(vehicleUpdateFields).length > 0) {
+                await Vehicle.update(vehicleUpdateFields, {
+                    where: { vehicleId: vehicleId },
+                    transaction: t
+                });
+            }
+
+            await t.commit();
+        } catch (error) {
+            await t.rollback();
+            throw error;
         }
 
-        // Perform database updates within transaction
-        if (Object.keys(driverUpdateFields).length > 0) {
-            await driver.update(driverUpdateFields, { transaction });
-        }
-
-        if (vehicle && actualVehicleId && Object.keys(vehicleUpdateFields).length > 0) {
-            await Vehicle.update(vehicleUpdateFields, {
-                where: { vehicleId: actualVehicleId },
-                transaction
-            });
-        }
-
-        // Commit transaction
-        await transaction.commit();
-
-        // Reload driver with updated data
         const updatedDriver = await driver.reload({
             include: [{
                 model: Vehicle,
                 as: 'vehicle',
                 attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                required: false,
                 order: [['createdAt', 'DESC']]
             }],
         });
-
-        log.info(`Verification status updated successfully for driver ${driverId}`, { adminId, vehicleId });
 
         res.status(200).json({
             success: true,
@@ -710,24 +453,12 @@ export const verificationStatus = async (req: Request, res: Response): Promise<v
             updatedFields: updatedDriver,
         });
 
-    } catch (error: any) {
-        // Rollback transaction on error
-        await transaction.rollback();
-        
-        const errorMessage = error?.message || "Error updating verification status";
-        const errorStack = error?.stack;
-        
-        log.error("Error updating verification status", { 
-            error: errorMessage, 
-            stack: errorStack,
-            driverId: req.params.id,
-            adminId: req.body.adminId ?? req.query.adminId 
-        });
-
+    } catch (error) {
+        console.error("Error updating verification status:", error);
         res.status(500).json({
             success: false,
             message: "Error updating verification status",
-            error: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
+            error,
         });
     }
 };
@@ -777,7 +508,7 @@ export const createDriver = async (req: Request, res: Response): Promise<void> =
                 const imageBuffer = await fs.readFile(licenseImage.path);
 
                 // Upload to MinIO
-                const imageUrl = await uploadFileToDOS3(imageBuffer, `driver/${newDriver.driverId}.webp`);
+                const imageUrl = await uploadFileToMiniIOS3(imageBuffer, `driver/${newDriver.driverId}.webp`);
 
                 // Update offer with image URL
                 // newDriver.licenseImage = imageUrl ?? '';
@@ -1087,13 +818,8 @@ export const addDriverWallet = async (req: Request, res: Response): Promise<void
 
             if (walletNotification) {
                 try {
-                    const redisFcmToken = driver.adminId
-                        ? await getDriverFcmToken(String(driver.adminId), String(driver.driverId))
-                        : null;
-                    const targetFcmToken = redisFcmToken || driver.fcmToken;
-
-                    if (targetFcmToken) {
-                        const tokenResponse = await sendToSingleToken(targetFcmToken, {
+                    if (driver.fcmToken) {
+                        const tokenResponse = await sendToSingleToken(driver.fcmToken, {
                             ids: {
                                 adminId: driver.adminId,
                                 driverId: driver.driverId,
@@ -1106,8 +832,6 @@ export const addDriverWallet = async (req: Request, res: Response): Promise<void
                             }
                         });
                         debug.info(`wallet FCM Notification Response: ${tokenResponse}`);
-                    } else {
-                        debug.info(`wallet credit notification skipped due to missing FCM token for driver ${driver.driverId}`);
                     }
                 } catch (err: any) {
                     debug.info(`wallet FCM Notification Send Error: ${err}`)
@@ -1234,13 +958,10 @@ export const minusDriverWallet = async (req: Request, res: Response): Promise<vo
 
             if (walletNotification) {
                 try {
-                    const redisFcmToken = driver.adminId
-                        ? await getDriverFcmToken(String(driver.adminId), String(driver.driverId))
-                        : null;
-                    const targetFcmToken = redisFcmToken || driver.fcmToken;
-
-                    if (targetFcmToken) {
-                        const tokenResponse = await sendToSingleToken(targetFcmToken, {
+                    if (driver.fcmToken) {
+                        const tokenResponse = await sendToSingleToken(driver.fcmToken, {
+                            // title: `wallet Debit : ${amount}`,
+                            // message: `Admin has deducted an amount from your wallet`,
                             ids: {
                                 adminId: driver.adminId,
                                 driverId: driver.driverId,
@@ -1253,8 +974,6 @@ export const minusDriverWallet = async (req: Request, res: Response): Promise<vo
                             }
                         });
                         debug.info(`wallet FCM Notification Response: ${tokenResponse}`);
-                    } else {
-                        debug.info(`wallet debit notification skipped due to missing FCM token for driver ${driver.driverId}`);
                     }
                 } catch (err: any) {
                     debug.info(`wallet FCM Notification Send Error: ${err}`)
@@ -1555,25 +1274,16 @@ export const approveOrRejectDriverWalletRequest = async (req: Request, res: Resp
                     type: "wallet"
                 });
 
-                if (walletNotification) {
-                    const redisFcmToken = driver.adminId
-                        ? await getDriverFcmToken(String(driver.adminId), String(driver.driverId))
-                        : null;
-                    const targetFcmToken = redisFcmToken || driver.fcmToken;
-
-                    if (targetFcmToken) {
-                        await sendToSingleToken(targetFcmToken, {
-                            ids: { adminId: driver.adminId, driverId: driver.driverId },
-                            data: {
-                                title,
-                                message,
-                                type: "wallet",
-                                channelKey: "other_channel",
-                            }
-                        });
-                    } else {
-                        debug.info(`wallet request notification skipped due to missing FCM token for driver ${driver.driverId}`);
-                    }
+                if (walletNotification && driver.fcmToken) {
+                    await sendToSingleToken(driver.fcmToken, {
+                        ids: { adminId: driver.adminId, driverId: driver.driverId },
+                        data: {
+                            title,
+                            message,
+                            type: "wallet",
+                            channelKey: "other_channel",
+                        }
+                    });
                 }
             } catch (err: any) {
                 debug.info(`Notification Send Error: ${err}`);
@@ -1652,103 +1362,20 @@ export const walletBulkRequest = async (req: Request, res: Response): Promise<vo
 
         const { amount, reason, days, adjustmentType, status } = validatedData.data;
 
-        const whereClause: any = {
+
+        publishDriverWork("walletBulkRequest", {
             adminId,
-            walletId: {
-                [Op.ne]: null
-            }
-        };
+            amount,
+            reason,
+            days,
+            adjustmentType,
+            status,
+        })
 
-        if (typeof status === "boolean") {
-            whereClause.isActive = status;
-        }
-
-        if (days && days > 0) {
-            const cutoffDate = new Date();
-            cutoffDate.setDate(cutoffDate.getDate() - days);
-            whereClause.lastActiveDate = {
-                [Op.lte]: cutoffDate
-            };
-        }
-
-        const totalDrivers = await Driver.count({ where: whereClause });
-
-        if (totalDrivers === 0) {
-            res.status(404).json({
-                success: false,
-                message: "No drivers found for the provided filters",
-            });
-            return;
-        }
-
-        const chunkSize = 500;
-        const jobId = `wallet-bulk-${randomUUID()}`;
-        let offset = 0;
-        let chunkIndex = 1;
-        let publishedChunks = 0;
-
-        while (offset < totalDrivers) {
-            const drivers = await Driver.findAll({
-                where: whereClause,
-                attributes: ["driverId", "walletId", "adminId", "name", "phone"],
-                order: [["id", "ASC"]],
-                limit: chunkSize,
-                offset,
-            });
-
-            if (!drivers.length) {
-                break;
-            }
-
-            // Enrich with FCM tokens from Redis
-            const driversWithFcmTokens = await Promise.all(
-                drivers.map(async (driver) => {
-                    const redisFcmToken = driver.adminId
-                        ? await getDriverFcmToken(String(driver.adminId), String(driver.driverId))
-                        : null;
-                    return {
-                        driverId: driver.driverId,
-                        walletId: driver.walletId,
-                        adminId: driver.adminId,
-                        name: driver.name,
-                        phone: driver.phone,
-                        fcmToken: redisFcmToken ?? null,
-                    };
-                })
-            );
-
-            await publishDriverWork("driver.wallet.bulk", {
-                jobId,
-                adminId,
-                chunk: {
-                    index: chunkIndex,
-                    size: drivers.length,
-                    total: totalDrivers,
-                },
-                request: {
-                    amount,
-                    reason,
-                    days,
-                    adjustmentType,
-                    statusFilter: status ?? null,
-                },
-                drivers: driversWithFcmTokens,
-            });
-
-            offset += drivers.length;
-            chunkIndex += 1;
-            publishedChunks += 1;
-        }
-
-        log.info(`Wallet bulk request ${jobId} published in ${publishedChunks} chunks`);
-        res.status(202).json({
+        console.log("Wallet bulk request published to queue");
+        res.status(200).json({
             success: true,
             message: "Wallet bulk request sent to queue",
-            data: {
-                jobId,
-                chunks: publishedChunks,
-                totalDrivers,
-            }
         });
         return;
 

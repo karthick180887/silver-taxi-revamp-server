@@ -113,6 +113,9 @@ export const estimateFareController = async (
   }
 
 
+
+
+
   try {
     let totalDistance: number = 0;
     let duration: string | number = "0 Hour 0 Minutes";
@@ -124,7 +127,6 @@ export const estimateFareController = async (
     const companyProfile = await CompanyProfile.findOne({
       where: { adminId },
     });
-
     const service = await Service.findOne({
       where: { name: serviceType, adminId },
     })
@@ -148,11 +150,8 @@ export const estimateFareController = async (
         extraDriverBeta: Number(extraDriverBeta) || 0,
         additionalExtraPricePerKm: Number(additionalExtraPricePerKm) || 0,
         isHourly: true,
-        serviceType: serviceType,
-        stops: stops || [],
         days: days || 1,
-        hourlyPrice: Number(hourlyPrice) || 0,
-        minKm: Number(service?.minKm) || 0
+        hourlyPrice: Number(hourlyPrice) || 0
       });
 
     } else {
@@ -194,7 +193,17 @@ export const estimateFareController = async (
           : 1;
 
         const minKm = service?.minKm || 0;
-        totalDistance = routeInfo.distance;
+
+        if (serviceType === "Round trip") {
+          if (stops.length > 0) {
+            totalDistance = Math.max(routeInfo.distance, minKm * days);
+          } else {
+            totalDistance = Math.max(routeInfo.distance * 2, minKm * days);
+          }
+        } else {
+          totalDistance = Math.max(routeInfo.distance, minKm);
+        }
+
         duration = routeInfo.duration;
       }
 
@@ -212,12 +221,9 @@ export const estimateFareController = async (
         extraHill: Number(extraHill) || 0,
         extraPermitCharge: Number(extraPermitCharge) || 0,
         extraPricePerKm: Number(extraPricePerKm) || 0,
-        serviceType: serviceType,
         days: days,
-        stops: stops,
         extraDriverBeta: Number(modifiedExtraDriverBeta) || 0,
-        isHourly: false,
-        minKm: Number(service?.minKm) || 0
+        isHourly: false
       });
 
     }
@@ -242,7 +248,7 @@ export const estimateFareController = async (
       paymentMethod: paymentMethod ?? "Cash",
       advanceAmount: Number(advanceAmount) || 0,
       discountAmount: Number(discountAmount) || 0,
-      distance: stops.length > 0 ? totalDistance : serviceType === "Round trip" ? totalDistance * 2 : totalDistance,
+      distance: totalDistance,
       tariffId: tariffId ?? null,
       vehicleId: vehicleId ?? null,
       serviceId: service?.serviceId ?? null,
@@ -263,7 +269,6 @@ export const estimateFareController = async (
       finalAmount: fareCalculations.normalFare.finalAmount,
       upPaidAmount: Number(fareCalculations.normalFare.finalAmount - advanceAmount) || 0,
       days: days ?? null,
-      minKm: service?.minKm || 0,
       taxPercentage: Number(taxPercentage) || 0,
       taxAmount: Number(taxAmount) || 0,
       convenienceFee: companyProfile?.convenienceFee || 0,
