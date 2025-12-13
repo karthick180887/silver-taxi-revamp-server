@@ -231,15 +231,24 @@ export const invoicesApi = {
 // VEHICLES API
 // ============================================
 export const vehiclesApi = {
-    getAll: (params?: { page?: number; limit?: number; search?: string }) =>
+    getAll: (params?: { page?: number; limit?: number; search?: string; unassigned?: boolean }) =>
         api.get('/v1/vehicles', { params }),
 
     getById: (id: string) => api.get(`/v1/vehicles/${id}`),
 
-    create: (data: Record<string, unknown>) => api.post('/v1/vehicles', data),
+    create: (data: FormData | Record<string, unknown>) => {
+        const isFormData = data instanceof FormData;
+        return api.post('/v1/vehicles', data, {
+            headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined
+        });
+    },
 
-    update: (id: string, data: Record<string, unknown>) =>
-        api.put(`/v1/vehicles/${id}`, data),
+    update: (id: string, data: FormData | Record<string, unknown>) => {
+        const isFormData = data instanceof FormData;
+        return api.put(`/v1/vehicles/${id}`, data, {
+            headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined
+        });
+    },
 
     delete: (id: string) => api.delete(`/v1/vehicles/${id}`),
 

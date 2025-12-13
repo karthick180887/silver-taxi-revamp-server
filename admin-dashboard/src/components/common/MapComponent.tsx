@@ -30,10 +30,13 @@ interface MapComponentProps {
     className?: string;
 }
 
+const libraries: ("places")[] = ["places"];
+
 const MapComponent: React.FC<MapComponentProps> = ({ pickupLocation, drivers = [], className }) => {
     const { isLoaded } = useJsApiLoader({
         id: 'google-map-script',
-        googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyAYjrbg1hQJYC4vOMvQS7C9lJ3TDWQSuFo' // Fallback to provided key
+        googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyAYjrbg1hQJYC4vOMvQS7C9lJ3TDWQSuFo', // Fallback to provided key
+        libraries
     });
 
     const [map, setMap] = useState<google.maps.Map | null>(null);

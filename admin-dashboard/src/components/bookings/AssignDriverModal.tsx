@@ -10,10 +10,13 @@ interface AssignDriverModalProps {
     onAssign: () => void;
 }
 
+const libraries: ("places")[] = ["places"];
+
 export default function AssignDriverModal({ booking, onClose, onAssign }: AssignDriverModalProps) {
     const { isLoaded } = useJsApiLoader({
         id: 'google-map-script',
-        googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyAYjrbg1hQJYC4vOMvQS7C9lJ3TDWQSuFo'
+        googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'AIzaSyAYjrbg1hQJYC4vOMvQS7C9lJ3TDWQSuFo',
+        libraries
     });
 
     const [view, setView] = useState<'map' | 'list'>('map');

@@ -10,8 +10,16 @@ import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
 export const getAllVehicles = async (req: Request, res: Response) => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
+        const { unassigned } = req.query;
+
+        const where: any = { adminId };
+        // Default to unassigned vehicles (driverId is null) unless explicitly requested otherwise
+        if (unassigned !== 'false') {
+            where.driverId = null;
+        }
+
         const vehicles = await Vehicle.findAll({
-            where: { adminId },
+            where,
             attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
 
         });

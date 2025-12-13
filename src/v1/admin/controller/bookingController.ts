@@ -677,7 +677,8 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             driverBeta,
             extraDriverBeta,
             duration,
-            vehicleType
+            vehicleType,
+            isContacted
         } = req.body;
 
 
@@ -831,20 +832,24 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             tariffId: tariffId ?? tariff?.tariffId,
             serviceId: serviceId ?? service,
             vehicleId,
+            driverId: req.body.driverId || null,
+            assignAllDriver: req.body.assignAllDriver || false,
+            driverAccepted: (req.body.driverId ? "accepted" : "pending") as any,
             status: status || "Booking Confirmed",
             type: type || "Manual",
-            distance: Number(convertedDistance),
-            estimatedAmount: Number(estimatedAmount),
-            discountAmount: Number(discountAmount),
-            finalAmount: Number(finalAmount),
-            advanceAmount: Number(advanceAmount) ?? 0,
-            upPaidAmount: Number(upPaidAmount) ?? 0,
+            distance: Number(convertedDistance) || 0,
+            estimatedAmount: Number(estimatedAmount) || 0,
+            discountAmount: Number(discountAmount) || 0,
+            finalAmount: Number(finalAmount) || 0,
+            advanceAmount: Number(advanceAmount) || 0,
+            upPaidAmount: Number(upPaidAmount) || 0,
             packageId: packageId ?? null,
             offerId: offerId ?? null,
             paymentMethod,
             minKm: getService?.minKm,
-            paymentStatus: paymentStatus || "Pending",
+            paymentStatus: paymentStatus || "Unpaid",
             createdBy: createdBy ?? "Admin",
+            isContacted: isContacted !== undefined ? isContacted : true,
             extraToll: extraToll ?? null,
             extraHill: extraHill ?? null,
             extraPermitCharge: extraPermitCharge ?? null,
@@ -901,7 +906,18 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
         // newBooking.bookingId = `book-${newBooking.id}`;
         await newBooking.save();
 
-        let customer = await Customer.findOne({ where: { phone: { [Op.like]: `%${phone}%` } } });
+        // Check for existing customer with various phone formats
+        let customer = await Customer.findOne({
+            where: {
+                [Op.or]: [
+                    { phone: phone },
+                    { phone: cleanedPhone },
+                    { phone: `91 ${cleanedPhone}` },
+                    { phone: `+91${cleanedPhone}` },
+                    { phone: `+91 ${cleanedPhone}` }
+                ]
+            }
+        });
         if (!customer) {
             const t = await sequelize.transaction();
 
@@ -1231,7 +1247,8 @@ export const assignDriver = async (req: Request, res: Response) => {
         // await booking.update({ driverId });
         await booking.update({
             driverId,
-            driverAccepted: "pending",
+            driverAccepted: "accepted" as any,
+            status: "Not-Started",
             assignAllDriver: false,
             requestSentTime,
         });
