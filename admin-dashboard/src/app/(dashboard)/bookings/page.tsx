@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Button, DataTable, StatusBadge, Input, Select } from '@/components/ui';
 import { ClientLayout } from '@/components/layout/ClientLayout';
 import { bookingsApi } from '@/lib/api';
+import AssignDriverModal from '@/components/bookings/AssignDriverModal';
 
 interface Booking {
     id: string;
@@ -47,6 +48,11 @@ export default function BookingsPage() {
         contacted: 0,
         notContacted: 0
     });
+
+    // state for assign driver modal
+    const [assignModalOpen, setAssignModalOpen] = useState(false);
+    const [selectedBookingForAssignment, setSelectedBookingForAssignment] = useState<Booking | null>(null);
+
     const pageSize = 20;
 
     useEffect(() => {
@@ -71,6 +77,16 @@ export default function BookingsPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleAssignClick = (booking: Booking, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setSelectedBookingForAssignment(booking);
+        setAssignModalOpen(true);
+    };
+
+    const handleAssignmentComplete = () => {
+        fetchBookings(); // Refresh list to show assigned driver
     };
 
     const columns = [
@@ -109,12 +125,26 @@ export default function BookingsPage() {
         {
             key: 'driverDetails',
             header: 'Driver Assigned',
-            render: (b: any) => b.driver ? (
-                <div className="flex flex-col">
-                    <span className="font-medium text-slate-800">{b.driver.name}</span>
-                    <span className="text-xs text-slate-500">{b.driver.phone}</span>
-                </div>
-            ) : <span className="text-slate-400 italic">Unassigned</span>
+            render: (b: any) => {
+                if (b.driver || b.driverId) {
+                    return (
+                        <div className="flex flex-col">
+                            <span className="font-medium text-slate-800">{b.driver?.name || 'Assigned'}</span>
+                            <span className="text-xs text-slate-500">{b.driver?.phone || b.driverId}</span>
+                        </div>
+                    );
+                }
+                return (
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-emerald-600 hover:text-emerald-700 font-medium bg-emerald-50 hover:bg-emerald-100 border border-emerald-200"
+                        onClick={(e: any) => handleAssignClick(b, e)}
+                    >
+                        + Assign Driver
+                    </Button>
+                );
+            }
         },
         {
             key: 'actions',
@@ -234,6 +264,20 @@ export default function BookingsPage() {
                     />
                 </div>
             </div>
+
+            {assignModalOpen && selectedBookingForAssignment && (
+                <React.Suspense fallback={null}>
+                    {/* Dynamic import not strictly necessary but cleaner if split */}
+                    <AssignDriverModal
+                        booking={selectedBookingForAssignment}
+                        onClose={() => {
+                            setAssignModalOpen(false);
+                            setSelectedBookingForAssignment(null);
+                        }}
+                        onAssign={handleAssignmentComplete}
+                    />
+                </React.Suspense>
+            )}
 
             <style jsx global>{`
                 th {

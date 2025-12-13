@@ -121,24 +121,41 @@ app.use("/image/v1", async (req, res) => {
     }
 });
 
+// Module Loading Logic
+const modules = (env.APP_MODULES || 'all').split(',');
+const isEnabled = (m: string) => modules.includes('all') || modules.includes(m);
+
+logger.info(`Active Modules: ${modules.join(', ')}`);
+
 app.use('/auth', authRouter)
 
+// Always load global routes? Or only if needed? Assuming global is needed for all.
 app.use('/global', globalRouter)
 
-app.use("/app", appRouter)
+if (isEnabled('driver')) {
+    logger.info("Mounting Driver Routes");
+    app.use("/app", appRouter)
+}
 
-//Customer App API's
-app.use("/customer", customerApp, customerRouter)
+if (isEnabled('customer')) {
+    logger.info("Mounting Customer Routes");
+    app.use("/customer", customerApp, customerRouter)
+}
 
-//Vendor App API's
-app.use("/vendor", vendorApp, vendorRouter)
+if (isEnabled('vendor')) {
+    logger.info("Mounting Vendor Routes");
+    app.use("/vendor", vendorApp, vendorRouter)
+}
 
-// app.use('/*', websiteAuth)
-app.use('/website', websiteAuth, websiteRouter)
-// app.use('/website', websiteRouter)
+if (isEnabled('admin')) {
+    logger.info("Mounting Admin & Website Routes");
+    // app.use('/*', websiteAuth)
+    app.use('/website', websiteAuth, websiteRouter)
+    // app.use('/website', websiteRouter)
 
-// app.use('/*', auth);
-app.use(['/v1', '/', '/admin'], auth, adminRouter)
+    // app.use('/*', auth);
+    app.use(['/v1', '/', '/admin'], auth, adminRouter)
+}
 
 
 app.use('/*', (_req: Request, res: Response) => {

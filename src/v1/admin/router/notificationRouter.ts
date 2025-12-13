@@ -16,7 +16,8 @@ import {
     getCustomNotificationById,
     deleteCustomNotification,
     sendCustomNotification,
-    testNotificationEndpoint
+    testNotificationEndpoint,
+    sendToDrivers
 } from '../controller/notificationController';
 
 const router = express.Router();
@@ -115,6 +116,9 @@ router.delete('/custom/:templateId', deleteCustomNotification);
 
 // 6. Send custom notification
 router.post('/custom/:templateId/send', sendCustomNotification);
+
+// 8. Send to drivers (Broadcast or Specific)
+router.post('/send-drivers', sendToDrivers);
 
 // 7. Test endpoint for debugging
 router.post('/test', testNotificationEndpoint);

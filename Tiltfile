@@ -1,3 +1,12 @@
+# Config: mode (default: all)
+# Options: 
+#   - core: Backend + DBs only
+#   - admin: Backend + Admin Dashboard
+#   - all: Everything
+config.define_string("mode")
+cfg = config.parse()
+mode = cfg.get("mode", "all")
+
 # Enable Docker BuildKit for better caching
 # Tilt automatically uses BuildKit cache mounts from Dockerfile
 docker_build(
@@ -22,14 +31,18 @@ k8s_resource("backend-go-app", port_forwards=[
 ])
 k8s_resource("redis")
 
-# Admin Dashboard
-docker_build(
-    "admin-dashboard:dev",
-    "admin-dashboard",
-    dockerfile="admin-dashboard/Dockerfile",
-    ignore=["node_modules/", ".next/", ".git/"],
-)
-k8s_yaml("k8s/admin-dashboard.yaml")
-k8s_resource("admin-dashboard", port_forwards=[
-    port_forward(3000, 3000, host="0.0.0.0")
-])
+# Admin Dashboard - Only load if mode is 'admin' or 'all'
+if mode == "admin" or mode == "all":
+    print("Loading Admin Dashboard...")
+    docker_build(
+        "admin-dashboard:dev",
+        "admin-dashboard",
+        dockerfile="admin-dashboard/Dockerfile",
+        ignore=["node_modules/", ".next/", ".git/"],
+    )
+    k8s_yaml("k8s/admin-dashboard.yaml")
+    k8s_resource("admin-dashboard", port_forwards=[
+        port_forward(3000, 3000, host="0.0.0.0")
+    ])
+else:
+    print("Skipping Admin Dashboard (Mode: {})".format(mode))

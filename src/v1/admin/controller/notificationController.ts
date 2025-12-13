@@ -932,3 +932,89 @@ export const testNotificationEndpoint = async (req: Request, res: Response): Pro
         });
     }
 };
+
+// 8. Send notification to specific drivers or all active drivers
+export const sendToDrivers = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { title, message, driverIds } = req.body;
+        const adminId = req.body.adminId ?? req.query.adminId;
+
+        if (!title || !message) {
+            res.status(400).json({
+                success: false,
+                message: "Title and message are required"
+            });
+            return;
+        }
+
+        let targetDrivers: Driver[] = [];
+
+        if (driverIds && Array.isArray(driverIds) && driverIds.length > 0) {
+            // Send to specific drivers
+            // Ensure we use the correct PK/Identifier. Frontend sends internal IDs (integers)
+            targetDrivers = await Driver.findAll({
+                where: {
+                    id: { [Op.in]: driverIds }, // Changed driverId to id
+                    isActive: true
+                }
+            });
+        } else {
+            // Broadcast to all active drivers
+            // If adminId is available, filter by it (optional based on your multi-tenant logic)
+            const whereClause: any = { isActive: true, adminVerified: "Approved" };
+            if (adminId) whereClause.adminId = adminId;
+
+            targetDrivers = await Driver.findAll({ where: whereClause });
+        }
+
+        if (targetDrivers.length === 0) {
+            if (driverIds && driverIds.length > 0) {
+                res.status(404).json({
+                    success: false,
+                    message: "No active drivers found for provided IDs"
+                });
+                return;
+            }
+        }
+
+        // Send to each driver
+        const promises = targetDrivers.map(driver => {
+            if (driver.fcmToken) {
+                return publishNotification("notification.fcm.driver", {
+                    type: "custom",
+                    fcmToken: driver.fcmToken,
+                    payload: {
+                        imageUrl: "",
+                        title: title,
+                        message: message,
+                        ids: {
+                            driverId: driver.driverId,
+                            adminId: driver.adminId || adminId
+                        },
+                        data: {
+                            title: title,
+                            message: message,
+                            type: "general_notification"
+                        }
+                    }
+                }).catch(err => console.error(`Failed to send to driver ${driver.driverId}:`, err));
+            }
+            return Promise.resolve();
+        });
+
+        await Promise.all(promises);
+
+        res.status(200).json({
+            success: true,
+            message: `Notification sent successfully to ${targetDrivers.length} drivers`
+        });
+
+    } catch (error) {
+        console.error("Error sending notification to drivers:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error sending notification to drivers",
+            error: error instanceof Error ? error.message : "Unknown error"
+        });
+    }
+};
