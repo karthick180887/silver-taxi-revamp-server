@@ -394,7 +394,17 @@ class _EndTripScreenState extends State<EndTripScreen> {
     setState(() => _loading = true);
 
     try {
-      // 1. End Trip (Record distance/duration, end odometer, and End OTP)
+      // 1. Prepare charges map for End Trip (Critical for invoice calculation)
+      final driverCharges = {
+        'Hill': double.tryParse(_hillChargeController.text) ?? 0.0,
+        'Toll': double.tryParse(_tollChargeController.text) ?? 0.0,
+        'Pet Charge': double.tryParse(_petChargeController.text) ?? 0.0,
+        'Permit Charge': double.tryParse(_permitChargeController.text) ?? 0.0,
+        'Parking Charge': double.tryParse(_parkingChargeController.text) ?? 0.0,
+        'Waiting Charge': double.tryParse(_waitingChargeController.text) ?? 0.0,
+      };
+
+      // 1. End Trip (Record distance/duration, end odometer, End OTP, and Charges)
       await widget.tripService.endTrip(
         token: widget.token,
         tripId: widget.trip.id,
@@ -402,6 +412,7 @@ class _EndTripScreenState extends State<EndTripScreen> {
         distance: _totalDistance,
         duration: 30, // Mock duration in minutes
         endOdometer: _endOdo,
+        driverCharges: driverCharges,
       );
 
       // 2. Complete Trip (Record payment/fare)

@@ -8,9 +8,13 @@ class AllTripsPage extends StatefulWidget {
   const AllTripsPage({
     super.key,
     required this.token,
+    this.status = 'Booking Confirmed',
+    this.title = 'New Bookings',
   });
 
   final String token;
+  final String status;
+  final String title;
 
   @override
   State<AllTripsPage> createState() => _AllTripsPageState();
@@ -36,10 +40,10 @@ class _AllTripsPageState extends State<AllTripsPage> {
     });
 
     try {
-      // Fetch all trips with "Booking Confirmed" status
+      // Fetch trips with provided status
       final result = await _tripService.getTripsByStatus(
         token: widget.token,
-        status: 'Booking Confirmed',
+        status: widget.status,
       );
 
       if (mounted) {
@@ -97,7 +101,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New Bookings'),
+        title: Text(widget.title),
       ),
       body: RefreshIndicator(
         onRefresh: _loadAllTrips,

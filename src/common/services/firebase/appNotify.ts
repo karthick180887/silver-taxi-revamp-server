@@ -94,7 +94,7 @@ export const sendToSingleToken = async (token: string, payload: NotificationPayl
   } catch (err: any) {
     if (err.code === 'messaging/registration-token-not-registered' || err.code === 'messaging/mismatched-credential' || err?.errorInfo?.code === 'messaging/registration-token-not-registered' || err?.errorInfo?.code === 'messaging/mismatched-credential') {
       console.log(`⚠️ FCM Token Invalid (${err.code || err?.errorInfo?.code}): ${token.substring(0, 10)}...`);
-      removeInvalidToken(token);
+      // removeInvalidToken(token); // Disabled for local dev safety
     } else {
       console.log("FCM Notification Send Error :>", err);
     }
@@ -198,7 +198,7 @@ export const sendCustomNotifications = async (tokens: string[], payload: Notific
           // We need the token corresponding to this rejection.
           // The 'validTokens' array aligns with 'messages' array.
           if (validTokens[index]) {
-            removeInvalidToken(validTokens[index]);
+            // removeInvalidToken(validTokens[index]); // Disabled for local dev safety
           }
         }
       }
@@ -295,7 +295,7 @@ const sendBatch = async (tokens: string[], payload: NotificationPayload) => {
           err.code === 'messaging/registration-token-not-registered'
         )) {
           invalidTokens.push(tokens[idx]);
-          removeInvalidToken(tokens[idx]);
+          // removeInvalidToken(tokens[idx]); // Disabled for local dev safety
         }
       }
     });

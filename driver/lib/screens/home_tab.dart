@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
@@ -155,35 +156,84 @@ class _HomeTabState extends State<HomeTab> {
 
   void _showRechargeDialog() {
     final controller = TextEditingController();
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Recharge Wallet'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Amount',
-            prefixText: '? ',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final amount = double.tryParse(controller.text);
-              if (amount == null || amount <= 0) return;
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            left: 24,
+            right: 24,
+            top: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Detail Your Wallet',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Enter amount to add to your wallet',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(
+                  fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black),
+              decoration: InputDecoration(
+                prefixText: '₹ ',
+                prefixStyle: const TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black),
+                hintText: '0.00',
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final amount = double.tryParse(controller.text);
+                  if (amount == null || amount <= 0) return;
 
-              Navigator.pop(ctx);
-              _startRecharge(amount);
-            },
-            child: const Text('Recharge'),
-          ),
-        ],
+                  Navigator.pop(ctx);
+                  _startRecharge(amount);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text('Proceed to Pay',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -406,12 +456,16 @@ class _HomeTabState extends State<HomeTab> {
     final balance = _wallet?['balance'] ?? 0.0;
     final counts = _bookingCounts ?? {};
 
+    // Theme Colors
+    const kPrimaryBlue = Color(0xFF2563EB); // Royal Blue
+    const kDarkBg = Color(0xFF0F172A); // Slate 900
+    const kCardBg = Colors.white;
+
     return PopScope(
       canPop: !_paymentInProgress,
       onPopInvokedWithResult: (didPop, result) {
         if (_paymentInProgress && didPop) {
-          final messenger = ScaffoldMessenger.maybeOf(context);
-          messenger?.showSnackBar(
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
             const SnackBar(
               content: Text(
                   'Payment in progress. Please complete or cancel the payment first.'),
@@ -421,36 +475,29 @@ class _HomeTabState extends State<HomeTab> {
         }
       },
       child: Scaffold(
+        backgroundColor: Colors.grey.shade50,
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: _loadDetails,
+            color: kPrimaryBlue,
             child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
               children: [
+                // 1. Header with Profile & Notification
                 Row(
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            name,
-                            style: const TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.bold),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(phone,
-                              style: TextStyle(color: Colors.grey.shade600)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
                     Container(
-                      width: 48,
-                      height: 48,
+                      width: 50,
+                      height: 50,
                       decoration: BoxDecoration(
                         color: Colors.grey.shade200,
                         shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10)
+                        ],
                         image: photo != null && photo.isNotEmpty
                             ? DecorationImage(
                                 image: NetworkImage(transformImageUrl(photo)),
@@ -458,269 +505,332 @@ class _HomeTabState extends State<HomeTab> {
                             : null,
                       ),
                       child: photo == null || photo.isEmpty
-                          ? const Icon(Icons.person, color: Colors.grey)
+                          ? const Icon(CupertinoIcons.person_fill,
+                              color: Colors.grey)
                           : null,
                     ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hello, $name',
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1E293B),
+                              letterSpacing: -0.5,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            _online ? 'You are Online' : 'You are Offline',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: _online ? Colors.green : Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildStatusSwitch(),
                   ],
                 ),
-                const SizedBox(height: 20),
+
+                const SizedBox(height: 24),
+
+                // 2. Premium Wallet Card
                 Container(
-                  padding: const EdgeInsets.all(20),
+                  height: 180,
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2575FC),
-                    borderRadius: BorderRadius.circular(20),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF2575FC).withValues(alpha: 0.3),
-                        blurRadius: 15,
-                        offset: const Offset(0, 8),
+                        color: const Color(0xFF2563EB).withOpacity(0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
                       ),
                     ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Wallet Balance',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w500)),
-                          Row(
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Online',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w500)),
-                              const SizedBox(width: 8),
-                              Switch(
-                                value: _online,
-                                onChanged: _toggleOnline,
-                                activeThumbColor: Colors.white,
-                                activeTrackColor: Colors.greenAccent,
-                                inactiveThumbColor: Colors.white,
-                                inactiveTrackColor:
-                                    Colors.grey.withValues(alpha: 0.5),
+                              Text(
+                                'Total Balance',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.8),
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '₹ ${balance.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: -1,
+                                ),
                               ),
                             ],
-                          )
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(CupertinoIcons.creditcard,
+                                color: Colors.white),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '? $balance',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold),
-                      ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          style: TextButton.styleFrom(
-                              foregroundColor: Colors.white),
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    WalletPage(token: widget.token)),
-                          ),
-                          child: const Text('View history'),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
                       Row(
                         children: [
-                          _buildWalletButton(
-                            label: '+ Recharge',
-                            onTap: _showRechargeDialog,
-                            isPrimary: true,
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _showRechargeDialog,
+                              icon: const Icon(CupertinoIcons.add, size: 16),
+                              label: const Text('Add Money'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: kPrimaryBlue,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 12),
-                          _buildWalletButton(
-                            label: 'Payments Details',
-                            icon: Icons.credit_card,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      PaymentDetailsPage(token: widget.token)),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        WalletPage(token: widget.token)),
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                      color: Colors.white.withOpacity(0.3)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(CupertinoIcons.arrow_right,
+                                    color: Colors.white),
+                              ),
                             ),
-                            isPrimary: false,
                           ),
                         ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
+
+                const SizedBox(height: 32),
+
+                // 3. Stats Grid Label
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Trip Details',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Manage your trips',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2575FC).withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
+                    const Text(
+                      'Overview',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
                       ),
-                      child: IconButton(
-                        icon:
-                            const Icon(Icons.refresh, color: Color(0xFF2575FC)),
-                        onPressed: _loading ? null : _loadDetails,
-                        tooltip: 'Refresh',
+                    ),
+                    InkWell(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AllTripsPage(token: widget.token),
+                        ),
+                      ),
+                      child: const Text(
+                        'See All',
+                        style: TextStyle(
+                          color: kPrimaryBlue,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
+
+                // 4. Modern Stats Grid
                 GridView.count(
                   crossAxisCount: 2,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.95,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: 1.1,
                   children: [
-                    _buildStatCard(
-                      'New Requests',
-                      counts['offers'] ?? 0,
-                      Icons.new_label,
-                      Colors.orange.shade400,
-                      Colors.orange.shade50,
-                      const Color(0xFFFF6B35),
-                      () {
-                        // Navigate to new page showing all trips
-                        Navigator.of(context).push(
+                    _buildModernStatCard(
+                      label: 'New Requests',
+                      count: counts['offers'] ?? 0,
+                      color: const Color(0xFFF59E0B), // Amber
+                      icon: CupertinoIcons.bell_fill,
+                      onTap: () {
+                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => AllTripsPage(token: widget.token),
+                            builder: (_) => AllTripsPage(
+                              token: widget.token,
+                              status: kTripStatusNew,
+                              title: 'New Requests',
+                            ),
                           ),
                         );
                       },
                     ),
-                    _buildStatCard(
-                      'Upcoming',
-                      counts['accepted'] ?? 0,
-                      Icons.schedule,
-                      const Color(0xFF5C6BC0),
-                      const Color(0xFFE8EAF6),
-                      const Color(0xFF3F51B5),
-                      () => widget.onNavigate(1, subTabIndex: 1),
+                    _buildModernStatCard(
+                      label: 'Not Started',
+                      count: counts['accepted'] ?? 0,
+                      color: const Color(0xFF6366F1), // Indigo
+                      icon: CupertinoIcons.time_solid,
+                      onTap: () {
+                         Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AllTripsPage(
+                              token: widget.token,
+                              status: kTripStatusNotStarted,
+                              title: 'Not Started Trips',
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    _buildStatCard(
-                      'Active',
-                      counts['started'] ?? 0,
-                      Icons.directions_car,
-                      Colors.green.shade600,
-                      Colors.green.shade50,
-                      const Color(0xFF2E7D32),
-                      () => widget.onNavigate(1, subTabIndex: 2),
+                    _buildModernStatCard(
+                      label: 'Started',
+                      count: counts['started'] ?? 0,
+                      color: const Color(0xFF10B981), // Emerald
+                      icon: CupertinoIcons.car_detailed,
+                      onTap: () {
+                         Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AllTripsPage(
+                              token: widget.token,
+                              status: kTripStatusStarted,
+                              title: 'Started Trips',
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    _buildStatCard(
-                      'Completed',
-                      counts['completed'] ?? 0,
-                      Icons.check_circle,
-                      Colors.teal.shade600,
-                      Colors.teal.shade50,
-                      const Color(0xFF00695C),
-                      () => widget.onNavigate(1, subTabIndex: 3),
+                    _buildModernStatCard(
+                      label: 'Completed',
+                      count: counts['completed'] ?? 0,
+                      color: const Color(0xFF2563EB), // Blue
+                      icon: CupertinoIcons.checkmark_circle_fill,
+                      onTap: () {
+                         Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AllTripsPage(
+                              token: widget.token,
+                              status: kTripStatusCompleted,
+                              title: 'Completed Trips',
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    _buildStatCard(
-                      'Cancelled',
-                      counts['cancelled'] ?? 0,
-                      Icons.cancel,
-                      Colors.red.shade400,
-                      Colors.red.shade50,
-                      const Color(0xFFC62828),
-                      () => widget.onNavigate(1, subTabIndex: 4),
+                    _buildModernStatCard(
+                      label: 'Cancelled',
+                      count: counts['cancelled'] ?? 0,
+                      color: const Color(0xFFEF4444), // Red
+                      icon: CupertinoIcons.xmark_circle_fill,
+                      onTap: () {
+                         Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AllTripsPage(
+                              token: widget.token,
+                              status: kTripStatusCancelled,
+                              title: 'Cancelled Trips',
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          OverlayNotificationService().testShowOverlay();
-                          if (!mounted) return;
-                          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                  'Test overlay triggered - check top of screen'),
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.notification_important),
-                        label: const Text('Test Overlay Notification'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          final nativeOverlay = NativeOverlayService();
-                          final hasPermission =
-                              await nativeOverlay.checkOverlayPermission();
-                          if (!mounted) return;
-                          final messenger = ScaffoldMessenger.maybeOf(context);
-                          if (messenger == null) return;
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                hasPermission
-                                    ? 'Overlay permission granted'
-                                    : 'Overlay permission NOT granted - tap to request',
-                              ),
-                              duration: const Duration(seconds: 3),
-                              action: hasPermission
-                                  ? null
-                                  : SnackBarAction(
-                                      label: 'Request',
-                                      onPressed: () => nativeOverlay
-                                          .requestOverlayPermission(),
-                                    ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.security),
-                        label: const Text('Check Overlay Permission'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                    ],
+
+                const SizedBox(height: 24),
+
+                // 5. Tools / Extras Section
+                const Text(
+                  'Tools',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
+
+                _buildToolTile(
+                  title: 'Payment Details',
+                  subtitle: 'Manage cards & bank info',
+                  icon: CupertinoIcons.creditcard_fill,
+                  color: Colors.purple,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            PaymentDetailsPage(token: widget.token)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildToolTile(
+                  title: 'Overlay Permission',
+                  subtitle: 'Allow drawing over other apps',
+                  icon: CupertinoIcons.layers_alt_fill,
+                  color: Colors.teal,
+                  onTap: () async {
+                    final nativeOverlay = NativeOverlayService();
+                    final hasPermission =
+                        await nativeOverlay.checkOverlayPermission();
+                    if (!mounted) return;
+                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                      SnackBar(
+                        content: Text(hasPermission
+                            ? 'Permission already granted'
+                            : 'Permission NOT granted'),
+                        action: hasPermission
+                            ? null
+                            : SnackBarAction(
+                                label: 'Request',
+                                onPressed: () =>
+                                    nativeOverlay.requestOverlayPermission(),
+                              ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -729,177 +839,169 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  Widget _buildWalletButton({
+  Widget _buildStatusSwitch() {
+    return GestureDetector(
+      onTap: () => _toggleOnline(!_online),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        width: 60,
+        height: 34,
+        decoration: BoxDecoration(
+          color: _online ? const Color(0xFF10B981) : Colors.grey.shade300,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Stack(
+          children: [
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 300),
+              alignment:
+                  _online ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  _online ? Icons.bolt : Icons.power_settings_new,
+                  size: 16,
+                  color: _online ? const Color(0xFF10B981) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernStatCard({
     required String label,
-    IconData? icon,
+    required int count,
+    required Color color,
+    required IconData icon,
     required VoidCallback onTap,
-    required bool isPrimary,
   }) {
-    return Expanded(
-      child: Material(
-        color: isPrimary
-            ? Colors.white.withValues(alpha: 0.2)
-            : Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-          side: isPrimary
-              ? BorderSide.none
-              : const BorderSide(color: Colors.white70),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(30),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            alignment: Alignment.center,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, color: Colors.white, size: 18),
-                  const SizedBox(width: 6)
-                ],
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w500)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard(
-    String title,
-    int count,
-    IconData icon,
-    Color iconColor,
-    Color bgColor,
-    Color accentColor,
-    VoidCallback onTap,
-  ) {
-    final hasCount = count > 0;
     return Material(
-      color: Colors.transparent,
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      elevation: 0,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: hasCount
-                  ? accentColor.withValues(alpha: 0.2)
-                  : Colors.grey.shade200,
-              width: hasCount ? 1.5 : 1,
-            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.grey.shade100),
             boxShadow: [
               BoxShadow(
-                color: hasCount
-                    ? accentColor.withValues(alpha: 0.1)
-                    : Colors.black.withValues(alpha: 0.04),
-                blurRadius: hasCount ? 12 : 8,
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
                 offset: const Offset(0, 4),
-                spreadRadius: hasCount ? 1 : 0,
               ),
             ],
           ),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: bgColor,
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: iconColor.withValues(alpha: 0.2),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Icon(icon, color: iconColor, size: 28),
-                  ),
-                  if (hasCount)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: accentColor,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: accentColor.withValues(alpha: 0.4),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        count > 99 ? '99+' : '$count',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '0',
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                ],
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 20),
               ),
-              const Spacer(),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
+                    count.toString(),
                     style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
-                      letterSpacing: 0.2,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1E293B),
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
-                    hasCount
-                        ? '$count ${count == 1 ? 'trip' : 'trips'}'
-                        : 'No trips',
+                    label,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: hasCount ? accentColor : Colors.grey.shade500,
+                      color: Colors.grey.shade500,
                     ),
                   ),
                 ],
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolTile({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(CupertinoIcons.chevron_right,
+                  size: 16, color: Colors.grey.shade400),
             ],
           ),
         ),

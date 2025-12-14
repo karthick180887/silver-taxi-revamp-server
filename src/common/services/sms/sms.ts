@@ -107,7 +107,7 @@ export default function SMSService() {
             if (mobile === 9361060911) {
                 otp = "123456";
             }
-            log.debug(`Generated OTP for ${mobile}: ${otp}`);
+            log.info(`Generated OTP for ${mobile}: ${otp}`);
 
             const payload = JSON.stringify({
                 otp,

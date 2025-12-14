@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/trip_models.dart';
 import '../services/trip_service.dart';
 import 'end_trip_screen.dart';
@@ -20,247 +22,151 @@ class OngoingTripScreen extends StatefulWidget {
 }
 
 class _OngoingTripScreenState extends State<OngoingTripScreen> {
-  @override
-  Widget build(BuildContext context) {
-    // Use data from widget.trip
-    final pickup = widget.trip.pickup.address;
-    final drop = widget.trip.drop.address;
-    const pricePerKm = 13; // Hardcoded as per screenshot example or fetch from config
-    const driverBeta = 300; // Hardcoded or fetch
-    final finalAmount = widget.trip.fare ?? 0; // Or estimated
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ongoing Trip'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(20),
+  // Use a simulated map view since google_maps_flutter is not added
+  Widget _buildMapPlaceholder() {
+    return Container(
+      color: const Color(0xFFE5E7EB),
+      child: Stack(
+        children: [
+          Center(
+            child: Icon(
+              CupertinoIcons.map_fill,
+              size: 64,
+              color: Colors.grey.shade400,
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Colors.green,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Active',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
+          ),
+          // Simulated Route Line
+          CustomPaint(
+            painter: MockRoutePainter(),
+            size: Size.infinite,
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Fare Details Card
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(0, 0, 0, 0.05),
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  _buildFareRow('Price Per Km', '₹$pricePerKm'),
-                  const SizedBox(height: 12),
-                  _buildFareRow('Driver Beta', '₹$driverBeta'),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Divider(),
-                  ),
-                  _buildFareRow('Final Amount', '₹${finalAmount.toStringAsFixed(0)}', isBold: true),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
+    );
+  }
 
-            // Trip Route Card
-            const Text(
-              'Trip Route',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(0, 0, 0, 0.05),
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  _buildLocationRow(
-                    isPickup: true,
-                    label: 'PICKUP',
-                    address: pickup,
-                  ),
-                  const SizedBox(height: 24),
-                  _buildLocationRow(
-                    isPickup: false,
-                    label: 'DROP',
-                    address: drop,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber,
+    );
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    }
+  }
 
-            // Quick Actions
-            const Text(
-              'Quick Actions',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        forceMaterialTransparency: true,
+        backgroundColor: Colors.transparent,
+        leading: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: CircleAvatar(
+            backgroundColor: Colors.white,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.black),
+              onPressed: () => Navigator.of(context).pop(),
             ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () {
-                // Call customer
-              },
-              icon: const Icon(Icons.call),
-              label: const Text('Call Customer'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: Chip(
+              label: const Text('ON TRIP', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              backgroundColor: const Color(0xFF10B981), // Emerald
+              labelStyle: const TextStyle(color: Colors.white),
+              side: BorderSide.none,
+              shape: const StadiumBorder(),
+            ),
+          )
+        ],
+      ),
+      body: Stack(
+        children: [
+          // 1. Map Layer
+          Positioned.fill(
+             bottom: MediaQuery.of(context).size.height * 0.4, // Map takes top 60%
+             child: _buildMapPlaceholder(),
+          ),
+
+          // 2. Bottom Sheet for Details
+          DraggableScrollableSheet(
+            initialChildSize: 0.45,
+            minChildSize: 0.45,
+            maxChildSize: 0.8,
+            builder: (context, scrollController) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 20,
+                      offset: const Offset(0, -5),
+                    ),
+                  ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () {
-                // Report issue
-              },
-              icon: const Icon(Icons.warning_amber_rounded),
-              label: const Text('Report Issue'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.black,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 32),
-
-            // End Trip Button
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => EndTripScreen(
-                        trip: widget.trip,
-                        token: widget.token,
-                        tripService: widget.tripService,
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(24),
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 24),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
                     ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+
+                    // Customer Card
+                    _buildCustomerCard(),
+
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const SizedBox(height: 24),
+
+                    // Route Timeline
+                    _buildRouteTimeline(),
+
+                    const SizedBox(height: 32),
+
+                    // End Trip Action
+                    _buildEndTripButton(),
+                  ],
                 ),
-                child: const Text(
-                  'End Trip',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ],
-        ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildFareRow(String label, String value, {bool isBold = false}) {
+  Widget _buildCustomerCard() {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.grey.shade600,
-            fontSize: 14,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 14,
-            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLocationRow({
-    required bool isPickup,
-    required String label,
-    required String address,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Column(
-          children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: isPickup ? Colors.green : Colors.red,
-                shape: BoxShape.circle,
-              ),
+        CircleAvatar(
+          radius: 28,
+          backgroundColor: const Color(0xFFEFF6FF), // Blue 50
+          child: Text(
+            widget.trip.customer.name.isNotEmpty 
+                ? widget.trip.customer.name[0].toUpperCase() 
+                : 'C',
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2563EB),
             ),
-            if (isPickup)
-              Container(
-                width: 2,
-                height: 40,
-                color: Colors.grey.shade300,
-              ),
-          ],
+          ),
         ),
         const SizedBox(width: 16),
         Expanded(
@@ -268,25 +174,187 @@ class _OngoingTripScreenState extends State<OngoingTripScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                label,
-                style: TextStyle(
-                  color: isPickup ? Colors.green : Colors.red,
-                  fontSize: 12,
+                widget.trip.customer.name,
+                style: const TextStyle(
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E293B),
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                address,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black87,
-                ),
+              Row(
+                children: [
+                  const Icon(Icons.star_rounded, size: 16, color: Color(0xFFF59E0B)),
+                  const SizedBox(width: 4),
+                  Text(
+                    '4.8', // Placeholder rating
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ],
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF10B981).withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: IconButton(
+             icon: const Icon(CupertinoIcons.phone_fill, color: Color(0xFF10B981)),
+             onPressed: () => _makePhoneCall(widget.trip.customer.phone),
           ),
         ),
       ],
     );
   }
+
+  Widget _buildRouteTimeline() {
+    return Column(
+      children: [
+        _buildLocationItem(
+          icon: Icons.my_location,
+          color: const Color(0xFF2563EB), // Blue
+          isLast: false,
+          label: 'PICKUP',
+          address: widget.trip.pickup.address,
+        ),
+        _buildLocationItem(
+          icon: Icons.location_on,
+          color: const Color(0xFFEF4444), // Red
+          isLast: true,
+          label: 'DROP-OFF',
+          address: widget.trip.drop.address,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationItem({
+    required IconData icon,
+    required Color color,
+    required bool isLast,
+    required String label,
+    required String address,
+  }) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              Icon(icon, color: color, size: 20),
+              if (!isLast)
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    color: Colors.grey.shade200,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    address,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF334155),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEndTripButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ElevatedButton(
+        onPressed: () {
+           Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => EndTripScreen(
+                trip: widget.trip,
+                token: widget.token,
+                tripService: widget.tripService,
+              ),
+            ),
+          );
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFEF4444), // Red
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.stop_circle_outlined),
+            SizedBox(width: 8),
+            Text(
+              'End Trip',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class MockRoutePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF6366F1).withOpacity(0.3)
+      ..strokeWidth = 4
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    path.moveTo(size.width * 0.2, size.height * 0.8);
+    path.quadraticBezierTo(
+      size.width * 0.5,
+      size.height * 0.5,
+      size.width * 0.8,
+      size.height * 0.2,
+    );
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api_client.dart';
 import '../services/storage_service.dart';
-import '../main.dart' show LoginPage;
+import 'login_page.dart';
 import 'analytics_page.dart';
 import 'earnings_page.dart';
 import 'notification_settings_page.dart';

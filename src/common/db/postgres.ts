@@ -17,7 +17,7 @@ const sequelizeDev: any = new Sequelize({
     acquire: 30000,
     idle: 10000,
   },
-  dialectOptions: {
+  dialectOptions: env.POSTGRES_SSL === 'disable' ? {} : {
     ssl: {
       require: true,
       rejectUnauthorized: false,

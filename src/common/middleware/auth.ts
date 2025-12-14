@@ -121,6 +121,12 @@ export async function customerApp(req: Request, res: Response, next: NextFunctio
 //Vendor App
 export async function vendorApp(req: Request, res: Response, next: NextFunction) {
   try {
+    // Allow login route without token
+    if (req.path.startsWith('/auth')) {
+      next();
+      return;
+    }
+
     const token = await getJwtToken(req);
 
     if (!token) {

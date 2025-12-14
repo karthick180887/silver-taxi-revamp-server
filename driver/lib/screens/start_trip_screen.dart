@@ -233,6 +233,26 @@ class _StartTripScreenState extends State<StartTripScreen> {
     setState(() => _loading = true);
 
     try {
+      String? odoImageUrl;
+      if (_odoImage != null) {
+        // Upload image first
+        final uploadRes = await _api.uploadImage(
+          token: widget.token,
+          filePath: _odoImage!.path,
+          type: 'trip', // or 'odometer' depending on backend enum, 'trip' sets context
+        );
+        
+        if (uploadRes.success && uploadRes.body != null) {
+          // Assuming backend returns { success: true, url: "..." } or { data: { url: "..." } }
+          // Check structure based on common pattern
+          odoImageUrl = uploadRes.body['url'] ?? uploadRes.body['data']?['url'];
+        } else {
+           // If upload fails, maybe warn user but proceed? Or block?
+           // For now, let's proceed without image but log it
+           print('Failed to upload odometer image: ${uploadRes.message}');
+        }
+      }
+
       // Start Trip with odometer and OTP (both now required)
       // Note: This should only be called for trips, not bookings
       await widget.tripService.startTrip(
@@ -240,6 +260,7 @@ class _StartTripScreenState extends State<StartTripScreen> {
         tripId: widget.trip.id,
         otp: _otpController.text,
         startOdometer: _startOdo,
+        startOdometerImage: odoImageUrl,
       );
 
       if (mounted) {

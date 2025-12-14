@@ -20,6 +20,7 @@ const envSchema = z.object({
   POSTGRES_PASSWORD: z.string().optional(),
   POSTGRES_DB: z.string().optional(),
   POSTGRES_PORT: z.string().optional(),
+  POSTGRES_SSL: z.string().optional(),
 
   // prod
   POSTGRES_USER_PROD: z.string().optional(),
@@ -106,6 +107,7 @@ const envSchema = z.object({
       { key: "POSTGRES_PASSWORD", value: data.POSTGRES_PASSWORD },
       { key: "POSTGRES_DB", value: data.POSTGRES_DB },
       { key: "POSTGRES_PORT", value: data.POSTGRES_PORT },
+      { key: "POSTGRES_SSL", value: data.POSTGRES_SSL },
       { key: "REDIS_PASSWORD", value: data.REDIS_PASSWORD },
       { key: "REDIS_HOST", value: data.REDIS_HOST },
       { key: "REDIS_PORT", value: data.REDIS_PORT },

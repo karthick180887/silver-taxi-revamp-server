@@ -5,7 +5,6 @@ import '../services/overlay_notification_service.dart';
 import '../services/native_overlay_service.dart';
 import '../services/trip_service.dart';
 import 'home_tab.dart';
-import 'trips_tab.dart';
 import 'notification_tab.dart';
 import 'menu_tab.dart';
 
@@ -20,7 +19,6 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
-  final GlobalKey<TripsTabState> _tripsKey = GlobalKey<TripsTabState>();
 
   late final List<Widget> _pages;
 
@@ -111,7 +109,6 @@ class _MainScreenState extends State<MainScreen> {
 
     _pages = [
       HomeTab(token: widget.token, driverId: widget.driverId, onNavigate: _navigate),
-      TripsTab(key: _tripsKey, token: widget.token),
       NotificationTab(token: widget.token),
       MenuTab(token: widget.token),
     ];
@@ -161,12 +158,7 @@ class _MainScreenState extends State<MainScreen> {
 
   void _navigate(int index, {int? subTabIndex}) {
     setState(() => _selectedIndex = index);
-    if (index == 1 && subTabIndex != null) {
-      // Use a post-frame callback to ensure the widget is built/available if switching tabs
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _tripsKey.currentState?.selectTab(subTabIndex);
-      });
-    }
+    // Sub-tab navigation removed as Trips tab is gone
   }
 
   @override
@@ -199,7 +191,6 @@ class _MainScreenState extends State<MainScreen> {
           unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
           items: const [
             BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.directions_car), label: 'Trips'),
             BottomNavigationBarItem(icon: Icon(Icons.notifications), label: 'Notification'),
             BottomNavigationBarItem(icon: Icon(Icons.menu), label: 'Menu'),
           ],

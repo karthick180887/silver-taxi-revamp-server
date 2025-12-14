@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../services/socket_service.dart';
 import '../models/notification_model.dart';
@@ -33,13 +34,10 @@ class _NotificationTabState extends State<NotificationTab> {
     });
 
     try {
-      // Load existing notifications from API
       final res = await _api.getAllNotifications(token: widget.token);
-      debugPrint('[NotificationTab] API Response: ${res.body}');
       
       if (res.success && res.body['data'] != null) {
         final data = res.body['data'];
-        // Handle both array and object with notifications array
         List<dynamic> notifications = [];
         if (data is List) {
           notifications = data;
@@ -48,9 +46,6 @@ class _NotificationTabState extends State<NotificationTab> {
                          data['list'] as List? ?? 
                          (data.values.first is List ? data.values.first as List : []);
         }
-        
-        debugPrint('[NotificationTab] Parsed ${notifications.length} notifications from API');
-        debugPrint('[NotificationTab] First notification sample: ${notifications.isNotEmpty ? notifications[0] : "none"}');
         
         if (mounted) {
           setState(() {
@@ -62,32 +57,26 @@ class _NotificationTabState extends State<NotificationTab> {
                 }
                 return null;
               } catch (e) {
-                debugPrint('[NotificationTab] Error parsing notification: $e, data: $n');
                 return null;
               }
             }).whereType<NotificationItem>().toList();
             
-            // Limit to 2 notifications for driver app
-            _notifications.addAll(parsed.take(2).toList());
-            debugPrint('[NotificationTab] Successfully loaded ${_notifications.length} notifications (limited to 2)');
+            // Limit to 20 for better performance (2 was too restrictive)
+            _notifications.addAll(parsed.take(20).toList());
             _loading = false;
           });
         }
       } else {
-        debugPrint('[NotificationTab] API call failed or no data');
-        debugPrint('[NotificationTab] Response: ${res.body}');
         if (mounted) {
           setState(() {
             _loading = false;
             if (_notifications.isEmpty) {
-              _error = 'No notifications found. API response: ${res.body}';
+              _error = 'No notifications found';
             }
           });
         }
       }
-    } catch (e, stackTrace) {
-      debugPrint('Error loading notifications: $e');
-      debugPrint('Stack trace: $stackTrace');
+    } catch (e) {
       if (mounted) {
         setState(() {
           _loading = false;
@@ -98,12 +87,9 @@ class _NotificationTabState extends State<NotificationTab> {
   }
 
   void _listenToSocket() {
-    // Listen to incoming notifications from Socket.IO
     _notifSub = SocketService().notificationStream.listen((data) {
-      debugPrint('NotificationTab: Received socket notification: $data');
       if (mounted) {
         setState(() {
-          // Check if notification already exists (by type and data)
           final newNotif = NotificationItem.fromSocket(data);
           final exists = _notifications.any((n) => 
             n.type == newNotif.type && 
@@ -113,9 +99,8 @@ class _NotificationTabState extends State<NotificationTab> {
           
           if (!exists) {
             _notifications.insert(0, newNotif);
-            // Limit to 2 notifications
-            if (_notifications.length > 2) {
-              _notifications.removeRange(2, _notifications.length);
+            if (_notifications.length > 20) {
+              _notifications.removeLast();
             }
           }
         });
@@ -139,207 +124,279 @@ class _NotificationTabState extends State<NotificationTab> {
 
   void _deleteAll() async {
     if (_notifications.isEmpty) return;
-    
-    // Get all notification IDs before clearing
     final ids = _notifications.map((n) => n.id).toList();
-    
     setState(() {
       _notifications.clear();
     });
-    
-    // Delete from backend (don't block UI)
     try {
       await _api.deleteNotifications(token: widget.token, notificationIds: ids);
-    } catch (e) {
-      debugPrint('Error deleting notifications from backend: $e');
-      // Don't show error to user - already removed from UI
-    }
+    } catch (_) {}
   }
 
   Future<void> _deleteNotificationFromBackend(String notificationId) async {
     try {
       await _api.deleteNotifications(token: widget.token, notificationIds: [notificationId]);
-      debugPrint('Notification $notificationId deleted from backend');
-    } catch (e) {
-      debugPrint('Error deleting notification from backend: $e');
-      // Don't show error - notification already removed from UI
-    }
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
-        title: const Text('Notifications'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        title: const Text(
+          'Notifications',
+          style: TextStyle(
+            color: Color(0xFF1E293B),
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            letterSpacing: -0.5,
+          ),
+        ),
         actions: [
-          IconButton(
-            onPressed: _notifications.isEmpty ? null : _markAllAsRead,
-            icon: const Icon(Icons.done_all, color: Colors.blue),
-          ),
-          IconButton(
-            onPressed: _notifications.isEmpty ? null : _deleteAll,
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-          ),
+          if (_notifications.isNotEmpty) ...[
+            IconButton(
+              onPressed: _markAllAsRead,
+              icon: const Icon(Icons.done_all, color: Color(0xFF2563EB)),
+              tooltip: 'Mark all as read',
+            ),
+            IconButton(
+              onPressed: _deleteAll,
+              icon: Icon(CupertinoIcons.trash, color: Colors.red.shade400, size: 20),
+              tooltip: 'Clear all',
+            ),
+            const SizedBox(width: 8),
+          ]
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
+          : _error != null && _notifications.isEmpty
+              ? _buildErrorState()
+              : _notifications.isEmpty
+                  ? _buildEmptyState()
+                  : RefreshIndicator(
+                      onRefresh: () async => _loadNotifications(),
+                      color: const Color(0xFF2563EB),
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                        itemCount: _notifications.length,
+                        separatorBuilder: (ctx, i) => const SizedBox(height: 12),
+                        itemBuilder: (ctx, i) {
+                          final notif = _notifications[i];
+                          return _buildNotificationCard(notif);
+                        },
+                      ),
+                    ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(CupertinoIcons.bell_slash, size: 48, color: Colors.blue.shade300),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'No notifications yet',
+            style: TextStyle(
+              color: Colors.grey.shade800,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'We\'ll let you know when something\nimportant comes up.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+          ),
+          const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: _loadNotifications,
+            icon: const Icon(CupertinoIcons.refresh, size: 16),
+            label: const Text('Refresh'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF2563EB),
+              elevation: 0,
+              side: BorderSide(color: Colors.grey.shade300),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+          const SizedBox(height: 16),
+          Text(
+            'Something went wrong',
+            style: TextStyle(color: Colors.grey.shade800, fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _loadNotifications,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            ),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationCard(NotificationItem notif) {
+    final isNewTrip = notif.type == 'NEW_TRIP_OFFER';
+    
+    return Dismissible(
+      key: Key(notif.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        decoration: BoxDecoration(
+          color: Colors.red.shade400,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        child: const Icon(CupertinoIcons.trash, color: Colors.white),
+      ),
+      onDismissed: (_) {
+        final id = notif.id;
+        setState(() => _notifications.removeWhere((n) => n.id == id));
+        _deleteNotificationFromBackend(id);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: notif.isRead ? Colors.white : const Color(0xFFF0F9FF),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: notif.isRead ? Colors.grey.shade100 : Colors.blue.shade100,
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isNewTrip ? Colors.green.shade50 : 
+                       notif.isRead ? Colors.grey.shade50 : Colors.blue.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _getIconForType(notif.type),
+                color: isNewTrip ? Colors.green.shade600 :
+                       notif.isRead ? Colors.grey.shade400 : const Color(0xFF2563EB),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Error loading notifications',
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                      Expanded(
+                        child: Text(
+                          notif.title,
+                          style: TextStyle(
+                            fontWeight: notif.isRead ? FontWeight.w600 : FontWeight.bold,
+                            fontSize: 15,
+                            color: const Color(0xFF1E293B),
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 8),
                       Text(
-                        _error!,
-                        style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadNotifications,
-                        child: const Text('Retry'),
+                        notif.timeAgo,
+                        style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
                       ),
                     ],
                   ),
-                )
-              : _notifications.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.notifications_none, size: 64, color: Colors.grey.shade400),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No notifications yet',
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'New notifications will appear here',
-                            style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
-                          ),
-                          const SizedBox(height: 24),
-                          ElevatedButton.icon(
-                            onPressed: _loadNotifications,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Refresh'),
-                          ),
-                        ],
+                  const SizedBox(height: 6),
+                  Text(
+                    notif.body,
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                  if (isNewTrip) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.green.shade100),
                       ),
-                    )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _notifications.length,
-              itemBuilder: (ctx, i) {
-                final notif = _notifications[i];
-                return Dismissible(
-                  key: Key(notif.id),
-                  direction: DismissDirection.endToStart,
-                  background: Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    alignment: Alignment.centerRight,
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  onDismissed: (direction) {
-                    // Remove by ID, not by index, to avoid widget tree issues
-                    final notificationId = notif.id;
-                    setState(() {
-                      _notifications.removeWhere((n) => n.id == notificationId);
-                    });
-                    
-                    // Optionally delete from backend (don't block UI)
-                    _deleteNotificationFromBackend(notificationId);
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: notif.isRead ? Colors.grey.shade100 : const Color(0xFFEAF6FF),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: notif.isRead ? Colors.grey.shade300 : const Color(0xFFCBE6FF),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _getIconForType(notif.type),
-                            color: notif.isRead ? Colors.grey.shade600 : const Color(0xFF2575FC),
-                            size: 20,
-                          ),
+                      child: Text(
+                        'New Opportunity',
+                        style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                notif.title,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                  color: notif.isRead ? Colors.grey.shade700 : Colors.black,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                notif.body,
-                                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                notif.timeAgo,
-                                style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (!notif.isRead)
-                          Container(
-                            margin: const EdgeInsets.only(top: 4),
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF2575FC),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  ]
+                ],
+              ),
             ),
+          ],
+        ),
+      ),
     );
   }
 
   IconData _getIconForType(String type) {
     switch (type) {
       case 'NEW_TRIP_OFFER':
-        return Icons.directions_car;
+        return CupertinoIcons.car_detailed;
       case 'TRIP_CANCELLED':
-        return Icons.cancel;
+        return CupertinoIcons.xmark_circle_fill;
+      case 'TRIP_ACCEPTED':
+        return CupertinoIcons.checkmark_circle_fill;
       case 'WALLET_UPDATE':
       case 'WALLET_CREDIT':
-        return Icons.account_balance_wallet;
+        return CupertinoIcons.money_dollar_circle_fill;
       default:
-        return Icons.notifications;
+        return CupertinoIcons.bell_fill;
     }
   }
 }

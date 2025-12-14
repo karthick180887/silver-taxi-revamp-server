@@ -25,6 +25,21 @@ k8s_yaml("k8s/secrets.yaml")
 k8s_yaml("k8s/hpa.yaml")
 k8s_yaml("k8s/worker.yaml")
 
+# Helm: Local HA Postgres (Complex Config)
+# We generate YAMLs via 'helm template' and feed them to Tilt.
+# This gives Tilt full visibility and control over the Pods/Services.
+postgres_yaml = local(".\\deps\\windows-amd64\\helm.exe template postgres bitnami/postgresql -f k8s/db/values.yaml --set pgbouncer.enabled=true")
+k8s_yaml(postgres_yaml)
+
+# Now we can explicitly track the workloads because Tilt knows about the YAML
+k8s_resource(
+    workload="postgres-postgresql-primary", 
+    labels=["db"],
+    port_forwards=[port_forward(5433, 5432)]
+)
+k8s_resource(workload="postgres-postgresql-read", labels=["db"])
+
+
 # Port-forward: 30060->8081 (for Flutter/Ext), 8081->8081 (for Dashboard)
 k8s_resource("backend-go-app", port_forwards=[
     port_forward(30060, 8081, host="0.0.0.0"),

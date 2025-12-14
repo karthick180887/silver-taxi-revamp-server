@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../api_client.dart';
 import 'payout_request_page.dart';
@@ -35,30 +36,14 @@ class _WalletPageState extends State<WalletPage> {
       _hasMore = true;
     });
     try {
-      debugPrint('[WalletPage] ========================================');
-      debugPrint('[WalletPage] 🔄 Loading wallet and transaction history...');
-      debugPrint('[WalletPage] ========================================');
-      
       final wallet = await _api.fetchWallet(token: widget.token);
-      debugPrint('[WalletPage] ✅ Wallet data received: ${wallet['data']}');
-      
       final historyRes = await _api.fetchWalletHistory(
         token: widget.token,
         limit: _limit,
         offset: 0,
       );
-      debugPrint('[WalletPage] 📊 History API response:');
-      debugPrint('[WalletPage]   - Success: ${historyRes.success}');
-      debugPrint('[WalletPage]   - Status: ${historyRes.statusCode}');
-      debugPrint('[WalletPage]   - Body keys: ${historyRes.body.keys}');
-      debugPrint('[WalletPage]   - Data type: ${historyRes.body['data'].runtimeType}');
-      debugPrint('[WalletPage]   - Data: ${historyRes.body['data']}');
       
       final historyList = _extractList(historyRes.body['data']);
-      debugPrint('[WalletPage] ✅ Extracted ${historyList.length} transactions');
-      if (historyList.isNotEmpty) {
-        debugPrint('[WalletPage] First transaction: ${historyList.first}');
-      }
 
       if (mounted) {
         setState(() {
@@ -67,11 +52,8 @@ class _WalletPageState extends State<WalletPage> {
           _offset = historyList.length;
           _hasMore = historyList.length >= _limit;
         });
-        debugPrint('[WalletPage] ✅ State updated with ${historyList.length} transactions');
       }
-    } catch (e, stackTrace) {
-      debugPrint('[WalletPage] ❌ Error loading wallet history: $e');
-      debugPrint('[WalletPage] Stack trace: $stackTrace');
+    } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -144,12 +126,11 @@ class _WalletPageState extends State<WalletPage> {
     if (value == null) return '';
     if (value is String) {
       final parsed = DateTime.tryParse(value);
-      if (parsed != null) return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
-      return value;
+      if (parsed != null) return '${parsed.day}/${parsed.month}';
     }
     if (value is int) {
       final dt = DateTime.fromMillisecondsSinceEpoch(value);
-      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      return '${dt.day}/${dt.month}';
     }
     return value.toString();
   }
@@ -159,317 +140,223 @@ class _WalletPageState extends State<WalletPage> {
     final balance = _toDouble(_walletData?['balance'] ?? 0.0);
     final plusAmount = _toDouble(_walletData?['plusAmount'] ?? 0.0);
     final minusAmount = _toDouble(_walletData?['minusAmount'] ?? 0.0);
-    final totalAmount = _walletData?['totalAmount']?.toString() ?? '0';
-    final currency = _walletData?['currency']?.toString() ?? 'INR';
+    
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
-        title: const Text('Wallet'),
+        title: const Text('My Wallet', style: TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        leading: const BackButton(color: Color(0xFF1E293B)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
+           IconButton(
+            icon: const Icon(CupertinoIcons.arrow_right_arrow_left, color: Color(0xFF2563EB)),
+            tooltip: 'Request Payout',
             onPressed: () {
-              debugPrint('[WalletPage] 🔄 Manual refresh triggered');
-              _loadAll();
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PayoutRequestPage(token: widget.token),
+                ),
+              ).then((_) => _loadAll());
             },
-            tooltip: 'Refresh',
           ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _loadAll,
+        color: const Color(0xFF2563EB),
         child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      Text(
-                        'Failed to load wallet',
-                        style: Theme.of(context).textTheme.titleMedium,
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
+            : ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                   // Balance Card
+                   Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF2563EB), Color(0xFF1E40AF)],
+                        begin: Alignment.topLeft, 
+                        end: Alignment.bottomRight
                       ),
-                      const SizedBox(height: 8),
-                      Text(_error!, style: TextStyle(color: Colors.red.shade600)),
-                      const SizedBox(height: 12),
-                      ElevatedButton(onPressed: _loadAll, child: const Text('Retry')),
-                    ],
-                  )
-                : ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // Main Balance Card
-                      Card(
-                        color: const Color(0xFF2575FC),
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Available Balance',
-                                style: TextStyle(color: Colors.white70),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                _formatAmount(balance),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (currency.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  currency,
-                                  style: const TextStyle(color: Colors.white70, fontSize: 14),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      // Wallet Statistics Cards
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Total Credit',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _formatAmount(plusAmount),
-                                      style: TextStyle(
-                                        color: Colors.green.shade700,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Total Debit',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _formatAmount(minusAmount),
-                                      style: TextStyle(
-                                        color: Colors.red.shade700,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (totalAmount.isNotEmpty && totalAmount != '0') ...[
-                        const SizedBox(height: 12),
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Total Amount',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                Text(
-                                  '₹ ${_formatNumber(totalAmount)}',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF2563EB).withValues(alpha: 0.3),
+                          blurRadius: 15,
+                          offset: const Offset(0, 8),
                         ),
                       ],
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Transaction History',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          TextButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => PayoutRequestPage(token: widget.token),
-                                ),
-                              ).then((_) => _loadAll());
-                            },
-                            icon: const Icon(Icons.account_balance_wallet, size: 18),
-                            label: const Text('Payouts'),
-                          ),
-                        ],
+                    ),
+                     child: Column(
+                       children: [
+                         const Text(
+                           'Available Balance',
+                           style: TextStyle(color: Colors.white70, fontSize: 14),
+                         ),
+                         const SizedBox(height: 8),
+                         Text(
+                           _formatAmount(balance),
+                           style: const TextStyle(
+                             color: Colors.white,
+                             fontSize: 36,
+                             fontWeight: FontWeight.bold,
+                           ),
+                         ),
+                         const SizedBox(height: 24),
+                         Row(
+                           children: [
+                             Expanded(child: _buildSummaryItem('Total Income', plusAmount, Colors.greenAccent)),
+                             Container(width: 1, height: 40, color: Colors.white24),
+                             Expanded(child: _buildSummaryItem('Total Spend', minusAmount, Colors.orangeAccent)),
+                           ],
+                         )
+                       ],
+                     ),
+                   ),
+                   
+                   const SizedBox(height: 32),
+                   const Text(
+                     'Recent Transactions',
+                     style: TextStyle(
+                       fontSize: 18,
+                       fontWeight: FontWeight.bold,
+                       color: Color(0xFF1E293B),
+                     ),
+                   ),
+                   const SizedBox(height: 16),
+                   
+                   if (_history.isEmpty)
+                      _buildEmptyState()
+                   else
+                      ListView.builder(
+                        physics: const NeverScrollableScrollPhysics(),
+                        shrinkWrap: true,
+                        itemCount: _history.length + (_hasMore ? 1 : 0),
+                        itemBuilder: (ctx, i) {
+                          if (i == _history.length) {
+                             return _loadingMore 
+                                ? const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+                                : Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: ElevatedButton(
+                                      onPressed: _loadMore,
+                                      style: ElevatedButton.styleFrom(elevation: 0, backgroundColor: Colors.white, foregroundColor: Colors.blue),
+                                      child: const Text('Load More'),
+                                    ),
+                                  );
+                          }
+                          return _buildTransactionItem(_history[i]);
+                        },
                       ),
-                      const SizedBox(height: 8),
-                      if (_history.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            'No transactions found',
-                            style: TextStyle(color: Colors.grey.shade600),
-                          ),
-                        )
-                      else
-                        ..._history.map((item) {
-                          final amount = _toDouble(item['amount'] ?? item['value'] ?? item['txnAmount']);
-                          final isCredit = amount >= 0;
-                          final label = (item['description'] ?? item['txnType'] ?? item['type'] ?? 'Transaction').toString();
-                          final date = _formatDate(item['createdAt'] ?? item['date'] ?? item['timestamp']);
-                          final status = (item['status'] ?? item['state'] ?? '').toString();
-                          final tag = (item['reason'] ?? item['category'] ?? item['txnType'] ?? item['type'] ?? '').toString();
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.04),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              label,
-                                              style: const TextStyle(fontWeight: FontWeight.w600),
-                                            ),
-                                          ),
-                                          if (tag.isNotEmpty)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: isCredit ? Colors.green.shade50 : Colors.red.shade50,
-                                                borderRadius: BorderRadius.circular(10),
-                                              ),
-                                              child: Text(
-                                                tag,
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: isCredit ? Colors.green.shade700 : Colors.red.shade700,
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(date, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                                      if (status.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          status,
-                                          style: TextStyle(
-                                            color: Colors.grey.shade700,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  _formatAmount(amount),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: isCredit ? Colors.green.shade700 : Colors.red.shade700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      if (_hasMore && !_loading)
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Center(
-                            child: ElevatedButton(
-                              onPressed: _loadMore,
-                              child: const Text('Load More'),
-                            ),
-                          ),
+                     
+                     const SizedBox(height: 40),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryItem(String label, double amount, Color color) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _formatAmount(amount),
+          style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState() {
+     return Center(
+       child: Padding(
+         padding: const EdgeInsets.only(top: 40),
+         child: Column(
+           children: [
+             Icon(CupertinoIcons.doc_text_search, size: 48, color: Colors.grey.shade300),
+             const SizedBox(height: 16),
+             Text('No transactions yet', style: TextStyle(color: Colors.grey.shade500)),
+           ],
+         ),
+       ),
+     );
+  }
+
+  Widget _buildTransactionItem(Map<String, dynamic> item) {
+    final amount = _toDouble(item['amount'] ?? item['value'] ?? item['txnAmount']);
+    final isCredit = amount >= 0;
+    final label = (item['description'] ?? item['txnType'] ?? item['type'] ?? 'Transaction').toString();
+    final date = _formatDate(item['createdAt'] ?? item['date'] ?? item['timestamp']);
+    final tag = (item['reason'] ?? item['category'] ?? item['txnType'] ?? item['type'] ?? '').toString().toUpperCase();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isCredit ? Colors.green.shade50 : Colors.red.shade50,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isCredit ? CupertinoIcons.arrow_down_left_square_fill : CupertinoIcons.arrow_up_right_square_fill,
+              color: isCredit ? Colors.green.shade600 : Colors.red.shade600,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: Color(0xFF1E293B)),
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(date, style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                    const SizedBox(width: 8),
+                    if (tag.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                           color: Colors.grey.shade100,
+                           borderRadius: BorderRadius.circular(4),
                         ),
-                      if (_loadingMore)
-                        const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                      if (!_hasMore && _history.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Center(
-                            child: Text(
-                              'No more transactions',
-                              style: TextStyle(color: Colors.grey.shade600),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                        child: Text(tag, style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Text(
+            (isCredit ? '+' : '') + _formatAmount(amount),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: isCredit ? Colors.green.shade700 : Colors.red.shade700,
+            ),
+          ),
+        ],
       ),
     );
   }

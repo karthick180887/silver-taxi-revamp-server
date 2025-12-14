@@ -570,6 +570,7 @@ class DriverApiClient extends BaseApiClient {
     int? duration,
     required double endOdometer,
     String? endOdometerImage,
+    Map<String, dynamic>? driverCharges,
   }) {
     final Map<String, dynamic> body = {
       'endOtp': endOtp,  // Backend expects 'endOtp'
@@ -580,6 +581,8 @@ class DriverApiClient extends BaseApiClient {
     }
     if (distance != null) body['distance'] = distance;
     if (duration != null) body['duration'] = duration;
+    if (driverCharges != null) body['driverCharges'] = driverCharges;
+    
     return post('/app/trip/end/$tripId', body, token: token);
   }
 

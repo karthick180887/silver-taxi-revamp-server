@@ -242,6 +242,7 @@ class TripService {
     required String tripId,
     required String otp,
     required double startOdometer, // Now required, not optional
+    String? startOdometerImage,
   }) async {
     // Validate required fields
     if (otp.isEmpty) {
@@ -256,6 +257,7 @@ class TripService {
       tripId: tripId, 
       otp: otp, 
       startOdometer: startOdometer,
+      startOdometerImage: startOdometerImage,
     );
     _ensureSuccess(res, 'start trip');
   }
@@ -267,6 +269,7 @@ class TripService {
     required double distance,
     required int duration,
     required double endOdometer, // Now required, not optional
+    Map<String, dynamic>? driverCharges,
   }) async {
     // Validate required fields
     if (endOtp.isEmpty) {
@@ -283,6 +286,7 @@ class TripService {
       distance: distance,
       duration: duration,
       endOdometer: endOdometer,
+      driverCharges: driverCharges,
     );
     _ensureSuccess(res, 'end trip');
   }

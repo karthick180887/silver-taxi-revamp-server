@@ -1,0 +1,71 @@
+global:
+  storageClass: "standard" # Use default storage class
+  postgresql:
+    auth:
+      database: "defaultdb"
+      username: "taxi_user"
+      password: "taxi_password"
+      postgresPassword: "admin_password"
+      replicationPassword: "repl_password"
+
+postgresql:
+  replicaCount: 3 # 1 Primary + 2 Replicas
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+pgpool:
+  enabled: false # We use PgBouncer defined below (or chart specific) but Bitnami HA uses PgPool usually. Wait, standard HA chart uses PgPool-II by default for load balancing and split logic. User asked for PgBouncer.
+  # Bitnami 'postgresql-ha' uses PgPool-II. 
+  # Bitnami 'postgresql' (standalone) allows pgbouncer sidecar.
+  # The User specifically asked for "PG BOUNCER".
+  # Bitnami 'postgresql-ha' chart is strictly PgPool-II based. 
+  # To get PgBouncer + HA + Patroni/Repmgr is complex.
+  # CORRECT APPROACH: The "postgresql-ha" chart uses PgPool. I can try to simply use PgPool which fulfills the "Shared Volume + 3 Replicas + Connection Pooling" requirement, effectively replacing PgBouncer. 
+  # OR I can use the standard 'postgresql' chart with `architecture: replication` and `pgbouncer.enabled: true`. This is likely what they want: "Replication + PgBouncer".
+  
+  # Decision: I will use bitnami/postgresql with architecture: replication.
+  
+architecture: replication
+replication:
+  applicationName: "silver_taxi"
+  readReplicas: 2 # Total 3 nodes (1 primary + 2 read)
+
+auth:
+  database: "defaultdb"
+  username: "taxi_user"
+  password: "taxi_password"
+  postgresPassword: "admin_password"
+  replicationPassword: "repl_password"
+
+primary:
+  persistence:
+    enabled: true
+    size: 8Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+readReplicas:
+  replicaCount: 2
+  persistence:
+    enabled: true
+    size: 8Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+# Enable PgBouncer
+pgbouncer:
+  enabled: true
+  replicas: 2 # High Availability for Pooler
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi

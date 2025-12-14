@@ -67,7 +67,7 @@ export const getBookingDashboard = async (req: Request, res: Response): Promise<
             Booking.count({
                 where: {
                     adminId,
-                    status: { [Op.in]: ['Trip Started', 'On The Way', 'Arrived', 'Driver Assigned'] }
+                    status: { [Op.in]: ['Started'] }
                 }
             }),
 
@@ -79,7 +79,7 @@ export const getBookingDashboard = async (req: Request, res: Response): Promise<
                         { driverId: null },
                         { driverId: { [Op.ne]: null }, driverAccepted: 'pending' }
                     ],
-                    status: { [Op.in]: ['Booking Confirmed', 'Reassign', 'Pending'] }
+                    status: { [Op.in]: ['Booking Confirmed', 'Reassign'] }
                 }
             }),
 
@@ -90,7 +90,7 @@ export const getBookingDashboard = async (req: Request, res: Response): Promise<
 
             // Cancelled / Failed
             Booking.count({
-                where: { adminId, status: { [Op.in]: ['Cancelled', 'Expired', 'Failed'] } }
+                where: { adminId, status: { [Op.in]: ['Cancelled'] } }
             }),
 
             // Total Revenue
@@ -1385,16 +1385,16 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
             if (previousDriver) await previousDriver.update({ assigned: false });
         }
 
-        // Fetch all active drivers
+        // Fetch all drivers (active and inactive)
         const drivers = await Driver.findAll({
-            where: { adminId, isActive: true },
+            where: { adminId },
             attributes: ['driverId', 'name', 'fcmToken'],
         });
 
         if (!drivers.length) {
             return res.status(404).json({
                 success: false,
-                message: "No active drivers found",
+                message: "No drivers found",
             });
         }
 
