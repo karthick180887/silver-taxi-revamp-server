@@ -2,9 +2,9 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
+import { ClientLayout } from '@/components/layout/ClientLayout';
 
 // Dynamically import DashboardContent to avoid SSR issues
-// The layout is now built INTO DashboardContent
 const DashboardContent = dynamic(
     () => import('../../components/DashboardContent'),
     {
@@ -21,5 +21,9 @@ const DashboardContent = dynamic(
 );
 
 export default function DashboardPage() {
-    return <DashboardContent />;
+    return (
+        <ClientLayout pageTitle="Dashboard">
+            <DashboardContent />
+        </ClientLayout>
+    );
 }

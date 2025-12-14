@@ -58,7 +58,17 @@ export default function DashboardContent() {
 
     const fetchDashboardData = async () => {
         try {
-            const dashboardRes = await bookingsApi.getDashboard();
+            // Get adminId from localStorage
+            let adminId;
+            if (typeof window !== 'undefined') {
+                const userStr = localStorage.getItem('user');
+                if (userStr) {
+                    const user = JSON.parse(userStr);
+                    adminId = user.adminId || user.id;
+                }
+            }
+
+            const dashboardRes = await bookingsApi.getDashboard({ adminId });
             const dashboardData = dashboardRes.data?.data || {};
             const backendStats = dashboardData.stats || {};
             const backendCharts = dashboardData.charts || {};

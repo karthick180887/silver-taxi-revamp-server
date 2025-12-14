@@ -241,8 +241,8 @@ export function ClientSidebar({ collapsed, onToggle }: ClientSidebarProps) {
                                 <button
                                     onClick={() => toggleSubmenu(item.label)}
                                     className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group ${active
-                                            ? 'bg-emerald-500/10 text-emerald-400'
-                                            : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                        ? 'bg-emerald-500/10 text-emerald-400'
+                                        : 'text-slate-300 hover:text-white hover:bg-white/5'
                                         } ${collapsed ? 'justify-center' : 'justify-start'}`}
                                     title={collapsed ? item.label : undefined}
                                 >
@@ -265,8 +265,8 @@ export function ClientSidebar({ collapsed, onToggle }: ClientSidebarProps) {
                                                     key={sub.href}
                                                     href={sub.href}
                                                     className={`block px-3 py-2 text-sm rounded-lg transition-colors ${isSubActive
-                                                            ? 'text-emerald-400 bg-emerald-500/10 font-medium'
-                                                            : 'text-slate-500 hover:text-slate-300'
+                                                        ? 'text-emerald-400 bg-emerald-500/10 font-medium'
+                                                        : 'text-slate-400 hover:text-slate-200'
                                                         }`}
                                                 >
                                                     {sub.label}
@@ -284,8 +284,8 @@ export function ClientSidebar({ collapsed, onToggle }: ClientSidebarProps) {
                             key={item.label}
                             href={item.href!}
                             className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group ${active
-                                    ? 'bg-emerald-500/10 text-emerald-400 shadow-sm shadow-emerald-900/20'
-                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                ? 'bg-emerald-500/10 text-emerald-400 shadow-sm shadow-emerald-900/20'
+                                : 'text-slate-300 hover:text-white hover:bg-white/5'
                                 } ${collapsed ? 'justify-center' : 'justify-start'}`}
                             title={collapsed ? item.label : undefined}
                         >
@@ -301,7 +301,7 @@ export function ClientSidebar({ collapsed, onToggle }: ClientSidebarProps) {
             {/* Footer */}
             {!collapsed && (
                 <div className="p-4 border-t border-white/10 text-center">
-                    <p className="text-xs text-slate-600 font-medium">© 2025 Silver Taxi</p>
+                    <p className="text-xs text-slate-500 font-medium">© 2025 Silver Taxi</p>
                 </div>
             )}
         </aside>

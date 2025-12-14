@@ -166,7 +166,7 @@ export const bookingsApi = {
 
     delete: (id: string) => api.delete(`/v1/bookings/${id}`),
 
-    getDashboard: (params?: { areaChart?: boolean; barChart?: string; sortBy?: string }) =>
+    getDashboard: (params?: { areaChart?: boolean; barChart?: string; sortBy?: string; adminId?: string }) =>
         api.get('/v1/bookings/dashboard', { params }),
 
     getRecent: (params?: { page?: number; limit?: number; sortBy?: string; sortOrder?: string }) =>
