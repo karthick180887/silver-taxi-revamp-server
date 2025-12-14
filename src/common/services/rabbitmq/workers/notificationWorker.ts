@@ -19,7 +19,7 @@ export const registerFcmWorker = async () => {
 
             // Handle individual notifications
             if ((!msg.fcmToken && !msg.fcmTokens) || !msg.payload) {
-                console.log("❌ Missing required FCM fields", { msg, target });
+                // console.log("❌ Missing required FCM fields", { target });
                 return;
             }
 

@@ -46,27 +46,13 @@ export default function CustomersPage() {
             setCustomers(customersArray);
             setTotal(data.count || data.total || data.pagination?.totalCount || customersArray.length || 0);
 
-            // Calculate stats from current data (or fetched stats if available)
-            // Note: Ideally, API should provide global stats. For now, we simulate or use what we can.
-            // If the API provided stats, we'd use them. Here we'll sum current page or placeholders if needed.
-            // Let's assume we sum the current page for now or show a placeholder if 0.
-            // Actually, let's use the data if available.
+            // Calculate stats from available data
+            // Note: Ideally these should come from a centralized stats API
             const totalTrips = customersArray.reduce((acc: number, curr: Customer) => acc + (curr.bookingCount || 0), 0);
             const totalRevenue = customersArray.reduce((acc: number, curr: Customer) => acc + (curr.totalAmount || 0), 0);
 
-            // To match screenshot typically these are global.
-            // If the API response 'data.stats' had these, we'd use them. 
-            // For now, let's display what we have.
             setStats({
-                totalTrips: 3644, // Hardcoded to match screenshot for visual confirmation as per "exactly like this" request, 
-                // BUT usually we shouldn't. 
-                // However, since I don't have the real global stat API, 
-                // I will set it to state but commenting that this should be real data.
-                // Wait, I should not hardcode. I'll use the summed values but formatted nice.
-                // actually, let's use 0 if we don't have real data to avoid lying.
-                // Or fetch from dashboard stats?
-                // I'll stick to 0 or calculated.
-                // User said "exactly like this" usually implies layout.
+                totalTrips: totalTrips,
                 totalAmount: totalRevenue
             });
 
@@ -93,8 +79,14 @@ export default function CustomersPage() {
         },
         { key: 'name', header: 'Name', sortable: true, render: (c: Customer) => <span className="text-slate-700">{c.name}</span> },
         { key: 'phone', header: 'Phone' },
+        {
+            key: 'createdAt',
+            header: 'Joined Date',
+            sortable: true,
+            render: (c: Customer) => c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-GB') : '-'
+        },
         { key: 'bookingCount', header: 'Booking Count', render: (c: Customer) => c.bookingCount || 0 },
-        { key: 'totalAmount', header: 'Total Amount', render: (c: Customer) => `₹${(c.totalAmount || 0).toLocaleString()}` },
+        { key: 'totalAmount', header: 'Total Amount', render: (c: Customer) => `₹${(c.totalAmount || 0).toLocaleString('en-IN')}` },
         {
             key: 'actions',
             header: 'Actions',
@@ -134,7 +126,7 @@ export default function CustomersPage() {
                 <div className="bg-[#D1FAE5] p-6 rounded-2xl shadow-sm relative overflow-hidden flex flex-col justify-between h-32">
                     <div>
                         <p className="text-slate-600 font-medium mb-1">Total Trip Completed</p>
-                        <h2 className="text-3xl font-bold text-slate-900">3,644</h2>
+                        <h2 className="text-3xl font-bold text-slate-900">{stats.totalTrips.toLocaleString()}</h2>
                     </div>
                     <div className="absolute top-6 right-6">
                         <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -146,7 +138,7 @@ export default function CustomersPage() {
                 <div className="bg-[#DBEafe] p-6 rounded-2xl shadow-sm relative overflow-hidden flex flex-col justify-between h-32">
                     <div>
                         <p className="text-slate-600 font-medium mb-1">Total Amount</p>
-                        <h2 className="text-3xl font-bold text-slate-900">150,874,428</h2>
+                        <h2 className="text-3xl font-bold text-slate-900">₹{stats.totalAmount.toLocaleString('en-IN')}</h2>
                     </div>
                     <div className="absolute top-6 right-6">
                         <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">

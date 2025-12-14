@@ -147,24 +147,12 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
     const handleAssignAll = async () => {
         setIsAssigning(true);
         try {
-            // Get IDs from filtered list
-            const nearbyDriverIds = processedDrivers.map((d: any) => d.id || d.driverId);
+            // Broadcast to ALL drivers via backend (updates booking status too)
+            await bookingsApi.assignAll(booking.id || booking.bookingId);
 
-            if (nearbyDriverIds.length === 0) {
-                alert('No drivers nearby (within 100km).');
-                setIsAssigning(false);
-                return;
-            }
-
-            // Broadcast notification to filtered drivers
-            await notificationsApi.sendToDrivers({
-                title: 'New Booking Available',
-                message: `New booking from ${booking.pickup} to ${booking.drop}`,
-                driverIds: nearbyDriverIds
-            });
-
-            alert(`Notification sent to ${nearbyDriverIds.length} nearby drivers.`);
+            alert(`Broadcast sent to all active drivers.`);
             onClose();
+            onAssign(); // Refresh parent list to show updated status
         } catch (error) {
             console.error("Failed to assign all", error);
             alert('Failed to send notifications.');

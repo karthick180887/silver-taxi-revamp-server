@@ -107,7 +107,9 @@ export interface BookingAttributes {
 
     convenienceFee?: number;
     adminContact?: string;
-
+    createdAt?: Date;
+    updatedAt?: Date;
+    deletedAt?: Date;
 }
 
 

@@ -44,20 +44,71 @@ export default function InvoicesPage() {
         }
     };
 
+    // Stats - Calculated from current list or a separate API
+    const [stats, setStats] = useState({
+        totalAmount: 0,
+        pendingAmount: 0,
+        paidCount: 0,
+        pendingCount: 0
+    });
+
+    useEffect(() => {
+        // Calculate stats from invoices
+        const total = invoices.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+        const pending = invoices.filter(i => i.status === 'pending').reduce((acc, curr) => acc + (curr.amount || 0), 0);
+        const paidCount = invoices.filter(i => i.status === 'paid').length;
+        const pendingCount = invoices.filter(i => i.status === 'pending').length;
+
+        setStats({ totalAmount: total, pendingAmount: pending, paidCount, pendingCount });
+    }, [invoices]);
+
+    const StatCard = ({ title, count, colorClass, iconPath, isCurrency = false }: any) => (
+        <div className={`${colorClass} p-6 rounded-2xl shadow-sm relative overflow-hidden flex flex-col justify-between h-32`}>
+            <div>
+                <p className="text-slate-600 font-medium mb-1">{title}</p>
+                <h2 className="text-3xl font-bold text-slate-900">
+                    {isCurrency ? `₹${count.toLocaleString('en-IN')}` : count.toLocaleString()}
+                </h2>
+            </div>
+            <div className="absolute top-6 right-6">
+                <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={iconPath} />
+                </svg>
+            </div>
+        </div>
+    );
+
     const columns = [
-        { key: 'invoiceId', header: 'Invoice ID', sortable: true },
+        {
+            key: 'invoiceId',
+            header: 'Invoice ID',
+            sortable: true,
+            render: (i: Invoice) => <span className="text-indigo-600 font-medium">{i.invoiceId}</span>
+        },
         { key: 'bookingId', header: 'Booking ID', render: (i: Invoice) => i.bookingId || '-' },
-        { key: 'customerName', header: 'Customer', render: (i: Invoice) => i.customerName || '-' },
-        { key: 'amount', header: 'Amount', render: (i: Invoice) => `₹${(i.amount || 0).toLocaleString()}` },
+        { key: 'customerName', header: 'Customer', render: (i: Invoice) => <span className="text-slate-700 font-medium">{i.customerName || '-'}</span> },
+        { key: 'amount', header: 'Amount', render: (i: Invoice) => `₹${(i.amount || 0).toLocaleString('en-IN')}` },
         { key: 'status', header: 'Status', render: (i: Invoice) => <StatusBadge status={i.status || 'pending'} /> },
-        { key: 'paymentMethod', header: 'Payment', render: (i: Invoice) => i.paymentMethod || '-' },
-        { key: 'createdAt', header: 'Created', render: (i: Invoice) => new Date(i.createdAt).toLocaleDateString() },
+        {
+            key: 'paymentMethod',
+            header: 'Payment',
+            render: (i: Invoice) => (
+                <span className="capitalize px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-medium">
+                    {i.paymentMethod || '-'}
+                </span>
+            )
+        },
+        {
+            key: 'createdAt',
+            header: 'Created',
+            render: (i: Invoice) => new Date(i.createdAt).toLocaleDateString('en-GB')
+        },
         {
             key: 'actions',
             header: 'Actions',
             render: (i: Invoice) => (
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined') window.location.href = `/invoices/${i.id}`; }}>
+                <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" onClick={(e: any) => { e.stopPropagation(); if (typeof window !== 'undefined') window.location.href = `/invoices/${i.id}`; }}>
                         View
                     </Button>
                 </div>
@@ -67,22 +118,52 @@ export default function InvoicesPage() {
 
     return (
         <ClientLayout pageTitle="Invoices">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+            <div className="flex justify-between items-center mb-8">
                 <div>
-                    <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1e293b', margin: '0 0 0.25rem' }}>Invoices</h1>
-                    <p style={{ color: '#64748b', margin: 0 }}>Manage all invoices and payments</p>
+                    <h1 className="text-2xl font-bold text-slate-800">Invoices</h1>
+                    <p className="text-slate-500 text-sm">Manage all invoices and payments</p>
                 </div>
-                <Button onClick={() => { if (typeof window !== 'undefined') window.location.href = '/invoices/create'; }}>
+                <Button onClick={() => { if (typeof window !== 'undefined') window.location.href = '/invoices/create'; }} className="bg-slate-800 hover:bg-slate-700 text-white shadow-md">
                     + Create Invoice
                 </Button>
             </div>
 
-            <div style={{ marginBottom: '1rem' }}>
+            {/* Stats Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <StatCard
+                    title="Total Invoiced"
+                    count={stats.totalAmount}
+                    colorClass="bg-[#e0f2fe]"
+                    iconPath="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    isCurrency={true}
+                />
+                <StatCard
+                    title="Pending Amount"
+                    count={stats.pendingAmount}
+                    colorClass="bg-[#fee2e2]"
+                    iconPath="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    isCurrency={true}
+                />
+                <StatCard
+                    title="Paid Invoices"
+                    count={stats.paidCount}
+                    colorClass="bg-[#dcfce7]"
+                    iconPath="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+                <StatCard
+                    title="Pending Invoices"
+                    count={stats.pendingCount}
+                    colorClass="bg-[#ffedd5]"
+                    iconPath="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-6">
                 <Input
                     placeholder="Search invoices..."
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    style={{ maxWidth: '300px' }}
+                    onChange={(e: any) => setSearch(e.target.value)}
+                    className="max-w-md border-slate-300 focus:border-indigo-500 focus:ring-indigo-500"
                 />
             </div>
 

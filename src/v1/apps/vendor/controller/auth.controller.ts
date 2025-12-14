@@ -71,6 +71,12 @@ export const vendorSignIn = async (
       vendor?.adminId
     );
 
+    // Update FCM Token if provided during login
+    if (req.body.fcmToken) {
+      vendor.fcmToken = req.body.fcmToken;
+      await vendor.save();
+    }
+
     res.json({
       success: true,
       message: "Vendor signed in successfully",

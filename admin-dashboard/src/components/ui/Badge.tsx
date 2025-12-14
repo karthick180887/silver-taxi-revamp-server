@@ -51,13 +51,16 @@ export function Badge({ children, variant = 'default', size = 'md', dot }: Badge
 
 interface StatusBadgeProps {
   status: string;
+  variant?: BadgeProps['variant'];
 }
 
-export function StatusBadge({ status }: StatusBadgeProps) {
+export function StatusBadge({ status, variant: explicitVariant }: StatusBadgeProps) {
   const statusLower = status?.toLowerCase() || '';
   let variant: BadgeProps['variant'] = 'default';
 
-  if (statusLower.includes('active') || statusLower.includes('completed') || statusLower.includes('verified') || statusLower.includes('ended')) {
+  if (explicitVariant) {
+    variant = explicitVariant;
+  } else if (statusLower.includes('active') || statusLower.includes('completed') || statusLower.includes('verified') || statusLower.includes('ended')) {
     variant = 'success';
   } else if (statusLower.includes('pending') || statusLower.includes('confirmed')) {
     variant = 'warning';

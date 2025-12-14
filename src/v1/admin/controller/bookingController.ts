@@ -40,19 +40,68 @@ export const getBookingDashboard = async (req: Request, res: Response): Promise<
             return;
         }
 
-        // 1. Status Counts
         console.log(`[Dashboard] Fetching stats for adminId: ${adminId}`);
-        const statusCounts = await Booking.findAll({
-            where: { adminId },
-            attributes: ['status', [sequelize.fn('COUNT', sequelize.col('status')), 'count']],
-            group: ['status'],
-            raw: true
-        });
 
-        // 2. Recent Income
-        const totalRevenue = await Booking.sum('finalAmount', { where: { adminId } });
+        // 1. New KPI Cards Calculation
+        const startOfToday = dayjs().startOf('day').toDate();
+        const endOfToday = dayjs().endOf('day').toDate();
 
-        // 3. Last 7 Days Revenue (For Trend Chart)
+        const [
+            todaysBookings,
+            activeTrips,
+            pendingAssignments,
+            completedTrips,
+            cancelledTrips,
+            totalRevenue,
+            totalCount
+        ] = await Promise.all([
+            // Today's Bookings
+            Booking.count({
+                where: {
+                    adminId,
+                    createdAt: { [Op.between]: [startOfToday, endOfToday] }
+                }
+            }),
+
+            // Active Trips (Started / On The Way / Arrived)
+            Booking.count({
+                where: {
+                    adminId,
+                    status: { [Op.in]: ['Trip Started', 'On The Way', 'Arrived', 'Driver Assigned'] }
+                }
+            }),
+
+            // Pending Assignment (Confirmed/Reassign AND No Driver OR Pending Acceptance)
+            Booking.count({
+                where: {
+                    adminId,
+                    [Op.or]: [
+                        { driverId: null },
+                        { driverId: { [Op.ne]: null }, driverAccepted: 'pending' }
+                    ],
+                    status: { [Op.in]: ['Booking Confirmed', 'Reassign', 'Pending'] }
+                }
+            }),
+
+            // Completed (Total)
+            Booking.count({
+                where: { adminId, status: 'Completed' }
+            }),
+
+            // Cancelled / Failed
+            Booking.count({
+                where: { adminId, status: { [Op.in]: ['Cancelled', 'Expired', 'Failed'] } }
+            }),
+
+            // Total Revenue
+            Booking.sum('finalAmount', { where: { adminId } }),
+
+            // Total Count
+            Booking.count({ where: { adminId } })
+        ]);
+
+
+        // 2. Last 7 Days Revenue (For Trend Chart)
         const last7DaysRevenue = await Booking.findAll({
             attributes: [
                 [sequelize.fn('DATE', sequelize.col('createdAt')), 'date'],
@@ -64,14 +113,14 @@ export const getBookingDashboard = async (req: Request, res: Response): Promise<
                 createdAt: {
                     [Op.gte]: dayjs().subtract(7, 'days').toDate()
                 },
-                status: 'Completed' // Only count revenue from completed bookings
+                status: 'Completed'
             } as any,
             group: [sequelize.fn('DATE', sequelize.col('createdAt'))],
             order: [[sequelize.fn('DATE', sequelize.col('createdAt')), 'ASC']],
             raw: true
         });
 
-        // 4. Status Counts (For Donut Chart)
+        // 3. Status Distribution (Donut)
         const statusDistribution = await Booking.findAll({
             attributes: ['status', [sequelize.fn('COUNT', sequelize.col('status')), 'count']],
             where: { adminId },
@@ -84,8 +133,13 @@ export const getBookingDashboard = async (req: Request, res: Response): Promise<
             message: "Dashboard data retrieved",
             data: {
                 stats: {
+                    todaysBookings,
+                    activeTrips,
+                    pendingAssignments,
+                    completedTrips,
+                    cancelledTrips,
                     totalRevenue: totalRevenue || 0,
-                    bookingsCount: await Booking.count({ where: { adminId } }),
+                    bookingsCount: totalCount,
                 },
                 charts: {
                     revenue: last7DaysRevenue,
@@ -93,7 +147,7 @@ export const getBookingDashboard = async (req: Request, res: Response): Promise<
                 }
             }
         });
-        console.log(`[Dashboard] Stats found: ${statusCounts.length}, Revenue: ${totalRevenue}`);
+        console.log(`[Dashboard] KPIs Fetched: Active=${activeTrips}, Pending=${pendingAssignments}`);
 
     } catch (error) {
         console.error("Error fetching booking dashboard:", error);
@@ -1254,8 +1308,8 @@ export const assignDriver = async (req: Request, res: Response) => {
         // await booking.update({ driverId });
         await booking.update({
             driverId,
-            driverAccepted: "accepted" as any,
-            status: "Not-Started",
+            driverAccepted: "pending" as any,
+            status: "Booking Confirmed",
             assignAllDriver: false,
             requestSentTime,
         });
@@ -1348,35 +1402,45 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
         await booking.update({
             driverId: null,
             driverAccepted: "pending",
+            status: "Booking Confirmed",
             assignAllDriver: true,
             requestSentTime,
         });
 
-        // Send RabbitMQ message to each driver
-        for (const driver of drivers) {
-            const message = {
+        // Extract active FCM tokens
+        const fcmTokens = drivers
+            .map(d => d.fcmToken)
+            .filter(token => token && token.trim() !== "");
+
+        if (fcmTokens.length > 0) {
+            const batchMessage = {
                 type: "new-booking",
-                fcmToken: driver.fcmToken,
+                fcmTokens: fcmTokens,
                 payload: {
                     title: "New Booking Arrived",
-                    message: `Mr ${driver.name}, you have received a new booking.`,
+                    message: "New booking available for you.",
                     ids: {
                         adminId: booking.adminId,
                         bookingId: booking.bookingId,
-                        driverId: driver.driverId,
                     },
                     data: {
                         title: "New Booking Arrived",
-                        message: `Mr ${driver.name}, you have received a new booking.`,
+                        message: "New booking available for you.",
                         type: "new-booking",
                         channelKey: "booking_channel",
-                    },
-                },
+                        bookingId: String(booking.bookingId),
+                        adminId: String(booking.adminId),
+                        click_action: "FLUTTER_NOTIFICATION_CLICK",
+                        fullScreenIntent: "true",
+                    }
+                }
             };
 
-            // Push message to RabbitMQ
-            publishNotification("notification.fcm.driver", message);
-            debug.info(`FCM Notification queued for driver ${driver.driverId}`);
+            // Publish single batch message
+            publishNotification("notification.fcm.batch", batchMessage);
+            debug.info(`Batch FCM Notification queued for ${fcmTokens.length} drivers`);
+        } else {
+            debug.info("No valid FCM tokens found for active drivers");
         }
 
         log.info(`Assign all drivers for adminId: ${adminId}, bookingId: ${id} completed <<`);

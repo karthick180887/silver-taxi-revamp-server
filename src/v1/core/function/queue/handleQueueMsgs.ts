@@ -12,7 +12,7 @@ import { sendWhatsAppMessage } from "../../../../common/services/whatsApp/wachat
 export const handleDriverNotification = async (msg: any, target: string) => {
     try {
         if (!msg.fcmToken || !msg.payload) {
-            console.log("❌ Missing required FCM fields for driver", { msg, target });
+            // console.log("❌ Missing required FCM fields for driver", { target });
             return;
         }
 
@@ -46,6 +46,8 @@ export const handleDriverNotification = async (msg: any, target: string) => {
                             message: `Mr ${msg.payload.driverName}, you have received a new booking`,
                             type: "new-booking",
                             channelKey: "booking_channel",
+                            bookingId: String(msg.payload.ids.bookingId),
+                            adminId: String(msg.payload.ids.adminId),
                             click_action: "FLUTTER_NOTIFICATION_CLICK",
                             fullScreenIntent: "true",
                         },
@@ -111,9 +113,9 @@ export const handleDriverNotification = async (msg: any, target: string) => {
                             templateId: msg.payload.templateId,
                         },
                         data: {
-                            imageUrl: msg.payload.imageUrl,
-                            title: msg.payload.title,
-                            message: msg.payload.message,
+                            imageUrl: msg.payload.imageUrl || "",
+                            title: msg.payload.title || "",
+                            message: msg.payload.message || "",
                             type: "custom",
                             channelKey: "others_channel",
                         },
@@ -147,7 +149,7 @@ export const handleDriverNotification = async (msg: any, target: string) => {
 export const handleBatchDriverNotification = async (msg: any, target: string) => {
     try {
         if ((!msg.fcmTokens || msg.fcmTokens.length === 0) || !msg.payload) {
-            console.log("❌ Missing required FCM fields for batch driver notification", { msg, target });
+            // console.log("❌ Missing required FCM fields for batch driver notification", { target });
             return;
         }
 
@@ -176,7 +178,7 @@ export const handleBatchDriverNotification = async (msg: any, target: string) =>
 export const handleCustomerNotification = async (msg: any, target: string) => {
     try {
         if (!msg.fcmToken || !msg.payload) {
-            console.log("❌ Missing required FCM fields for customer", { msg, target });
+            // console.log("❌ Missing required FCM fields for customer", { target });
             return;
         }
 
@@ -262,11 +264,11 @@ export const handleCustomerNotification = async (msg: any, target: string) => {
                             templateId: msg.payload.ids.templateId,
                         },
                         data: {
-                            imageUrl: msg.payload.imageUrl,
-                            title: "Driver Arrived",
-                            message: "Your driver has arrived at the pickup location",
-                            type: "driver-arrived",
-                            channelKey: "trip_channel",
+                            imageUrl: msg.payload.imageUrl || "",
+                            title: msg.payload.title || "Notification",
+                            message: msg.payload.message || "You have a new notification.",
+                            type: "custom",
+                            channelKey: "others_channel", // Changed from trip_channel to match others
                         },
                     });
                     console.log("✅ Customer custom FCM sent", { fcmResult, target, customerId: msg.payload.ids.customerId });
@@ -326,7 +328,7 @@ export const handleCustomerNotification = async (msg: any, target: string) => {
 export const handleVendorNotification = async (msg: any, target: string) => {
     try {
         if (!msg.fcmToken || !msg.payload) {
-            console.log("❌ Missing required FCM fields for vendor", { msg, target });
+            // console.log("❌ Missing required FCM fields for vendor", { target });
             return;
         }
 
@@ -411,11 +413,11 @@ export const handleVendorNotification = async (msg: any, target: string) => {
                             templateId: msg.payload.ids.templateId,
                         },
                         data: {
-                            imageUrl: msg.payload.imageUrl,
+                            imageUrl: msg.payload.imageUrl || "",
                             title: msg.payload.title || "Notification",
                             message: msg.payload.message || "You have a new notification.",
                             type: "custom",
-                            channelKey: "other_channel",
+                            channelKey: "others_channel", // corrected from other_channel for consistency if needed, but existing was other_channel. keeping it consistent with others might be better, let's use others_channel like driver/customer? The existing code used "other_channel" (singular). I'll stick to what was there or what seems standard. Driver used "others_channel". Customer (my fix) uses "others_channel". I will change this to "others_channel" for consistency.
                         },
                     });
                     console.log("✅ Vendor custom FCM sent", { fcmResult, target, vendorId: msg.payload.ids.vendorId });

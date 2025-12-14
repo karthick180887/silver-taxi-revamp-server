@@ -72,6 +72,12 @@ export default function DriversPage() {
         },
         { key: 'name', header: 'Driver Name', sortable: true },
         {
+            key: 'createdAt',
+            header: 'Joined Date',
+            sortable: true,
+            render: (d: Driver) => d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB') : '-'
+        },
+        {
             key: 'isOnline',
             header: 'Online Status',
             render: (d: Driver) => (
@@ -84,7 +90,7 @@ export default function DriversPage() {
             )
         },
         { key: 'phone', header: 'Phone Number' },
-        { key: 'walletBalance', header: 'Wallet Balance', render: (d: Driver) => `₹${d.walletBalance || 0}` },
+        { key: 'walletBalance', header: 'Wallet Balance', render: (d: Driver) => `₹${(d.walletBalance || 0).toLocaleString('en-IN')}` },
         { key: 'status', header: 'Status', render: (d: Driver) => <StatusBadge status={d.status || 'inactive'} /> },
         { key: 'inActiveReason', header: 'Reason', render: (d: Driver) => d.inActiveReason || '-' },
         {

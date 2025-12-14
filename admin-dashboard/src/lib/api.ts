@@ -147,6 +147,7 @@ export const bookingsApi = {
         page?: number;
         limit?: number;
         status?: string;
+        search?: string;
         startDate?: string;
         endDate?: string;
         sortBy?: string;
@@ -173,6 +174,9 @@ export const bookingsApi = {
 
     assignDriver: (bookingId: string, driverId: string) =>
         api.post('/v1/bookings/assign-driver', { bookingId, driverId }),
+
+    assignAll: (bookingId: string) =>
+        api.post(`/v1/bookings/${bookingId}/assign-driver`),
 
     calculateFare: (data: Record<string, unknown>) =>
         api.post('/v1/bookings/fair-calculation', data),
@@ -332,17 +336,31 @@ export const promoCodesApi = {
 // NOTIFICATIONS API
 // ============================================
 export const notificationsApi = {
-    getAll: (params?: { page?: number; limit?: number; type?: string }) =>
+    getAll: (params?: { page?: number; limit?: number; type?: string; adminId?: string }) =>
         api.get('/v1/notifications', { params }),
+
+    getCustomAll: (params?: { page?: number; limit?: number; adminId?: string; target?: string }) =>
+        api.get('/v1/notifications/custom', { params }),
 
     getById: (id: string) => api.get(`/v1/notifications/${id}`),
 
-    create: (data: Record<string, unknown>) => api.post('/v1/notifications', data),
+    create: (data: FormData | Record<string, unknown>) => {
+        const isFormData = data instanceof FormData;
+        return api.post('/v1/notifications/custom', data, {
+            headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined
+        });
+    },
 
     update: (id: string, data: Record<string, unknown>) =>
         api.put(`/v1/notifications/${id}`, data),
 
     delete: (id: string) => api.delete(`/v1/notifications/${id}`),
+
+    deleteCustom: (templateId: string, adminId: string) =>
+        api.delete(`/v1/notifications/custom/${templateId}`, { data: { adminId } }),
+
+    sendCustomNotification: (templateId: string, data: { adminId: string }) =>
+        api.post(`/v1/notifications/custom/${templateId}/send`, data),
 
     sendToAll: (data: { title: string; message: string; type: string }) =>
         api.post('/v1/notifications/send-all', data),

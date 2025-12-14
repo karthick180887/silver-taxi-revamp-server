@@ -9,7 +9,7 @@ data:
   BASE_URL: http://10.0.6.2:30060
   FRONT_END_BASE_URL: http://localhost:3000
   TZ: UTC
-  POSTGRES_DB: MaxPool2
+  POSTGRES_DB: defaultdb
   POSTGRES_USER: doadmin
   POSTGRES_HOST: db-postgresql-blr1-87455-do-user-23068629-0.f.db.ondigitalocean.com
   POSTGRES_PORT: "25061"

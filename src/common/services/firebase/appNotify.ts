@@ -1,5 +1,8 @@
 import admin from '../../db/firebase';
 import { BatchResponse, MulticastMessage } from 'firebase-admin/messaging';
+import { Driver } from '../../../v1/core/models/driver';
+import { Customer } from '../../../v1/core/models/customer';
+import { Vendor } from '../../../v1/core/models/vendor';
 
 interface NotificationPayload {
   title?: string;
@@ -39,6 +42,38 @@ setInterval(() => {
   }
 }, 60000); // Clean up every minute
 
+// Helper to remove invalid token from DB
+const removeInvalidToken = async (token: string) => {
+  if (!token) return;
+  try {
+    // Try to find and remove from Driver
+    const driver = await Driver.findOne({ where: { fcmToken: token } });
+    if (driver) {
+      await driver.update({ fcmToken: null } as any);
+      console.log(`🗑️ Removed invalid FCM token from Driver: ${driver.id}`);
+      return;
+    }
+
+    // Try Customer
+    const customer = await Customer.findOne({ where: { fcmToken: token } });
+    if (customer) {
+      await customer.update({ fcmToken: null } as any);
+      console.log(`🗑️ Removed invalid FCM token from Customer: ${customer.id}`);
+      return;
+    }
+
+    // Try Vendor
+    const vendor = await Vendor.findOne({ where: { fcmToken: token } });
+    if (vendor) {
+      await vendor.update({ fcmToken: null } as any);
+      console.log(`🗑️ Removed invalid FCM token from Vendor: ${vendor.id}`);
+      return;
+    }
+  } catch (error) {
+    console.error("Failed to remove invalid token:", error);
+  }
+};
+
 export const sendToSingleToken = async (token: string, payload: NotificationPayload) => {
   try {
     const message = {
@@ -57,7 +92,12 @@ export const sendToSingleToken = async (token: string, payload: NotificationPayl
     // console.log("Sending notification to app >> :", message);
     return await admin.messaging().send(message);
   } catch (err: any) {
-    console.log("FCM Notification Send Error :>", err)
+    if (err.code === 'messaging/registration-token-not-registered' || err.code === 'messaging/mismatched-credential' || err?.errorInfo?.code === 'messaging/registration-token-not-registered' || err?.errorInfo?.code === 'messaging/mismatched-credential') {
+      console.log(`⚠️ FCM Token Invalid (${err.code || err?.errorInfo?.code}): ${token.substring(0, 10)}...`);
+      removeInvalidToken(token);
+    } else {
+      console.log("FCM Notification Send Error :>", err);
+    }
   }
 };
 
@@ -149,6 +189,21 @@ export const sendCustomNotifications = async (tokens: string[], payload: Notific
       r.status === "fulfilled" && r.value && (r.value as any).status === 'skipped'
     ).length;
 
+    // Cleanup invalid tokens from rejections
+    results.forEach((r, index) => {
+      if (r.status === 'rejected') {
+        const err: any = r.reason;
+        if (err.code === 'messaging/registration-token-not-registered' || err.code === 'messaging/mismatched-credential' || err?.errorInfo?.code === 'messaging/registration-token-not-registered') {
+          console.log(`⚠️ Custom FCM Send Error for index ${index}: ${err.code}`);
+          // We need the token corresponding to this rejection.
+          // The 'validTokens' array aligns with 'messages' array.
+          if (validTokens[index]) {
+            removeInvalidToken(validTokens[index]);
+          }
+        }
+      }
+    });
+
     return {
       successCount,
       failureCount,
@@ -156,7 +211,21 @@ export const sendCustomNotifications = async (tokens: string[], payload: Notific
       responses: results,
     };
   } catch (err: any) {
-    console.error("FCM Notification Send Error:", err);
+    if (err.code === 'messaging/registration-token-not-registered' || err.code === 'messaging/mismatched-credential' || err?.errorInfo?.code === 'messaging/registration-token-not-registered' || err?.errorInfo?.code === 'messaging/mismatched-credential') {
+      console.log(`⚠️ FCM Custom Send Error (${err.code || err?.errorInfo?.code})`);
+      // For custom notifications, we might have multiple tokens, but `send` call above is single.
+      // Actually `sendCustomNotifications` iterates and calls `send`.
+      // The `messages` map is: `admin.messaging().send({ token... })`.
+      // So assuming this block is inside a loop... Wait.
+      // `sendCustomNotifications` uses `Promise.allSettled`. This catch block is for the *setup* or if something crashes outside the loop?
+      // Ah, the catching of specific token errors should be inside the `map`.
+      // Lines 123-146 create the promises.
+      // Currently `sendCustomNotifications` doesn't catch per-message inside the map. It relies on `admin.messaging().send` resolving or rejecting.
+      // The `results` (line 148) will contain rejections.
+      // I should modify the `messages.map` to catch errors there or process rejections.
+    } else {
+      console.error("FCM Notification Send Error:", err);
+    }
     return {
       successCount: 0,
       failureCount: tokens.length,
@@ -226,6 +295,7 @@ const sendBatch = async (tokens: string[], payload: NotificationPayload) => {
           err.code === 'messaging/registration-token-not-registered'
         )) {
           invalidTokens.push(tokens[idx]);
+          removeInvalidToken(tokens[idx]);
         }
       }
     });

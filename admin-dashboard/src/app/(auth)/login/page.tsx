@@ -21,11 +21,20 @@ export default function LoginPage() {
     try {
       const response = await authApi.login(email, password);
       console.log('Login Response:', response.data); // Debug log
-      const { token, user, role } = response.data.data; // Correctly access nested data object
-
+      const data = response.data.data;
       if (typeof window !== 'undefined') {
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user));
+        localStorage.setItem('token', data.token);
+        // Save the whole data object (minus token if preferred, but data is cleaner)
+        // Construct a user object to ensure we capture all needed fields
+        const userObj = {
+          name: data.user,
+          email: data.email,
+          role: data.role,
+          adminId: data.adminId, // Ensure this is captured
+          id: data.id,
+          vendorId: data.vendorId
+        };
+        localStorage.setItem('user', JSON.stringify(userObj));
       }
 
       router.push('/');

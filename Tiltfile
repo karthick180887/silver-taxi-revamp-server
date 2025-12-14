@@ -23,6 +23,7 @@ k8s_yaml("k8s/rabbitmq.yaml")
 k8s_yaml("k8s/minio.yaml")
 k8s_yaml("k8s/secrets.yaml")
 k8s_yaml("k8s/hpa.yaml")
+k8s_yaml("k8s/worker.yaml")
 
 # Port-forward: 30060->8081 (for Flutter/Ext), 8081->8081 (for Dashboard)
 k8s_resource("backend-go-app", port_forwards=[

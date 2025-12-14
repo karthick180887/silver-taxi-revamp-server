@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-go-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-go-worker
+  template:
+    metadata:
+      labels:
+        app: backend-go-worker
+    spec:
+      containers:
+        - name: worker
+          image: backend-go:dev
+          imagePullPolicy: IfNotPresent
+          command: ["node", "dist/rabbitServer.js"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1024Mi"
+          envFrom:
+            - configMapRef:
+                name: backend-go-config
+            - secretRef:
+                name: app-secrets

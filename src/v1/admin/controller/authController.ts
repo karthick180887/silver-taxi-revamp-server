@@ -128,6 +128,9 @@ export const vendorSignIn = async (req: Request, res: Response): Promise<void> =
                 token,
                 role: "vendor",
                 user: vendor.name,
+                adminId: vendor.adminId, // Added
+                vendorId: vendor.vendorId, // Added
+                id: vendor.id, // Added
                 email: vendor.email,
                 permission: ["vendor_access"]
             }
@@ -171,6 +174,8 @@ export const adminSignIn = async (req: Request, res: Response): Promise<void> =>
             data: {
                 token,
                 user: admin.name,
+                adminId: admin.adminId, // Added
+                id: admin.id, // Added
                 email: admin.email,
                 role: "admin",
                 permission: ["admin_access"]
@@ -238,6 +243,8 @@ export const signIn = async (req: Request, res: Response): Promise<void> => {
                 data: {
                     token,
                     user: admin.name,
+                    adminId: admin.adminId, // Added adminId
+                    id: admin.id, // Added id
                     email: admin.email,
                     role: "admin",
                     permission: ["admin_access"]
@@ -271,6 +278,9 @@ export const signIn = async (req: Request, res: Response): Promise<void> => {
                 token,
                 role: "vendor",
                 user: vendor.name,
+                adminId: vendor.adminId, // Added
+                vendorId: vendor.vendorId, // Added
+                id: vendor.id, // Added
                 email: vendor.email,
                 permission: ["vendor_access"]
             }

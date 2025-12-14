@@ -162,6 +162,12 @@ export const customerLogin = async (req: Request, res: Response): Promise<void> 
 
                 if (typeof authToken === "string") customerData.accessToken = authToken;
 
+                // Update FCM Token if provided during login
+                if (req.body.fcmToken) {
+                    customerData.fcmToken = req.body.fcmToken;
+                    await customerData.save();
+                }
+
                 res.status(smsResponse.status).json({
                     success: true,
                     message: smsResponse.message || "OTP verified successfully",
@@ -228,7 +234,7 @@ export const customerSignup = async (req: Request, res: Response): Promise<void>
 
                 const customerData = await Customer.findOne({
                     where: {
-                        phone: dbPhone, 
+                        phone: dbPhone,
                     },
                 });
 

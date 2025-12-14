@@ -278,6 +278,13 @@ export const driverLogin = async (req: Request, res: Response): Promise<void> =>
                 if (typeof authToken === "string") driverData.accessToken = authToken;
                 if (typeof refreshToken === "string") driverData.refreshToken = refreshToken;
 
+                // Update FCM Token if provided during login
+                if (req.body.fcmToken) {
+                    driverData.fcmToken = req.body.fcmToken;
+                    await driverData.save();
+                    debug.info(`Driver login for driverId: ${driverId} FCM Token updated`);
+                }
+
                 res.status(smsResponse.status).json({
                     success: true,
                     message: smsResponse.message || "OTP verified successfully",

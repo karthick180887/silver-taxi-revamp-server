@@ -323,8 +323,14 @@ export const createCustomNotification = async (req: Request, res: Response): Pro
             route: route || undefined,
             status,
             particularIds,
-            data: {},
-            // time: time || scheduledAt || undefined
+
+            data: {
+                targetAudience,
+                targetCustomerIds,
+                vendorId,
+                scheduledAt
+            },
+            time: time || undefined
         });
 
         // Handle image upload if provided
@@ -779,9 +785,12 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
 
         switch (target) {
             case "driver":
-
+                const driverWhere: any = { adminId, isActive: true, adminVerified: "Approved" };
+                if (notificationTemplate.particularIds && notificationTemplate.particularIds.length > 0) {
+                    driverWhere.id = { [Op.in]: notificationTemplate.particularIds };
+                }
                 const drivers = await Driver.findAll({
-                    where: { adminId, isActive: true, adminVerified: "Approved" },
+                    where: driverWhere,
                 })
 
                 // Send queued message to each driver
@@ -814,9 +823,12 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
                 break;
 
             case "customer":
-
+                const customerWhere: any = { adminId };
+                if (notificationTemplate.particularIds && notificationTemplate.particularIds.length > 0) {
+                    customerWhere.customerId = { [Op.in]: notificationTemplate.particularIds };
+                }
                 const customers = await Customer.findAll({
-                    where: { adminId },
+                    where: customerWhere,
                 })
 
                 // Send queued message to each customer
@@ -850,9 +862,12 @@ export const sendCustomNotification = async (req: Request, res: Response) => {
                 break;
 
             case "vendor":
-
-                const vendors = await Customer.findAll({
-                    where: { adminId },
+                const vendorWhere: any = { adminId };
+                if (notificationTemplate.particularIds && notificationTemplate.particularIds.length > 0) {
+                    vendorWhere.vendorId = { [Op.in]: notificationTemplate.particularIds };
+                }
+                const vendors = await Vendor.findAll({
+                    where: vendorWhere,
                 })
 
                 // Send queued message to each vendor

@@ -190,15 +190,27 @@ export function ClientSidebar({ collapsed, onToggle }: ClientSidebarProps) {
     };
 
     return (
-        <aside style={styles.sidebar}>
+        <aside
+            className={`fixed top-0 left-0 h-screen flex flex-col bg-[#1E2A38] text-white transition-all duration-300 z-50 overflow-hidden border-r border-white/5 ${collapsed ? 'w-[80px]' : 'w-[260px]'
+                }`}
+        >
             {/* Header */}
-            <div style={styles.header}>
-                <div style={styles.logo}>
-                    <div style={styles.logoIcon}>🚕</div>
-                    {!collapsed && <span style={styles.logoText}>Silver Taxi</span>}
+            <div className={`h-[64px] flex items-center ${collapsed ? 'justify-center' : 'justify-between'} px-4 border-b border-white/10`}>
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-xl shadow-lg shadow-emerald-900/20">
+                        🚕
+                    </div>
+                    {!collapsed && (
+                        <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-300">
+                            Silver Taxi
+                        </span>
+                    )}
                 </div>
                 {!collapsed && (
-                    <button style={styles.toggleBtn} onClick={onToggle} title="Collapse sidebar">
+                    <button
+                        onClick={onToggle}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                    >
                         ←
                     </button>
                 )}
@@ -206,15 +218,18 @@ export function ClientSidebar({ collapsed, onToggle }: ClientSidebarProps) {
 
             {/* Collapsed toggle */}
             {collapsed && (
-                <div style={{ padding: '0.5rem', display: 'flex', justifyContent: 'center' }}>
-                    <button style={styles.toggleBtn} onClick={onToggle} title="Expand sidebar">
+                <div className="p-2 flex justify-center">
+                    <button
+                        onClick={onToggle}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                    >
                         →
                     </button>
                 </div>
             )}
 
             {/* Navigation */}
-            <nav style={styles.nav}>
+            <nav className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
                 {navItems.map((item) => {
                     const hasSubmenu = item.submenu && item.submenu.length > 0;
                     const isExpanded = expandedMenus.includes(item.label);
@@ -222,31 +237,42 @@ export function ClientSidebar({ collapsed, onToggle }: ClientSidebarProps) {
 
                     if (hasSubmenu) {
                         return (
-                            <div key={item.label}>
+                            <div key={item.label} className="mb-1">
                                 <button
-                                    style={styles.navItem(active)}
                                     onClick={() => toggleSubmenu(item.label)}
+                                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group ${active
+                                            ? 'bg-emerald-500/10 text-emerald-400'
+                                            : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                        } ${collapsed ? 'justify-center' : 'justify-start'}`}
                                     title={collapsed ? item.label : undefined}
                                 >
-                                    <span style={styles.navIcon}>{item.icon}</span>
+                                    <span className={`text-xl flex-shrink-0 transition-transform duration-200 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
+                                        {item.icon}
+                                    </span>
                                     {!collapsed && (
                                         <>
-                                            <span style={styles.navLabel}>{item.label}</span>
-                                            <span style={styles.chevron(isExpanded)}>▼</span>
+                                            <span className="flex-1 text-left text-sm font-medium">{item.label}</span>
+                                            <span className={`text-xs transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
                                         </>
                                     )}
                                 </button>
                                 {!collapsed && isExpanded && (
-                                    <div style={styles.submenu}>
-                                        {item.submenu!.map((sub) => (
-                                            <Link
-                                                key={sub.href}
-                                                href={sub.href}
-                                                style={styles.submenuItem(isActive(sub.href))}
-                                            >
-                                                {sub.label}
-                                            </Link>
-                                        ))}
+                                    <div className="ml-9 mt-1 space-y-1 pl-2 border-l border-white/10">
+                                        {item.submenu!.map((sub) => {
+                                            const isSubActive = isActive(sub.href);
+                                            return (
+                                                <Link
+                                                    key={sub.href}
+                                                    href={sub.href}
+                                                    className={`block px-3 py-2 text-sm rounded-lg transition-colors ${isSubActive
+                                                            ? 'text-emerald-400 bg-emerald-500/10 font-medium'
+                                                            : 'text-slate-500 hover:text-slate-300'
+                                                        }`}
+                                                >
+                                                    {sub.label}
+                                                </Link>
+                                            )
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -257,11 +283,16 @@ export function ClientSidebar({ collapsed, onToggle }: ClientSidebarProps) {
                         <Link
                             key={item.label}
                             href={item.href!}
-                            style={styles.navItem(active)}
+                            className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group ${active
+                                    ? 'bg-emerald-500/10 text-emerald-400 shadow-sm shadow-emerald-900/20'
+                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                } ${collapsed ? 'justify-center' : 'justify-start'}`}
                             title={collapsed ? item.label : undefined}
                         >
-                            <span style={styles.navIcon}>{item.icon}</span>
-                            {!collapsed && <span style={styles.navLabel}>{item.label}</span>}
+                            <span className={`text-xl flex-shrink-0 transition-transform duration-200 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>
+                                {item.icon}
+                            </span>
+                            {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
                         </Link>
                     );
                 })}
@@ -269,14 +300,8 @@ export function ClientSidebar({ collapsed, onToggle }: ClientSidebarProps) {
 
             {/* Footer */}
             {!collapsed && (
-                <div style={{
-                    padding: '1rem',
-                    borderTop: '1px solid rgba(255,255,255,0.1)',
-                    fontSize: '0.75rem',
-                    color: '#64748b',
-                    textAlign: 'center',
-                }}>
-                    © 2025 Silver Taxi
+                <div className="p-4 border-t border-white/10 text-center">
+                    <p className="text-xs text-slate-600 font-medium">© 2025 Silver Taxi</p>
                 </div>
             )}
         </aside>
