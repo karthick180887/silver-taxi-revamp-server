@@ -24,6 +24,7 @@ import allPriceChangesRouter from './allPriceChangeRouter';
 import blogRouter from "./blogRouter";
 import promoCodeRouter from "./promoCodeRouter";
 import permitChargesRouter from "./permitChargesRouter";
+import configKeysRouter from "./configKeysRouter";
 import multer from "multer";
 import { columnVisibilityController, getColumnVisibilityController } from "../controller/toggleController";
 import { testDocumentExpiry } from "../../core/function/cronJobs";
@@ -107,13 +108,11 @@ router.use('/all-price-changes', allPriceChangesRouter);
 
 router.use('/permit-charges', permitChargesRouter);
 
+router.use('/config-keys', configKeysRouter);
+
 router.get('/column-visibility/:table', getColumnVisibilityController);
 
 router.post('/column-visibility/:table', columnVisibilityController);
-
-router.get('/config-keys', getAllConfigKeys);
-
-router.post('/config-keys', storeConfigKeys);
 
 // Test endpoint for document expiry check
 router.get('/test-document-expiry', async (req, res) => {

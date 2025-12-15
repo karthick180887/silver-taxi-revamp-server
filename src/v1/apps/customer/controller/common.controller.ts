@@ -31,6 +31,14 @@ export const getConfigKeys = async (req: Request, res: Response) => {
             result[key] = await getConfigKey(key);
         }
 
+        // Fallback to environment variables if keys are not in database
+        if (!result["google_map_key"]) {
+            result["google_map_key"] = process.env.GOOGLE_MAPS_API_KEY || "";
+        }
+        if (!result["razorpay_key"]) {
+            result["razorpay_key"] = process.env.RAZORPAY_KEY_ID || "";
+        }
+
         res.status(200).json({
             success: true,
             message: "key fetch successfully",

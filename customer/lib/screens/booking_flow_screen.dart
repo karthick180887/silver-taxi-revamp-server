@@ -33,18 +33,28 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   Future<void> _fetchGoogleMapsKey() async {
+    print('[DEBUG] Fetching Google Maps key...');
     try {
       final result = await _apiClient.getConfigKeys(
         token: widget.token,
         adminId: 'admin-1',
       );
+      print('[DEBUG] Config keys response - success: ${result.success}');
+      print('[DEBUG] Config keys response - body: ${result.body}');
+      
       if (mounted && result.success && result.body['data'] != null) {
+        final key = result.body['data']['google_maps_key'] ?? '';
+        print('[DEBUG] Google Maps key received: ${key.isEmpty ? "EMPTY" : "NOT EMPTY (${key.length} chars)"}');
         setState(() {
-          _googleMapsKey = result.body['data']['google_maps_key'] ?? '';
+          _googleMapsKey = key;
         });
+        print('[DEBUG] Google Maps key set in state: $_googleMapsKey');
+      } else {
+        print('[DEBUG] Failed conditions - mounted: $mounted, success: ${result.success}, data null: ${result.body['data'] == null}');
       }
-    } catch (e) {
-      debugPrint('Failed to fetch Google Maps key: $e');
+    } catch (e, stack) {
+      print('[DEBUG] ERROR fetching Google Maps key: $e');
+      print('[DEBUG] Stack trace: $stack');
     }
   }
 
@@ -78,6 +88,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   Future<void> _selectPickupLocation() async {
+    print('[DEBUG] Select pickup tapped - Maps key: ${_googleMapsKey.isEmpty ? "EMPTY" : "OK"}');
     if (_googleMapsKey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Loading... Please wait')),
@@ -98,6 +109,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   Future<void> _selectDropLocation() async {
+    print('[DEBUG] Select drop tapped - Maps key: ${_googleMapsKey.isEmpty ? "EMPTY" : "OK"}');
     if (_googleMapsKey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Loading... Please wait')),

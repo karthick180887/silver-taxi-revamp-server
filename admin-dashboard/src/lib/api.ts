@@ -528,10 +528,16 @@ export const columnVisibilityApi = {
 // CONFIG KEYS API
 // ============================================
 export const configKeysApi = {
-    getAll: () => api.get('/v1/config-keys'),
+    getAll: (params?: { adminId?: string }) => api.get('/v1/config-keys', { params }),
 
-    update: (data: Record<string, unknown>) =>
-        api.post('/v1/config-keys', data),
+    getById: (id: string) => api.get(`/v1/config-keys/${id}`),
+
+    create: (data: Record<string, unknown>) => api.post('/v1/config-keys', data),
+
+    update: (id: string, data: Record<string, unknown>) =>
+        api.put(`/v1/config-keys/${id}`, data),
+
+    delete: (id: string) => api.delete(`/v1/config-keys/${id}`),
 };
 
 // ============================================

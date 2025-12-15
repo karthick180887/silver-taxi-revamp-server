@@ -28,6 +28,8 @@ data:
   MINIO_USE_SSL: "false"
   JWT_EXPIRATION_TIME: "172800"
   WORKERS: "4"
+  # Google Maps API Key for Places Autocomplete  
+  GOOGLE_MAPS_API_KEY: "AIzaSyAYjrbg1hQJYC4vOMvQS7C9lJ3TDWQSuFo"
   # Firebase - set to empty to disable FCM (app will continue without push notifications)
   FIREBASE_CREDENTIALS_PATH: ""
 ---
@@ -61,7 +63,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: backend-go:dev
+          image: backend-ts:dev
           imagePullPolicy: IfNotPresent
           resources:
             requests:

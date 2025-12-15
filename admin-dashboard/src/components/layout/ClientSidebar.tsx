@@ -45,6 +45,13 @@ const navItems: NavItem[] = [
     { label: 'Offers', href: '/offers', icon: '🎁' },
     { label: 'Promo Codes', href: '/promo-codes', icon: '🏷️' },
     { label: 'Notifications', href: '/notifications', icon: '🔔' },
+    {
+        label: 'Settings',
+        icon: '🔧',
+        submenu: [
+            { label: 'Config Keys', href: '/settings/config-keys' },
+        ],
+    },
 ];
 
 interface ClientSidebarProps {
