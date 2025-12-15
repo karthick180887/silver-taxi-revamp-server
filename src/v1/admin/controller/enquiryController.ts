@@ -11,13 +11,13 @@ export const getAllEnquiries = async (req: Request, res: Response): Promise<void
         console.log(`[Enquiries] Fetching for adminId: ${adminId}`);
 
 
-        if (!adminId) {
-            res.status(400).json({
-                success: false,
-                message: "adminId is required in Enquiry",
-            });
-            return;
-        }
+        // if (!adminId) {
+        //     res.status(400).json({
+        //         success: false,
+        //         message: "adminId is required in Enquiry",
+        //     });
+        //     return;
+        // }
 
         const [enquires, totalEnquiriesCount, todayEnquiriesCount, websiteEnquiriesCount] = await Promise.all([
             Enquiry.findAll({

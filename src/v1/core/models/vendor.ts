@@ -20,7 +20,7 @@ export interface VendorAttributes {
     totalEarnings?: string;
 
     reason?: string;
-    website?: string; 
+    website?: string;
 }
 
 
@@ -60,7 +60,7 @@ Vendor.init(
             unique: true,
         },
         adminId: {
-            type: DataTypes.STRING(255),
+            type: DataTypes.STRING(300),
             allowNull: false,
             references: {
                 model: Admin,

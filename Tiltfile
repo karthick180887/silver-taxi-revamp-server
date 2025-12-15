@@ -1,3 +1,5 @@
+allow_k8s_contexts('do-blr1-k8s-1-34-1-do-1-blr1-1765796098736')
+default_registry('registry.digitalocean.com/cabigo')
 # Config: mode (default: all)
 # Options: 
 #   - core: Backend + DBs only
@@ -10,7 +12,7 @@ mode = cfg.get("mode", "all")
 # Enable Docker BuildKit for better caching
 # Tilt automatically uses BuildKit cache mounts from Dockerfile
 docker_build(
-    "backend-go:dev",
+    "backend-ts:dev",
     ".",
     dockerfile="Dockerfile",
     # Only rebuild when source files change (ignore frontend dirs and docs)
@@ -24,6 +26,31 @@ k8s_yaml("k8s/minio.yaml")
 k8s_yaml("k8s/secrets.yaml")
 k8s_yaml("k8s/hpa.yaml")
 k8s_yaml("k8s/worker.yaml")
+
+# Helm: Ingress Nginx
+local(".\\deps\\windows-amd64\\helm.exe repo add ingress-nginx https://kubernetes.github.io/ingress-nginx")
+ingress_yaml = local(".\\deps\\windows-amd64\\helm.exe template ingress-nginx ingress-nginx/ingress-nginx --version 4.10.0 --set controller.service.type=LoadBalancer --set controller.admissionWebhooks.enabled=false")
+k8s_yaml(ingress_yaml)
+
+# Helm: Cert Manager
+local(".\\deps\\windows-amd64\\helm.exe repo add jetstack https://charts.jetstack.io")
+# Cert Manager needs CRDs. We use a separate kubectl apply for CRDs usually, but helm template has --include-crds (v3.5+) or we rely on the chart.
+# Setup namespace first
+local("kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -")
+
+# Apply CRDs explicitly to avoid huge YAML strings causing "filename too long" errors
+k8s_yaml("k8s/cert-manager-crds.yaml")
+
+# Generate and filter Cert-Manager YAML using external script to avoid Tilt/Windows header limit issues
+# Ensure any existing webhooks are deleted first to avoid stale config causing failures
+local("kubectl delete validatingwebhookconfiguration cert-manager-webhook --ignore-not-found")
+local("kubectl delete mutatingwebhookconfiguration cert-manager-webhook --ignore-not-found")
+local("python scripts/generate_cert_manager.py")
+k8s_yaml("k8s/cert-manager-filtered.yaml")
+
+# Apply Ingress and Issuer Configs
+k8s_yaml("k8s/ingress.yaml")
+k8s_yaml("k8s/issuer.yaml")
 
 # Helm: Local HA Postgres (Complex Config)
 # We generate YAMLs via 'helm template' and feed them to Tilt.

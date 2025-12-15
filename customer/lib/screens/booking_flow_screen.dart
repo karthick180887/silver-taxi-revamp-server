@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../design_system.dart';
-import 'location_search_screen.dart';
+import '../widgets/inline_location_search.dart';  // Import custom widget
 import 'vehicle_selection_screen.dart';
 import '../api_client.dart';
 
@@ -17,6 +18,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   Map<String, dynamic>? _pickupLocation;
   Map<String, dynamic>? _dropLocation;
   DateTime? _pickupDateTime;
+  String? _phone;
 
   bool _isLoadingServices = true;
   List<dynamic> _services = [];
@@ -30,37 +32,56 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     _pickupDateTime = DateTime.now().add(const Duration(minutes: 15));
     _fetchServices();
     _fetchGoogleMapsKey();
+    _fetchUserPhone();
+  }
+
+  Future<void> _fetchUserPhone() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? storedPhone = prefs.getString('customer_phone');
+    
+    if (storedPhone == null) {
+      // Fallback: Fetch from API for existing sessions
+      try {
+        final result = await _apiClient.getCustomerDetails(
+          token: widget.token,
+          // Rely on backend to extract customerId and adminId from token
+        );
+        if (result.success && result.body['data'] != null) {
+          storedPhone = result.body['data']['phone'];
+          if (storedPhone != null) {
+            await prefs.setString('customer_phone', storedPhone);
+          }
+        }
+      } catch (e) {
+        debugPrint('Error fetching user phone: $e');
+      }
+    }
+
+    if (mounted) {
+      setState(() => _phone = storedPhone);
+      print('DEBUG: BookingFlowScreen fetched phone: $_phone');
+    }
   }
 
   Future<void> _fetchGoogleMapsKey() async {
-    print('[DEBUG] Fetching Google Maps key...');
     try {
       final result = await _apiClient.getConfigKeys(
         token: widget.token,
         adminId: 'admin-1',
       );
-      print('[DEBUG] Config keys response - success: ${result.success}');
-      print('[DEBUG] Config keys response - body: ${result.body}');
-      
       if (mounted && result.success && result.body['data'] != null) {
         final key = result.body['data']['google_maps_key'] ?? '';
-        print('[DEBUG] Google Maps key received: ${key.isEmpty ? "EMPTY" : "NOT EMPTY (${key.length} chars)"}');
         setState(() {
           _googleMapsKey = key;
         });
-        print('[DEBUG] Google Maps key set in state: $_googleMapsKey');
-      } else {
-        print('[DEBUG] Failed conditions - mounted: $mounted, success: ${result.success}, data null: ${result.body['data'] == null}');
       }
-    } catch (e, stack) {
-      print('[DEBUG] ERROR fetching Google Maps key: $e');
-      print('[DEBUG] Stack trace: $stack');
+    } catch (e) {
+      debugPrint('Error fetching keys: $e');
     }
   }
 
   Future<void> _fetchServices() async {
     try {
-      // Assuming admin-1 for now, ideally should come from config/profile
       final result = await _apiClient.getServices(
         token: widget.token,
         adminId: 'admin-1', 
@@ -69,8 +90,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       if (mounted) {
         setState(() {
           _isLoadingServices = false;
-          if (result.success && result.body['data'] != null) {
-            _services = result.body['data'];
+            if (result.success && result.body['data'] != null) {
+            final allServices = result.body['data'] as List;
+            // Filter out Hourly Packages as per requirement
+            _services = allServices.where((s) {
+              final name = s['name'].toString().toLowerCase();
+              return !name.contains('hourly') && !name.contains('package');
+            }).toList();
+            
             if (_services.isNotEmpty) {
               _selectedService = _services[0];
             }
@@ -80,53 +107,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingServices = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load services: $e')),
-        );
       }
     }
-  }
-
-  Future<void> _selectPickupLocation() async {
-    print('[DEBUG] Select pickup tapped - Maps key: ${_googleMapsKey.isEmpty ? "EMPTY" : "OK"}');
-    if (_googleMapsKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Loading... Please wait')),
-      );
-      return;
-    }
-    final location = await Navigator.push<Map<String, dynamic>>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LocationSearchScreen(
-          title: 'Pickup Location',
-          initialQuery: _pickupLocation?['address'] as String?,
-          googleMapsKey: _googleMapsKey,
-        ),
-      ),
-    );
-    if (location != null && mounted) setState(() => _pickupLocation = location);
-  }
-
-  Future<void> _selectDropLocation() async {
-    print('[DEBUG] Select drop tapped - Maps key: ${_googleMapsKey.isEmpty ? "EMPTY" : "OK"}');
-    if (_googleMapsKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Loading... Please wait')),
-      );
-      return;
-    }
-    final location = await Navigator.push<Map<String, dynamic>>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LocationSearchScreen(
-          title: 'Drop Location',
-          initialQuery: _dropLocation?['address'] as String?,
-          googleMapsKey: _googleMapsKey,
-        ),
-      ),
-    );
-    if (location != null && mounted) setState(() => _dropLocation = location);
   }
 
   Future<void> _selectDateTime() async {
@@ -192,9 +174,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           pickupLocation: _pickupLocation!,
           dropLocation: _dropLocation!,
           pickupDateTime: _pickupDateTime!,
-          // Pass service name as tripType for backward compatibility/display
           tripType: _selectedService!['name'], 
           serviceId: _selectedService!['serviceId'],
+          phone: _phone,
         ),
       ),
     );
@@ -213,41 +195,35 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Location Card
+            // Location Inputs (Inline)
             Card(
-              elevation: 2,
-              shadowColor: Colors.black12,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    _buildLocationRow(
-                      icon: Icons.my_location,
-                      iconColor: AppColors.success,
-                      label: 'Pickup Location',
-                      value: _pickupLocation?['address'] ?? 'Select Pickup',
-                      isPlaceholder: _pickupLocation == null,
-                      onTap: _selectPickupLocation,
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.only(left: 20),
-                      child: Divider(height: 24),
-                    ),
-                    _buildLocationRow(
-                      icon: Icons.location_on,
-                      iconColor: AppColors.error,
-                      label: 'Drop Location',
-                      value: _dropLocation?['address'] ?? 'Select Drop',
-                      isPlaceholder: _dropLocation == null,
-                      onTap: _selectDropLocation,
-                      isLast: true,
-                    ),
-                  ],
-                ),
-              ),
+               elevation: 0,
+               color: Colors.transparent,
+               margin: EdgeInsets.zero,
+               child: Column(
+                 children: [
+                   InlineLocationSearch(
+                     label: 'Pickup Location',
+                     icon: Icons.my_location,
+                     iconColor: AppColors.success,
+                     googleMapsKey: _googleMapsKey,
+                     initialAddress: _pickupLocation?['address'],
+                     onLocationSelected: (loc) => setState(() => _pickupLocation = loc),
+                   ),
+                   const SizedBox(height: 16),
+                   InlineLocationSearch(
+                     label: 'Drop Location',
+                     icon: Icons.location_on,
+                     iconColor: AppColors.error,
+                     googleMapsKey: _googleMapsKey,
+                     initialAddress: _dropLocation?['address'],
+                     onLocationSelected: (loc) => setState(() => _dropLocation = loc),
+                   ),
+                 ],
+               ),
             ),
             
-            // Swap Button (Centered over divider logic - simplified here as external button)
+            // Swap Button
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
@@ -263,7 +239,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
 
             // Date & Time
             Text('When', style: AppTextStyles.label.copyWith(color: AppColors.textSecondary)),
@@ -329,55 +305,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLocationRow({
-    required IconData icon,
-    required Color iconColor,
-    required String label,
-    required String value,
-    required bool isPlaceholder,
-    required VoidCallback onTap,
-    bool isLast = false,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: iconColor, size: 20),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: AppTextStyles.bodySmall),
-                  const SizedBox(height: 4),
-                  Text(
-                    value,
-                    style: AppTextStyles.bodyLarge.copyWith(
-                      color: isPlaceholder ? AppColors.textLight : AppColors.textMain,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
+            
+            // Extra spacing for keyboard handling
+            SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 20),
           ],
         ),
       ),

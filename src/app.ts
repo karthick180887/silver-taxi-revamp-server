@@ -64,7 +64,7 @@ app.get("/health/live", (_req: Request, res: Response) => {
 
 
 app.get('/', async (_req: Request, res: Response) => {
-    res.send('Hello World! in TypeScript');
+    res.send('Welcome to Golang based Cabigo API');
 })
 
 app.use(cors({

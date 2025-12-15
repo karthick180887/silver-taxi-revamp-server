@@ -55,7 +55,7 @@ DriverNotification.init(
             unique: true,
         },
         adminId: {
-            type: DataTypes.STRING(255),
+            type: DataTypes.STRING(300),
             allowNull: false,
             references: {
                 model: Admin,
@@ -125,6 +125,7 @@ DriverNotification.init(
         indexes: [
             {
                 unique: true,
+                name: "driver_notif_composite_unique",
                 fields: ["notifyId", "date", "driverId", "adminId"],
             },
 

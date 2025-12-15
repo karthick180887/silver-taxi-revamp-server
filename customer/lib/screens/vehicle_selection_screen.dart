@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'booking_review_screen.dart';
+import 'one_way_review_screen.dart';
+import 'round_trip_review_screen.dart';
 import '../api_client.dart';
 import '../design_system.dart';
+import 'dart:math' show cos, sqrt, asin;
 
 class VehicleSelectionScreen extends StatefulWidget {
   const VehicleSelectionScreen({
@@ -12,6 +14,7 @@ class VehicleSelectionScreen extends StatefulWidget {
     required this.pickupDateTime,
     required this.tripType,
     required this.serviceId,
+    this.phone,
   });
   final String token;
   final Map<String, dynamic> pickupLocation;
@@ -19,6 +22,7 @@ class VehicleSelectionScreen extends StatefulWidget {
   final DateTime pickupDateTime;
   final String tripType;
   final String serviceId;
+  final String? phone;
 
   @override
   State<VehicleSelectionScreen> createState() => _VehicleSelectionScreenState();
@@ -75,6 +79,15 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
     }
   }
 
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const p = 0.017453292519943295; // Math.PI / 180
+    final a = 0.5 - cos((lat2 - lat1) * p) / 2 +
+        cos(lat1 * p) * cos(lat2 * p) *
+            (1 - cos((lon2 - lon1) * p)) / 2;
+    // Calculate Haversine distance and apply 1.25x correction for road distance
+    return (12742 * asin(sqrt(a))) * 1.25;
+  }
+
   void _proceedToReview() {
     if (_selectedVehicleTypeId == null || _selectedVehicle == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -83,20 +96,65 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
       return;
     }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BookingReviewScreen(
-          token: widget.token,
-          pickupLocation: widget.pickupLocation,
-          dropLocation: widget.dropLocation,
-          pickupDateTime: widget.pickupDateTime,
-          tripType: widget.tripType,
-          vehicleTypeId: _selectedVehicle!['tariffId'], // Use tariffId as 'vehicleTypeId' for booking
-          finalAmount: (_selectedVehicle!['price'] as num).toDouble(),
+    // Extract lat/lng
+    final pickLat = (widget.pickupLocation['lat'] as num).toDouble();
+    final pickLng = (widget.pickupLocation['lng'] as num).toDouble();
+    final dropLat = (widget.dropLocation['lat'] as num).toDouble();
+    final dropLng = (widget.dropLocation['lng'] as num).toDouble();
+
+    final distance = _calculateDistance(pickLat, pickLng, dropLat, dropLng);
+
+    print('DEBUG: VehicleSelection - TripType: ${widget.tripType}');
+    
+    // Determine Min Km
+    // User request: One way = 130, Round trip = 250
+    final isRoundTrip = widget.tripType.toLowerCase().contains('round') || 
+                        widget.tripType == 'round_trip' || 
+                        widget.tripType == 'Round Trip';
+    final minKm = isRoundTrip ? 250.0 : 130.0;
+    print('DEBUG: VehicleSelection - isRoundTrip: $isRoundTrip, minKm: $minKm');
+    
+    // Tariff details from selected vehicle
+    final pricePerKm = (_selectedVehicle!['price'] as num).toDouble(); // This is 'price' from API which is perKm
+    final driverBeta = (_selectedVehicle!['driverBeta'] as num?)?.toDouble() ?? 300.0; // Default if missing
+
+    if (isRoundTrip) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RoundTripReviewScreen(
+            token: widget.token,
+            pickupLocation: widget.pickupLocation,
+            dropLocation: widget.dropLocation,
+            pickupDateTime: widget.pickupDateTime,
+            vehicleTypeId: _selectedVehicle!['tariffId'],
+            finalAmount: 0, // Recalculated in screen
+            phone: widget.phone,
+            distance: distance,
+            pricePerKm: pricePerKm,
+            driverBeta: driverBeta,
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OneWayReviewScreen(
+            token: widget.token,
+            pickupLocation: widget.pickupLocation,
+            dropLocation: widget.dropLocation,
+            pickupDateTime: widget.pickupDateTime,
+            vehicleTypeId: _selectedVehicle!['tariffId'],
+            finalAmount: 0, // Recalculated in screen
+            phone: widget.phone,
+            distance: distance,
+            pricePerKm: pricePerKm,
+            driverBeta: driverBeta,
+          ),
+        ),
+      );
+    }
   }
 
   @override

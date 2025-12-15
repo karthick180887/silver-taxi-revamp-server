@@ -195,9 +195,9 @@ export const singleModelSync = async (model: any, options: SyncOptions = { alter
 )();
 
 
-// (async () => {
-//     await syncDatabase({ force: true, alter: true }); // or { force: true }
-// })();
+(async () => {
+    await syncDatabase({ alter: true });
+})();
 
 // Define associations
 // Admin has many Vendors
@@ -228,7 +228,7 @@ Driver.hasOne(DriverWallet, { foreignKey: 'driverId', sourceKey: 'driverId', as:
 DriverWallet.belongsTo(Driver, { foreignKey: 'driverId', targetKey: 'driverId', as: 'driver' });
 Driver.hasMany(WalletTransaction, { foreignKey: 'driverId', sourceKey: 'driverId', as: 'walletTransactions' });
 Driver.hasMany(Vehicle, { foreignKey: 'driverId', sourceKey: 'driverId', as: 'vehicle' });
-Vehicle.belongsTo(Driver, { foreignKey: 'vehicleId', targetKey: 'vehicleId', as: 'driver' });
+Vehicle.belongsTo(Driver, { foreignKey: 'driverId', targetKey: 'driverId', as: 'driver' });
 
 WalletTransaction.belongsTo(Vendor, { foreignKey: 'vendorId', targetKey: 'vendorId', as: 'vendor' });
 WalletTransaction.belongsTo(Driver, { foreignKey: 'driverId', targetKey: 'driverId', as: 'driver' });

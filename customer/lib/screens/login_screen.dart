@@ -102,6 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
           if (customerId != null) {
             await prefs.setString('customer_id', customerId.toString());
           }
+          await prefs.setString('customer_phone', _phoneController.text);
 
           if (mounted) {
             Navigator.of(context).pushReplacement(

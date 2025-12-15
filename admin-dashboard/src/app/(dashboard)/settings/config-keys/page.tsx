@@ -90,7 +90,17 @@ export default function ConfigKeysPage() {
                 </button>
             )
         },
-        { key: 'createdAt', header: 'Created', render: (k: ConfigKey) => new Date(k.createdAt).toLocaleDateString() },
+        {
+            key: 'createdAt',
+            header: 'Created',
+            render: (k: ConfigKey) => {
+                try {
+                    return k.createdAt ? new Date(k.createdAt).toLocaleDateString() : '-';
+                } catch (e) {
+                    return '-';
+                }
+            }
+        },
         {
             key: 'actions',
             header: 'Actions',

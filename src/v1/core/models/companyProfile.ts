@@ -102,10 +102,10 @@ CompanyProfile.init(
             type: DataTypes.STRING(225),
             allowNull: true,
             defaultValue: null,
-            references: {
-                model: Vendor,
-                key: "vendorId",
-            }
+            // references: {
+            //     model: Vendor,
+            //     key: "vendorId",
+            // }
         },
         companyId: {
             type: DataTypes.STRING(255),

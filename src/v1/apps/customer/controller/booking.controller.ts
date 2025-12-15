@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+// Force Rebuild Trigger
 import {
     Tariff,
     Service, DayPackage,
@@ -62,6 +63,7 @@ export const specificBooking = async (req: Request, res: Response) => {
                     limit: 1,
                     attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
                 })
+                console.log(`[Recent] Found: ${bookings ? bookings.bookingId : 'None'}`);
                 res.status(200).json({
                     success: true,
                     message: "Recent Booking fetched successfully",
@@ -90,6 +92,13 @@ export const specificBooking = async (req: Request, res: Response) => {
                     attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
                     order: [['createdAt', 'DESC']]
                 });
+                console.log(`[Upcoming] Query Status: Booking Confirmed/Not-Started, Found: ${bookings.length}`);
+                if (bookings.length > 0) {
+                    bookings.forEach((b: any) => console.log(`[Upcoming] Found: ${b.bookingId}, Status: ${b.status}`));
+                } else {
+                    console.log(`[Upcoming] No bookings found. Checking specific ID SLTB260102914...`);
+                }
+
                 res.status(200).json({
                     success: true,
                     message: "Upcoming Booking fetched successfully",
@@ -114,6 +123,11 @@ export const specificBooking = async (req: Request, res: Response) => {
                     attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
                     order: [['updatedAt', 'DESC']]
                 });
+                console.log(`[Cancelled] Query Status: ${status}, Found: ${bookings.length}`);
+
+                if (bookings.length > 0) {
+                    console.log(`[Cancelled] Sample ID: ${bookings[0].bookingId}, Status: ${bookings[0].status}`);
+                }
                 res.status(200).json({
                     success: true,
                     message: "Cancelled Booking fetched successfully",
@@ -248,7 +262,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         const customerId = req.body.customerId ?? req.query.id;
         const {
             pickupDateTime,
-            stops,
+            stops = [],
             dropDate, enquiryId,
             serviceType,
             offerId,
@@ -442,14 +456,46 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         const startOtp = generateOtp();
         const endOtp = generateOtp();
 
+        // DEBUG LOGS
+        console.log("DEBUG: tripType:", tripType);
+        console.log("DEBUG: validServiceType (before):", validServiceType);
+        console.log("DEBUG: req.body.phone:", req.body.phone);
+        console.log("DEBUG: customerId resolution - body:", req.body.customerId, "query.id:", req.query.id, "query.customerId:", req.query.customerId, "final:", customerId);
+        console.log("DEBUG: createdBy:", createdBy);
+
+
+        // Self-healing: Update customer profile if phone is missing
+        if (!customerData?.phone && req.body.phone) {
+            const formattedPhone = `91 ${req.body.phone}`;
+            try {
+                await Customer.update(
+                    { phone: formattedPhone },
+                    { where: { customerId: customerId } }
+                );
+                console.log("DEBUG: Updated customer phone to:", formattedPhone);
+            } catch (e) {
+                console.error("Error updating customer phone:", e);
+            }
+        }
+
+        if (!validServiceType) {
+            const normalizedTripType = tripType?.toLowerCase();
+            if (normalizedTripType === 'one_way' || tripType === 'One way') validServiceType = 'One way';
+            else if (normalizedTripType === 'round_trip' || tripType === 'Round Trip' || tripType === 'Round trip') validServiceType = 'Round trip';
+            else if (normalizedTripType === 'rental') validServiceType = 'Day Packages';
+        }
+        console.log("DEBUG: validServiceType (after):", validServiceType);
+
         const bookingData = {
             adminId,
-            customerId: createdBy === "User" ? customerId : null,
+            customerId: (createdBy === "User" || !createdBy) ? customerId : null,
             name: String(customerData?.name),
             email: customerData?.email,
-            phone: String(customerData?.phone),
+            phone: `91 ${req.body.phone}` || customerData?.phone,
             pickup,
             drop,
+
+
             stops,
             pickupDateTime: pickupDateTimeObj,
             dropDate: dropDateObj,
@@ -472,7 +518,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             promoCodeId: codeId ?? null,
             paymentMethod,
             paymentStatus: paymentStatus || "Unpaid",
-            createdBy: createdBy ?? "Admin",
+            createdBy: createdBy ?? "User",
             toll: toll ?? null,
             hill: hill ?? null,
             permitCharge: permitCharge ?? null,
@@ -1012,7 +1058,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
 
         res.status(201).json({
             success: true,
-            message: `${serviceType} ${createdBy === "User" ? "User" : "Admin"} booking created successfully`,
+            message: `${validServiceType} ${createdBy === "User" ? "User" : "Admin"} booking created successfully`,
             data: {
                 ...newBooking.toJSON(),
             },

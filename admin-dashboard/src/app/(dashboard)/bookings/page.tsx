@@ -27,6 +27,12 @@ interface Booking {
     name?: string;
     pickup?: string;
     drop?: string;
+    customer?: {
+        name: string;
+        phone: string;
+        customerId: string;
+    };
+    phone?: string;
 }
 
 const statusOptions = [
@@ -112,19 +118,23 @@ export default function BookingsPage() {
             header: 'ID',
             render: (b: Booking) => (
                 <span className="font-mono text-xs font-medium text-slate-600 bg-slate-100 px-2 py-1 rounded w-fit block">
-                    #{b.bookingId ? b.bookingId.slice(-6) : '---'}
+                    #{b.bookingId || '---'}
                 </span>
             )
         },
         {
             key: 'customer',
             header: 'Customer',
-            render: (b: Booking) => (
-                <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-slate-700">{b.name || b.customerName || 'Guest'}</span>
-                    <span className="text-xs text-slate-400">{b.customerPhone || b.customerPhone || b.driver?.phone || 'N/A'}</span>
-                </div>
-            )
+            render: (b: Booking) => {
+                const phone = b.customer?.phone || b.phone || b.customerPhone || b.driver?.phone || 'N/A';
+                const formattedPhone = phone.toString().replace(/^91\s?/, '');
+                return (
+                    <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-slate-700">{b.customer?.name || b.name || b.customerName || 'Guest'}</span>
+                        <span className="text-xs text-slate-400">{formattedPhone}</span>
+                    </div>
+                );
+            }
         },
         {
             key: 'route',

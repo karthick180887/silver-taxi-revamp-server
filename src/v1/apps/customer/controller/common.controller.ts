@@ -81,7 +81,7 @@ export const getVehiclesByService = async (req: Request, res: Response) => {
                     attributes: ['vehicleId', 'name', 'imageUrl', 'seats', 'isActive']
                 }
             ],
-            attributes: ['tariffId', 'price', 'increasedPrice', 'extraPrice', 'description', 'vehicleId']
+            attributes: ['tariffId', 'price', 'increasedPrice', 'extraPrice', 'description', 'vehicleId', 'driverBeta']
         });
 
         console.log(`DEBUG: Found ${tariffs.length} tariffs`);
@@ -108,7 +108,8 @@ export const getVehiclesByService = async (req: Request, res: Response) => {
                 seaters: vehicle.seats,
                 price: updatedPrice,
                 originalPrice: Number(t.price),
-                description: t.description
+                description: t.description,
+                driverBeta: Number(t.driverBeta || 0)
             };
         }).filter(item => item !== null); // Remove nulls
 

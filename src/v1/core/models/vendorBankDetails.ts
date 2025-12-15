@@ -65,7 +65,7 @@ VendorBankDetails.init(
             primaryKey: true,
         },
         adminId: {
-            type: DataTypes.STRING(255),
+            type: DataTypes.STRING(300),
             allowNull: false,
             references: {
                 model: Admin,
@@ -162,6 +162,7 @@ VendorBankDetails.init(
         indexes: [
             {
                 unique: true,
+                name: "vendor_bank_composite_unique",
                 fields: ['vendorId', 'upiId', 'upiNumber', 'bankAccountNumber', 'bankName', 'ifscCode'],
             },
         ]

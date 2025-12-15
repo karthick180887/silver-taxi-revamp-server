@@ -12,6 +12,11 @@ class BookingReviewScreen extends StatefulWidget {
     required this.tripType,
     required this.vehicleTypeId,
     required this.finalAmount,
+    this.phone,
+    required this.distance,
+    required this.pricePerKm,
+    required this.driverBeta,
+    required this.minKm,
   });
   final String token;
   final Map<String, dynamic> pickupLocation;
@@ -20,6 +25,11 @@ class BookingReviewScreen extends StatefulWidget {
   final String tripType;
   final String vehicleTypeId;
   final double finalAmount;
+  final String? phone;
+  final double distance;
+  final double pricePerKm;
+  final double driverBeta;
+  final double minKm;
 
   @override
   State<BookingReviewScreen> createState() => _BookingReviewScreenState();
@@ -31,26 +41,40 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
   bool _isCreating = false;
   String? _errorMessage;
 
-  // Calculate fare breakdown (mock calculation)
+  bool _isOfferApplied = false; // Toggle state
+
+  // Calculate fare breakdown (REAL calculation)
   Map<String, dynamic> _calculateFareBreakdown() {
-    // Mock calculation - In production, calculate based on distance
-    const totalKm = 168.0;
-    const perKmPrice = 12.0;
-    const driverBeta = 300.0;
-    const discount = 101.0;
-    const kmBaseFare = totalKm * perKmPrice;
-    final finalAmount = widget.finalAmount;
+    final distance = widget.distance;
+    final minKm = widget.minKm;
+    final billableKm = distance < minKm ? minKm : distance;
+    
+    final perKmPrice = widget.pricePerKm;
+    final driverBeta = widget.driverBeta;
+    
+    // Calculate base fare
+    final kmBaseFare = billableKm * perKmPrice;
+    
+    final subTotal = kmBaseFare + driverBeta;
+    
+    // Calculate Discount (5% if applied)
+    final discount = _isOfferApplied ? (subTotal * 0.05) : 0.0;
+    
+    final calculatedTotal = subTotal - discount;
 
     return {
-      'totalKm': totalKm,
+      'totalKm': billableKm,
+      'actualDistance': distance,
       'perKmPrice': perKmPrice,
       'kmBaseFare': kmBaseFare,
       'driverBeta': driverBeta,
       'discount': discount,
-      'finalAmount': finalAmount,
+      'finalAmount': calculatedTotal,
+      'minKm': minKm
     };
   }
-
+  
+  // Update _createBooking to use calculated values
   Future<void> _createBooking() async {
     setState(() {
       _isCreating = true;
@@ -65,11 +89,12 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         pickupLocation: widget.pickupLocation,
         dropLocation: widget.dropLocation,
         vehicleTypeId: widget.vehicleTypeId,
-        finalAmount: widget.finalAmount,
-        estimatedAmount: fareBreakdown['kmBaseFare'] as double,
+        finalAmount: (fareBreakdown['finalAmount'] as num).round(),
+        estimatedAmount: (fareBreakdown['kmBaseFare'] as num).round(),
         paymentMethod: _paymentMethod,
         tripType: widget.tripType,
         pickupDateTime: widget.pickupDateTime,
+        phone: widget.phone,
       );
 
       if (result.success) {
@@ -186,19 +211,19 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                       children: [
                         _buildFareRow(
                           'Total Km',
-                          '${fareBreakdown['totalKm']} km',
-                          subtitle: '(Min 130 Km Per Day)',
+                          '${(fareBreakdown['totalKm'] as double).toStringAsFixed(1)} km',
+                          subtitle: '(Min ${widget.minKm.toStringAsFixed(0)} Km Per Day)',
                         ),
                         const Divider(),
                         _buildFareRow('Per Km Price', '₹${fareBreakdown['perKmPrice']}'),
                         const Divider(),
-                        _buildFareRow('Km Base Fare', '₹${fareBreakdown['kmBaseFare']}'),
+                        _buildFareRow('Km Base Fare', '₹${(fareBreakdown['kmBaseFare'] as double).toStringAsFixed(1)}'),
                         const Divider(),
                         _buildFareRow('Driver Beta', '₹${fareBreakdown['driverBeta']}'),
                         const Divider(),
                         _buildFareRow(
                           'Offer Discount',
-                          '-₹${fareBreakdown['discount']}',
+                          '-₹${(fareBreakdown['discount'] as double).toStringAsFixed(1)}',
                           isDiscount: true,
                         ),
                       ],
@@ -223,7 +248,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                           ),
                         ),
                         Text(
-                          '₹${widget.finalAmount}',
+                          '₹${(fareBreakdown['finalAmount'] as double).toStringAsFixed(1)}',
                           style: const TextStyle(
                             color: Colors.amber,
                             fontSize: 24,
@@ -242,43 +267,65 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
             // Discount Banner
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.amber,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _isOfferApplied = !_isOfferApplied;
+                    });
+                  },
                   borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Welcome - 5%',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _isOfferApplied ? Colors.amber : Colors.grey[200],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _isOfferApplied ? Colors.amber : Colors.grey[400]!,
+                        width: 1,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.local_offer, color: Colors.amber, size: 16),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Save ₹${fareBreakdown['discount']}',
-                            style: const TextStyle(
-                              color: Colors.amber,
-                              fontWeight: FontWeight.bold,
-                            ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Welcome - 5%',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: _isOfferApplied ? Colors.black : Colors.grey[600],
                           ),
-                        ],
-                      ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.local_offer,
+                                color: Colors.amber,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _isOfferApplied 
+                                    ? 'Applied: -₹${fareBreakdown['discount'].toStringAsFixed(1)}'
+                                    : 'Apply Offer',
+                                style: const TextStyle(
+                                  color: Colors.amber,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),

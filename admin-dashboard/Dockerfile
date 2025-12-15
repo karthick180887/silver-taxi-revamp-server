@@ -11,7 +11,7 @@ RUN npm ci
 # Copy source code
 # Force cache invalidation
 ARG CACHE_BUST=202512131610
-ENV NEXT_PUBLIC_API_URL=http://localhost:30060
+ENV NEXT_PUBLIC_API_URL=https://api.cabigo.in
 COPY . .
 
 # Build the Next.js app

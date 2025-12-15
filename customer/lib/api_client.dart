@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 // Change this to a host reachable from your device/emulator
 const String kApiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://10.0.6.2:30060', // LAN IP
+  defaultValue: 'https://api.cabigo.in', // Production URL
 );
 
 class ApiResult {
@@ -270,12 +270,13 @@ class CustomerApiClient {
     required Map<String, dynamic> pickupLocation,
     required Map<String, dynamic> dropLocation,
     required String vehicleTypeId,
-    required double finalAmount,
-    double? estimatedAmount,
+    required num finalAmount,
+    num? estimatedAmount,
     String? paymentMethod,
     String? tripType,
     DateTime? pickupDateTime,
     String? notes,
+    String? phone,
   }) async {
     final data = <String, dynamic>{
       'pickupLocation': pickupLocation,
@@ -287,7 +288,10 @@ class CustomerApiClient {
       if (tripType != null) 'tripType': tripType,
       if (pickupDateTime != null) 'pickupDateTime': pickupDateTime.toIso8601String(),
       if (notes != null) 'notes': notes,
+      if (phone != null) 'phone': phone,
     };
+
+    print('DEBUG: createBooking sending data: $data');
 
     return _post(
       '/customer/booking/create',
@@ -407,6 +411,88 @@ class CustomerApiClient {
         'adminId': adminId,
         'serviceId': serviceId,
       },
+    );
+  }
+
+  /// GET /customer/offers/get - Get all offers
+  Future<ApiResult> getAllOffers({
+    required String token,
+    required String adminId,
+    required String customerId,
+  }) async {
+    return _get(
+      '/customer/offers/get',
+      token: token,
+      queryParams: {
+        'adminId': adminId,
+        'customerId': customerId,
+      },
+    );
+  }
+
+  /// GET /customer/notifications/all - Get all notifications
+  Future<ApiResult> getAllNotifications({
+    required String token,
+    required String adminId,
+    required String customerId,
+  }) async {
+    return _get(
+      '/customer/notifications/all',
+      token: token,
+      queryParams: {
+        'adminId': adminId,
+        'customerId': customerId,
+      },
+    );
+  }
+
+  // ============================================
+  // Promo Code APIs
+  // ============================================
+
+  /// GET /customer/promo-codes/get - Get all promo codes
+  Future<ApiResult> getPromoCodes({
+    required String token,
+    required String adminId,
+    required String customerId,
+  }) async {
+    return _get(
+      '/customer/promo-codes/get',
+      token: token,
+      queryParams: {
+        'adminId': adminId,
+        'customerId': customerId,
+      },
+    );
+  }
+
+  /// POST /customer/promo-codes/validate - Validate/Apply promo code
+  Future<ApiResult> validatePromoCode({
+    required String token,
+    required String adminId,
+    required String customerId,
+    required String promoCode,
+    required String actionType, // "applyPromo" or "removePromo"
+    required num estimatedAmount,
+    required num taxAmount,
+    required num driverBeta,
+    required String serviceType,
+    String? offerId,
+  }) async {
+    return _post(
+      '/customer/promo-codes/validate',
+      {
+        'adminId': adminId,
+        'customerId': customerId,
+        'promoCode': promoCode,
+        'actionType': actionType,
+        'estimatedAmount': estimatedAmount,
+        'taxAmount': taxAmount,
+        'driverBeta': driverBeta,
+        'serviceType': serviceType,
+        if (offerId != null) 'offerId': offerId,
+      },
+      token: token,
     );
   }
 

@@ -1,5 +1,7 @@
 global:
-  storageClass: "standard" # Use default storage class
+  security: 
+    allowInsecureImages: true # Required for using ECR images with Bitnami charts
+  storageClass: "do-block-storage" # Updated from standard for DigitalOcean
   postgresql:
     auth:
       database: "defaultdb"
@@ -8,12 +10,18 @@ global:
       postgresPassword: "admin_password"
       replicationPassword: "repl_password"
 
-postgresql:
-  replicaCount: 3 # 1 Primary + 2 Replicas
+
+image:
+  registry: public.ecr.aws
+  repository: bitnami/postgresql
+  tag: "17.2.0"
+
+# postgresql:
+  # replicaCount: 2 # This was nested incorrectly for direct chart usage
   resources:
     requests:
-      cpu: 250m
-      memory: 256Mi
+      cpu: 100m
+      memory: 128Mi
     limits:
       cpu: 500m
       memory: 512Mi
@@ -33,7 +41,7 @@ pgpool:
 architecture: replication
 replication:
   applicationName: "silver_taxi"
-  readReplicas: 2 # Total 3 nodes (1 primary + 2 read)
+  readReplicas: 1 # Reduced from 2
 
 auth:
   database: "defaultdb"
@@ -45,26 +53,30 @@ auth:
 primary:
   persistence:
     enabled: true
-    size: 8Gi
+    size: 20Gi
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 100m
+      memory: 150Mi
+  service:
+    type: LoadBalancer
 
 readReplicas:
-  replicaCount: 2
+  replicaCount: 1 # Reduced from 2
   persistence:
     enabled: true
-    size: 8Gi
+    size: 20Gi
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 100m
+      memory: 150Mi
 
 # Enable PgBouncer
 pgbouncer:
   enabled: true
-  replicas: 2 # High Availability for Pooler
+  image:
+    tag: "1.23.1" # Using latest stable as 17.7.0 is not a valid PgBouncer version
+  replicas: 1 # Reduced from 2
   resources:
     requests:
       cpu: 100m

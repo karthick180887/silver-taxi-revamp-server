@@ -122,12 +122,12 @@ class Driver
     public totalEarnings!: string;
     public onlineTime!: Date | null;
     public offlineTime!: Date | null;
-    
+
     public walletId!: string;
-    
+
     public geoLocation!: any;
     public referralCode!: string;
-    
+
     public inActiveReason!: string;
     public lastActiveDate!: Date;
     public lastInActiveDate!: Date;
@@ -383,7 +383,7 @@ Driver.init(
             type: DataTypes.STRING(20),
             allowNull: true,
             defaultValue: null,
-            unique: true,
+            // unique: true, // Manually created index "drivers_referralCode_key" to avoid Sequelize sync error
         },
         inActiveReason: {
             type: DataTypes.TEXT,
@@ -413,9 +413,9 @@ Driver.init(
                 fields: ["driverId", "adminId", "walletId", "referralCode"],
             },
             {
-               fields:["geoLocation"],
-               using:"GIN",
-               name:"idx_geo_location"
+                fields: ["geoLocation"],
+                using: "GIN",
+                name: "idx_geo_location"
             }
         ],
         comment: "Table for drivers",

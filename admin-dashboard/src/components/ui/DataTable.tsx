@@ -157,7 +157,7 @@ export function DataTable<T extends object>({
                             </tr>
                         ) : sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={columns.length + (selectable ? 1 : 0)} style={{ ...tdStyles, textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
+                                <td colSpan={columns.length + (selectable ? 1 : 0)} style={{ ...tdStyles, textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-primary)' }}>
                                     {emptyMessage}
                                 </td>
                             </tr>

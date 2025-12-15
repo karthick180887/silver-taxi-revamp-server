@@ -106,6 +106,7 @@ Notification.init(
         indexes: [
             {
                 unique: true,
+                name: "notification_composite_unique",
                 fields: ["notificationId", "date", "vendorId", "adminId"],
             },
 

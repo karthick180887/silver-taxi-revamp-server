@@ -176,7 +176,7 @@ export const getRecentBookings = async (req: Request, res: Response): Promise<vo
             offset,
             order: [['createdAt', 'DESC']],
             attributes: { exclude: ['updatedAt', 'deletedAt'] },
-            // include: [{ model: Customer, as: 'customer', attributes: ['name', 'phone'] }] // valid association?
+            include: [{ model: Customer, as: 'customer', attributes: ['name', 'phone', 'customerId'] }]
         });
 
         console.log(`[RecentBookings] Found: ${bookings.length} bookings`);
@@ -221,6 +221,11 @@ export const getAllBookings = async (req: Request, res: Response): Promise<void>
                     model: Driver,
                     as: 'driver',
                     attributes: ['name', 'phone', 'driverId']
+                },
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['name', 'phone', 'customerId']
                 }
             ]
         });

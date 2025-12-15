@@ -8,22 +8,22 @@ export interface PaymentTransactionAttributes {
     transactionId?: string;
     gatewayTransactionId: string;
     bankReferenceId: string;
- 
+
     sender: "Vendor" | "Customer" | "Admin" | "Driver";
 
-    senderId: string; 
-    senderName: string; 
-    senderContact: string; 
+    senderId: string;
+    senderName: string;
+    senderContact: string;
 
-    receiverId: string; 
-    receiverName: string; 
-    receiverContact: string; 
+    receiverId: string;
+    receiverName: string;
+    receiverContact: string;
 
-    paymentMethod: string; 
-    transactionType: "Credit" | "Debit"; 
-    transactionAmount: number; 
-    status: "Pending" | "Success" | "Failed"; 
-    description: string; 
+    paymentMethod: string;
+    transactionType: "Credit" | "Debit";
+    transactionAmount: number;
+    status: "Pending" | "Success" | "Failed";
+    description: string;
 
 }
 
@@ -31,7 +31,7 @@ export interface PaymentTransactionAttributes {
 interface PaymentTransactionCreationAttributes extends Optional<PaymentTransactionAttributes, 'id'> { }
 
 
-class PaymentTransaction 
+class PaymentTransaction
     extends Model<PaymentTransactionAttributes, PaymentTransactionCreationAttributes> implements PaymentTransactionAttributes {
     public id!: number;
     public transactionId!: string;
@@ -87,7 +87,7 @@ PaymentTransaction.init(
             allowNull: false,
         },
         adminId: {
-            type: DataTypes.STRING(255),
+            type: DataTypes.STRING(300),
             allowNull: false,
             references: {
                 model: Admin,
@@ -152,6 +152,7 @@ PaymentTransaction.init(
         indexes: [
             {
                 unique: true,
+                name: "payment_txn_composite_unique",
                 fields: ["gatewayTransactionId", "transactionId", "adminId", "senderId", "receiverId"],
             },
         ],

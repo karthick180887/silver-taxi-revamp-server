@@ -9,12 +9,11 @@ export interface TableConfigAttributes {
   preferences: Record<string, boolean>; // JSONB to store column visibilities
 }
 
-interface TableConfigCreationAttributes extends Optional<TableConfigAttributes, 'id'> {}
+interface TableConfigCreationAttributes extends Optional<TableConfigAttributes, 'id'> { }
 
 class TableConfig
   extends Model<TableConfigAttributes, TableConfigCreationAttributes>
-  implements TableConfigAttributes
-{
+  implements TableConfigAttributes {
   public id!: number;
   public adminId!: string;
   public pageId!: string;
@@ -37,7 +36,7 @@ TableConfig.init(
       unique: true,
     },
     adminId: {
-      type: DataTypes.STRING(255),
+      type: DataTypes.STRING(300),
       allowNull: false,
     },
     pageId: {
@@ -64,6 +63,7 @@ TableConfig.init(
     indexes: [
       {
         unique: true,
+        name: "table_config_composite_unique",
         fields: ['adminId', 'pageId', 'pageName'],
       },
       {

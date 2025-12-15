@@ -1,4 +1,4 @@
-package com.silvertaxi.customer_app
+package com.cabigo.customer
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -38,21 +38,20 @@ kind: Service
 metadata:
   name: backend-go-app
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: backend-go-app
   ports:
     - name: http
       port: 8081
       targetPort: 8081
-      nodePort: 30060
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend-go-app
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: backend-go-app
@@ -61,6 +60,8 @@ spec:
       labels:
         app: backend-go-app
     spec:
+      imagePullSecrets:
+        - name: do-registry-secret
       containers:
         - name: app
           image: backend-ts:dev
@@ -68,7 +69,7 @@ spec:
           resources:
             requests:
               cpu: "100m"
-              memory: "256Mi"
+              memory: "128Mi"
             limits:
               cpu: "1000m"
               memory: "1024Mi"

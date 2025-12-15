@@ -1,0 +1,11 @@
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key1";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key2";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key3";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key4";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key5";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key6";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key7";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key8";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key9";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key10";
+ALTER TABLE "driver_notifications" DROP CONSTRAINT IF EXISTS "driver_notifications_notifyId_key11";
