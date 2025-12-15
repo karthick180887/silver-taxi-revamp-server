@@ -82,6 +82,7 @@ export const customerLogin = async (req: Request, res: Response): Promise<void> 
                 }
 
                 const formattedNumber = phone.toString().replace(/^\+?91|\D/g, "");
+                console.log(">>> MANUAL LOG: Sending OTP for mobile:", formattedNumber);
                 const token = await sms.sendOtp({
                     mobile: Number(formattedNumber),
                     isOTPSend: true,
