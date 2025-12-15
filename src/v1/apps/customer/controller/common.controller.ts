@@ -5,15 +5,7 @@ import { getConfigKey } from "../../../../common/services/node-cache";
 
 export const getServices = async (req: Request, res: Response) => {
     const adminId = req.query.adminId ?? req.body.adminId;
-    const customerId = req.query.customerId ?? req.body.customerId;
 
-    if (!customerId) {
-        res.status(401).json({
-            success: false,
-            message: "Customer id is required",
-        });
-        return;
-    }
 
     const services = await Service.findAll({
         where: { adminId },
@@ -30,15 +22,6 @@ export const getServices = async (req: Request, res: Response) => {
 
 export const getConfigKeys = async (req: Request, res: Response) => {
     const adminId = req.query.adminId ?? req.body.adminId;
-    const customerId = req.query.customerId ?? req.body.customerId;
-
-    if (!customerId) {
-        res.status(401).json({
-            success: false,
-            message: "Customer id is required",
-        });
-        return;
-    }
 
     try {
         const keys = ["google_map_key", "razorpay_key"]; // whitelist

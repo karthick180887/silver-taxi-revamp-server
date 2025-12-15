@@ -22,12 +22,30 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   List<dynamic> _services = [];
   Map<String, dynamic>? _selectedService;
   final _apiClient = CustomerApiClient(baseUrl: kApiBaseUrl);
+  String _googleMapsKey = '';
 
   @override
   void initState() {
     super.initState();
     _pickupDateTime = DateTime.now().add(const Duration(minutes: 15));
     _fetchServices();
+    _fetchGoogleMapsKey();
+  }
+
+  Future<void> _fetchGoogleMapsKey() async {
+    try {
+      final result = await _apiClient.getConfigKeys(
+        token: widget.token,
+        adminId: 'admin-1',
+      );
+      if (mounted && result.success && result.body['data'] != null) {
+        setState(() {
+          _googleMapsKey = result.body['data']['google_maps_key'] ?? '';
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to fetch Google Maps key: $e');
+    }
   }
 
   Future<void> _fetchServices() async {
@@ -60,12 +78,19 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   Future<void> _selectPickupLocation() async {
+    if (_googleMapsKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Loading... Please wait')),
+      );
+      return;
+    }
     final location = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
         builder: (_) => LocationSearchScreen(
           title: 'Pickup Location',
           initialQuery: _pickupLocation?['address'] as String?,
+          googleMapsKey: _googleMapsKey,
         ),
       ),
     );
@@ -73,12 +98,19 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   Future<void> _selectDropLocation() async {
+    if (_googleMapsKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Loading... Please wait')),
+      );
+      return;
+    }
     final location = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
         builder: (_) => LocationSearchScreen(
           title: 'Drop Location',
           initialQuery: _dropLocation?['address'] as String?,
+          googleMapsKey: _googleMapsKey,
         ),
       ),
     );

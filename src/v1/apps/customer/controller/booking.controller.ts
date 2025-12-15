@@ -260,7 +260,6 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             estimatedAmount,
             finalAmount,
             distance,
-            tariffId,
             serviceId,
             upPaidAmount,
             packageId, packageType,
@@ -288,19 +287,33 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         } = req.body;
 
         // Map frontend keys to backend keys
-        const pickup = req.body.pickup ?? req.body.pickupLocation;
-        const drop = req.body.drop ?? req.body.dropLocation;
-        const vehicleId = req.body.vehicleId ?? req.body.vehicleTypeId;
+        // Map frontend keys to backend keys
+        let pickup = req.body.pickup ?? req.body.pickupLocation;
+        let drop = req.body.drop ?? req.body.dropLocation;
+        // vehicleTypeId from frontend is actually a tariff ID (e.g. tar-19)
+        // vehicleId refers to a specific vehicle instance (which is unknown at booking time)
+        const tariffId = req.body.tariffId ?? req.body.vehicleTypeId;
+        const vehicleId = undefined;
+
+        // Ensure pickup and drop are strings (extract address if object)
+        if (typeof pickup === 'object' && pickup !== null && pickup.address) {
+            pickup = pickup.address;
+        }
+        if (typeof drop === 'object' && drop !== null && drop.address) {
+            drop = drop.address;
+        }
 
         // MAP tripType to serviceType if missing
         let validServiceType = serviceType;
         if (!validServiceType) {
-            if (tripType === 'one_way') validServiceType = 'Daily';
-            else if (tripType === 'round_trip') validServiceType = 'Round trip';
-            else if (tripType === 'rental') validServiceType = 'Rental';
+            const normalizedTripType = tripType?.toLowerCase();
+            if (normalizedTripType === 'one_way' || tripType === 'One way') validServiceType = 'One way'; // Changed from 'Daily' to 'One way'
+            else if (normalizedTripType === 'round_trip' || tripType === 'Round Trip' || tripType === 'Round trip') validServiceType = 'Round trip';
+            else if (normalizedTripType === 'rental') validServiceType = 'Day Packages'; // Changed from 'Rental' to 'Day Packages'
         }
 
         if (!validServiceType) {
+            console.warn("DEBUG: Missing validServiceType. tripType:", tripType, "serviceType:", serviceType);
             res.status(400).json({
                 success: false,
                 message: "Service Name (serviceType) is required (e.g. Daily, Round trip, Rental)",
@@ -318,6 +331,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
 
 
         if (validServiceType === "Round trip" && !dropDate) {
+            console.warn("DEBUG: Missing dropDate for Round trip");
             res.status(400).json({
                 success: false,
                 message: "dropDate is required for Round trip",
@@ -328,6 +342,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         console.log("typeof pickupDateTime", typeof pickupDateTime);
 
         if (!pickupDateTime || typeof pickupDateTime !== 'string') {
+            console.warn("DEBUG: Invalid pickupDateTime:", pickupDateTime, "Type:", typeof pickupDateTime);
             res.status(400).json({
                 success: false,
                 message: "pickupDateTime is required and must be a string",
@@ -338,6 +353,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         // Validate dates
         const pickupDateTimeObj = new Date(pickupDateTime);
         if (isNaN(pickupDateTimeObj.getTime())) {
+            console.warn("DEBUG: Invalid pickupDateTime format:", pickupDateTime);
             res.status(400).json({
                 success: false,
                 message: "Invalid pickupDateTime format",
@@ -349,6 +365,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         if (dropDate) {
             dropDateObj = new Date(dropDate);
             if (isNaN(dropDateObj.getTime())) {
+                console.warn("DEBUG: Invalid dropDate format:", dropDate);
                 res.status(400).json({
                     success: false,
                     message: "Invalid dropDate format",
@@ -375,6 +392,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         });
 
         if (!getService) {
+            console.warn("DEBUG: Service not found for type:", validServiceType, "adminId:", adminId);
             res.status(400).json({
                 success: false,
                 message: "Invalid service type",
@@ -384,7 +402,10 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
 
         let service = getService?.serviceId;
 
-        let convertedDistance = Math.round(Number(distance));
+        let convertedDistance = Number(distance);
+        if (isNaN(convertedDistance)) {
+            convertedDistance = 0;
+        }
         let convertedDuration = duration;
 
 
@@ -476,7 +497,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             razorpayPaymentLink: null, // New field for Razorpay payment link
             normalFare: {
                 days: days,
-                distance: distance,
+                distance: convertedDistance,
                 pricePerKm: pricePerKm,
                 driverBeta: driverBeta,
                 toll: toll,
@@ -487,7 +508,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             },
             modifiedFare: {
                 days: days,
-                distance: (distance ?? 0),
+                distance: (convertedDistance ?? 0),
                 pricePerKm: (pricePerKm ?? 0),
                 extraPricePerKm: extraPricePerKm ?? 0,
                 driverBeta: (driverBeta ?? 0) + (extraDriverBeta ?? 0),
@@ -925,13 +946,13 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
                     minKm: newBooking.minKm,
                     pricePerKm: newBooking.pricePerKm,
                     driverBeta: newBooking.driverBeta,
-                    hill: newBooking.extraCharges["Hill"].toString() ?? "0",
-                    permitCharges: newBooking.extraCharges["Permit Charge"].toString() ?? "0",
-                    estimatedAmount: newBooking.estimatedAmount.toString(),
-                    taxAmount: newBooking.taxAmount.toString(),
-                    discountAmount: newBooking.discountAmount.toString(),
-                    finalAmount: newBooking.finalAmount.toString(),
-                    contactNumber: companyProfile?.phone[0] ?? "9876543210",
+                    hill: (newBooking.extraCharges?.["Hill"] ?? 0).toString(),
+                    permitCharges: (newBooking.extraCharges?.["Permit Charge"] ?? 0).toString(),
+                    estimatedAmount: (newBooking.estimatedAmount ?? 0).toString(),
+                    taxAmount: (newBooking.taxAmount ?? 0).toString(),
+                    discountAmount: (newBooking.discountAmount ?? 0).toString(),
+                    finalAmount: (newBooking.finalAmount ?? 0).toString(),
+                    contactNumber: companyProfile?.phone?.[0] ?? "9876543210",
                     website: companyProfile?.website || "https://silvercalltaxi.in"
                 }
             })
@@ -970,13 +991,13 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
                     { type: "text", text: newBooking.pricePerKm },
                     { type: "text", text: newBooking.driverBeta },
                     // { type: "text", text: newBooking.extraCharges["Toll"].toString() ?? "0" },
-                    { type: "text", text: newBooking.extraCharges["Hill"].toString() ?? "0" },
-                    { type: "text", text: newBooking.extraCharges["Permit Charge"].toString() ?? "0" },
-                    { type: "text", text: newBooking.estimatedAmount.toString() },
-                    { type: "text", text: newBooking.taxAmount.toString() },
-                    { type: "text", text: newBooking.discountAmount.toString() },
-                    { type: "text", text: newBooking.finalAmount.toString() },
-                    { type: "text", text: companyProfile?.phone[0] ?? "9876543210" },
+                    { type: "text", text: (newBooking.extraCharges?.["Hill"] ?? 0).toString() },
+                    { type: "text", text: (newBooking.extraCharges?.["Permit Charge"] ?? 0).toString() },
+                    { type: "text", text: (newBooking.estimatedAmount ?? 0).toString() },
+                    { type: "text", text: (newBooking.taxAmount ?? 0).toString() },
+                    { type: "text", text: (newBooking.discountAmount ?? 0).toString() },
+                    { type: "text", text: (newBooking.finalAmount ?? 0).toString() },
+                    { type: "text", text: companyProfile?.phone?.[0] ?? "9876543210" },
                     { type: "text", text: companyProfile?.website ?? "https://silvertaxi.in" },
                 ],
                 templateName: "bookingConfirmedAcknowledgement"
