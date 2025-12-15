@@ -52,11 +52,11 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() {
           _isOtpSent = true;
           _isLoading = false;
-          _smsToken = data['smsToken'];
+          _smsToken = result.body['smsToken'];
         });
         
-        if (data['otp'] != null) {
-          _otpController.text = data['otp'].toString();
+        if (result.body['otp'] != null) {
+          _otpController.text = result.body['otp'].toString();
         }
       } else {
         setState(() {
@@ -221,10 +221,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                 keyboardType: TextInputType.number,
                                 style: AppTextStyles.h3.copyWith(letterSpacing: 8),
                                 textAlign: TextAlign.center,
-                                maxLength: 4,
+                                maxLength: 6,
                                 decoration: const InputDecoration(
                                   labelText: 'Enter OTP',
-                                  hintText: '0000',
+                                  hintText: '000000',
                                   counterText: '',
                                   prefixIcon: Icon(Icons.lock_outline, color: AppColors.primary),
                                 ),

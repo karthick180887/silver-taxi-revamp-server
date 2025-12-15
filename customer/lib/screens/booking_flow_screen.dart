@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../design_system.dart';
 import 'location_search_screen.dart';
 import 'vehicle_selection_screen.dart';
+import '../api_client.dart';
 
 class BookingFlowScreen extends StatefulWidget {
   const BookingFlowScreen({super.key, required this.token});
@@ -16,12 +17,46 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   Map<String, dynamic>? _pickupLocation;
   Map<String, dynamic>? _dropLocation;
   DateTime? _pickupDateTime;
-  String _tripType = 'one_way';
+
+  bool _isLoadingServices = true;
+  List<dynamic> _services = [];
+  Map<String, dynamic>? _selectedService;
+  final _apiClient = CustomerApiClient(baseUrl: kApiBaseUrl);
 
   @override
   void initState() {
     super.initState();
-    _pickupDateTime = DateTime.now().add(const Duration(minutes: 15)); // Default to near future
+    _pickupDateTime = DateTime.now().add(const Duration(minutes: 15));
+    _fetchServices();
+  }
+
+  Future<void> _fetchServices() async {
+    try {
+      // Assuming admin-1 for now, ideally should come from config/profile
+      final result = await _apiClient.getServices(
+        token: widget.token,
+        adminId: 'admin-1', 
+      );
+      
+      if (mounted) {
+        setState(() {
+          _isLoadingServices = false;
+          if (result.success && result.body['data'] != null) {
+            _services = result.body['data'];
+            if (_services.isNotEmpty) {
+              _selectedService = _services[0];
+            }
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingServices = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load services: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _selectPickupLocation() async {
@@ -98,6 +133,13 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       return;
     }
 
+    if (_selectedService == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a service type')),
+      );
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -106,7 +148,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           pickupLocation: _pickupLocation!,
           dropLocation: _dropLocation!,
           pickupDateTime: _pickupDateTime!,
-          tripType: _tripType,
+          // Pass service name as tripType for backward compatibility/display
+          tripType: _selectedService!['name'], 
+          serviceId: _selectedService!['serviceId'],
         ),
       ),
     );
@@ -209,14 +253,23 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
             const SizedBox(height: 24),
 
-            // Trip Type
-            Row(
-              children: [
-                Expanded(child: _buildTripTypeCard('one_way', 'One Way', Icons.arrow_right_alt)),
-                const SizedBox(width: 12),
-                Expanded(child: _buildTripTypeCard('round_trip', 'Round Trip', Icons.loop)),
-              ],
-            ),
+            // Services
+            Text('Service Type', style: AppTextStyles.label.copyWith(color: AppColors.textSecondary)),
+            const SizedBox(height: 12),
+            _isLoadingServices
+                ? const Center(child: CircularProgressIndicator())
+                : SizedBox(
+                    height: 100, // Fixed height for horizontal list
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _services.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      itemBuilder: (context, index) {
+                        final service = _services[index];
+                        return _buildServiceCard(service);
+                      },
+                    ),
+                  ),
 
             const SizedBox(height: 40),
 
@@ -287,12 +340,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     );
   }
 
-  Widget _buildTripTypeCard(String type, String label, IconData icon) {
-    final isSelected = _tripType == type;
+  Widget _buildServiceCard(Map<String, dynamic> service) {
+    final isSelected = _selectedService == service;
+    // Determine icon based on name or default
+    IconData icon = Icons.directions_car;
+    if (service['name'].toString().toLowerCase().contains('round')) icon = Icons.loop;
+    if (service['name'].toString().toLowerCase().contains('rental')) icon = Icons.timer;
+
     return GestureDetector(
-      onTap: () => setState(() => _tripType = type),
+      onTap: () => setState(() => _selectedService = service),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        width: 120,
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
         decoration: BoxDecoration(
           color: isSelected ? AppColors.primary.withOpacity(0.1) : AppColors.surface,
           borderRadius: BorderRadius.circular(12),
@@ -302,6 +361,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           ),
         ),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
@@ -309,10 +369,12 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              label,
+              service['name'] ?? '',
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                fontSize: 12,
               ),
             ),
           ],

@@ -191,4 +191,29 @@ export function emitNewTripOfferToDrivers(driverIds: string[], bookingData: any)
     }
 }
 
+/**
+ * Emit TRIP_UPDATE event to a specific customer via Socket.IO
+ * Used for live tracking updates (Trip Started, Completed, Location)
+ */
+export function emitTripUpdateToCustomer(customerId: string, data: any): void {
+    if (!io) {
+        logger.error('Socket.IO server not initialized');
+        return;
+    }
+
+    try {
+        // Flutter app expects: { type: 'TRIP_UPDATE', data: { status: '...', ... } }
+        const eventData = {
+            type: 'TRIP_UPDATE',
+            data: data,
+        };
+
+        io.to(customerId).emit('notification', eventData);
+        logger.info(`✅ TRIP_UPDATE event sent to customer: ${customerId}, status: ${data.status || 'unknown'}`);
+    } catch (error) {
+        logger.error(`Error emitting TRIP_UPDATE to customer ${customerId}:`, error);
+    }
+}
+
+
 

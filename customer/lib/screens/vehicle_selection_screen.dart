@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'booking_review_screen.dart';
+import '../api_client.dart';
+import '../design_system.dart';
 
 class VehicleSelectionScreen extends StatefulWidget {
   const VehicleSelectionScreen({
@@ -9,12 +11,14 @@ class VehicleSelectionScreen extends StatefulWidget {
     required this.dropLocation,
     required this.pickupDateTime,
     required this.tripType,
+    required this.serviceId,
   });
   final String token;
   final Map<String, dynamic> pickupLocation;
   final Map<String, dynamic> dropLocation;
   final DateTime pickupDateTime;
   final String tripType;
+  final String serviceId;
 
   @override
   State<VehicleSelectionScreen> createState() => _VehicleSelectionScreenState();
@@ -23,37 +27,56 @@ class VehicleSelectionScreen extends StatefulWidget {
 class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
   String? _selectedVehicleTypeId;
   double? _selectedFare;
+  // We'll store the full vehicle object to get price etc easily
+  Map<String, dynamic>? _selectedVehicle; 
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _vehicleTypes = [];
 
-  // Mock vehicle types - In production, fetch from API
-  final List<Map<String, dynamic>> _vehicleTypes = [
-    {
-      'id': 'mini',
-      'name': 'Mini (3+1)',
-      'seaters': '4+1 Seaters',
-      'originalPrice': 2316.0,
-      'price': 2215.0,
-      'image': '🚗',
-    },
-    {
-      'id': 'sedan',
-      'name': 'Sedan (4+1)',
-      'seaters': '4+1 Seaters',
-      'originalPrice': 2484.0,
-      'price': 2374.0,
-      'image': '🚙',
-    },
-    {
-      'id': 'etios',
-      'name': 'Etios (4+1)',
-      'seaters': '4+1 Seaters',
-      'originalPrice': 2652.0,
-      'price': 2534.0,
-      'image': '🚕',
-    },
-  ];
+  final _apiClient = CustomerApiClient(baseUrl: kApiBaseUrl);
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchVehicles();
+  }
+
+  Future<void> _fetchVehicles() async {
+    print('DEBUG: _fetchVehicles called for serviceId: ${widget.serviceId}');
+    try {
+      final result = await _apiClient.getVehiclesByService(
+        token: widget.token,
+        adminId: 'admin-1',
+        serviceId: widget.serviceId,
+      );
+      print('DEBUG: API Result: ${result.statusCode} - ${result.body}');
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          if (result.success && result.body['data'] != null) {
+            _vehicleTypes = List<Map<String, dynamic>>.from(result.body['data']);
+            print('DEBUG: Loaded ${_vehicleTypes.length} vehicles');
+          } else {
+            print('DEBUG: API returned success=false or no data');
+            ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(content: Text('No vehicles found: ${result.body['message'] ?? "Unknown error"}')),
+            );
+          }
+        });
+      }
+    } catch (e) {
+      print('DEBUG: Exception in _fetchVehicles: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load vehicles: $e')),
+        );
+      }
+    }
+  }
 
   void _proceedToReview() {
-    if (_selectedVehicleTypeId == null) {
+    if (_selectedVehicleTypeId == null || _selectedVehicle == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a vehicle')),
       );
@@ -69,8 +92,8 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
           dropLocation: widget.dropLocation,
           pickupDateTime: widget.pickupDateTime,
           tripType: widget.tripType,
-          vehicleTypeId: _selectedVehicleTypeId!,
-          finalAmount: _selectedFare!,
+          vehicleTypeId: _selectedVehicle!['tariffId'], // Use tariffId as 'vehicleTypeId' for booking
+          finalAmount: (_selectedVehicle!['price'] as num).toDouble(),
         ),
       ),
     );
@@ -82,7 +105,9 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
       appBar: AppBar(
         title: const Text('Select Vehicle'),
       ),
-      body: Column(
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator())
+        : Column(
         children: [
           // Trip Details Card
           Card(
@@ -92,6 +117,7 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Show the selected service in the header instead of hardcoded Mock
                   Row(
                     children: [
                       Container(
@@ -101,26 +127,18 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
                           color: Colors.grey[200],
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.directions_car, size: 30),
+                        child: const Icon(Icons.location_city, size: 30),
                       ),
                       const SizedBox(width: 12),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Mini (3+1)',
-                              style: TextStyle(
+                              widget.tripType,
+                              style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              '4+1 Seaters',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 14,
                               ),
                             ),
                           ],
@@ -173,18 +191,22 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
           const SizedBox(height: 16),
 
           Expanded(
-            child: ListView.builder(
+            child: _vehicleTypes.isEmpty 
+              ? const Center(child: Text("No vehicles available for this service"))
+              : ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _vehicleTypes.length,
               itemBuilder: (context, index) {
                 final vehicle = _vehicleTypes[index];
-                final isSelected = _selectedVehicleTypeId == vehicle['id'];
+                // Use tariffId or vehicleId for unique selection
+                final id = vehicle['id'] as String; 
+                final isSelected = _selectedVehicleTypeId == id;
 
                 return GestureDetector(
                   onTap: () {
                     setState(() {
-                      _selectedVehicleTypeId = vehicle['id'] as String;
-                      _selectedFare = vehicle['price'] as double;
+                      _selectedVehicleTypeId = id;
+                      _selectedVehicle = vehicle;
                     });
                   },
                   child: Container(
@@ -208,10 +230,12 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Center(
-                            child: Text(
-                              vehicle['image'] as String,
-                              style: const TextStyle(fontSize: 40),
-                            ),
+                            child: vehicle['image'] != null && (vehicle['image'] as String).startsWith('http')
+                                ? Image.network(vehicle['image'])
+                                : Text(
+                                    vehicle['image'] ?? '🚗',
+                                    style: const TextStyle(fontSize: 40),
+                                  ),
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -228,7 +252,7 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                vehicle['seaters'] as String,
+                                vehicle['seaters'] != null ? '${vehicle['seaters']} Seats' : '4+1 Seats',
                                 style: const TextStyle(
                                   color: Colors.grey,
                                   fontSize: 14,
@@ -237,14 +261,15 @@ class _VehicleSelectionScreenState extends State<VehicleSelectionScreen> {
                               const SizedBox(height: 8),
                               Row(
                                 children: [
-                                  Text(
-                                    '₹${vehicle['originalPrice']}',
-                                    style: const TextStyle(
-                                      decoration: TextDecoration.lineThrough,
-                                      color: Colors.grey,
-                                      fontSize: 14,
+                                  if (vehicle['originalPrice'] != null)
+                                    Text(
+                                      '₹${vehicle['originalPrice']}',
+                                      style: const TextStyle(
+                                        decoration: TextDecoration.lineThrough,
+                                        color: Colors.grey,
+                                        fontSize: 14,
+                                      ),
                                     ),
-                                  ),
                                   const SizedBox(width: 8),
                                   Text(
                                     '₹${vehicle['price']}',

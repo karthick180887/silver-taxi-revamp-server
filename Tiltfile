@@ -14,7 +14,7 @@ docker_build(
     ".",
     dockerfile="Dockerfile",
     # Only rebuild when source files change (ignore frontend dirs and docs)
-    ignore=["driver/", "customer/", "k8s/", "*.md", ".git/", ".vscode/", "node_modules/"],
+    ignore=["driver/", "customer/", "vendor/", "admin-dashboard/", "k8s/", "*.md", ".git/", ".vscode/", "node_modules/"],
 )
 
 k8s_yaml("k8s/app.yaml")

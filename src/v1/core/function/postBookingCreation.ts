@@ -1,9 +1,10 @@
 import { Booking, Customer, CustomerTransaction, CustomerWallet, Offers, PromoCodeUsage, OfferUsage } from '../models';
 // import { createNotification, sendNotification, createCustomerNotification, sendToSingleToken, bookingConfirm } from '../services';
 import { createNotification, createCustomerNotification, createDriverNotification } from './notificationCreate';
-import { sendNotification } from '../../../common/services/socket/websocket';
+import { sendNotification, emitNewTripOfferToDriver, emitNewTripOfferToDrivers } from '../../../common/services/socket/websocket';
 import { sendToSingleToken } from '../../../common/services/firebase/appNotify';
 import { bookingConfirm } from "../../../common/services/mail/mail";
+
 
 
 import dayjs from 'dayjs';
@@ -144,6 +145,35 @@ export const sendBookingNotifications = async ({
         });
     }
 
+    // 🟢 NEW: Send Socket.IO event to Driver(s)
+    // If it's a specific driver assignment (e.g. reassign or direct booking)
+    // Note: 'to' logic might need check. If `from` is used for individual assignment, we need to handle that.
+    // For now, based on previous context, we trigger based on if we have a specific driver or if it's a broadcast.
+    // However, `postBookingCreation` seems to run after `Booking.create`.
+    // We need to fetch the booking to check `assignAllDriver` status or pass it in.
+
+    // Re-fetching booking to get accurate assignment status is safest
+    try {
+        const booking = await Booking.findOne({ where: { bookingId } });
+
+        if (booking) {
+            const bookingData = booking.toJSON();
+
+            if (booking.assignAllDriver && !booking.driverId) {
+                // Broadcast to all active drivers - Implementation pending fetching active drivers
+                debug.info(`ℹ️ Broadcast booking created ${bookingId} - Socket broadcast to all drivers requires fetching active drivers.`);
+
+            } else if (booking.driverId) {
+                // Specific driver assigned
+                emitNewTripOfferToDriver(booking.driverId, bookingData);
+                debug.info(`✅ Socket event 'NEW_TRIP_OFFER' sent to driver ${booking.driverId}`);
+            }
+        }
+    } catch (err) {
+        debug.error(`❌ Error sending driver socket notification: ${err}`);
+    }
+
+
     const customerNotification = await createCustomerNotification({
         title: 'Booking has been successfully placed',
         message: `Hi ${customerName}, your booking has been successfully placed.`,
@@ -280,7 +310,7 @@ export const sendBookingEmail = async ({
                     day: 'numeric',
                 })
                 : null,
-            vehicleType:  vehicleType,
+            vehicleType: vehicleType,
             // vehicleName: tariff.vehicles.name,
             serviceType: booking.serviceType,
             estimatedAmount,

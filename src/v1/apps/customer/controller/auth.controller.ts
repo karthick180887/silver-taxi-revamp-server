@@ -4,7 +4,7 @@ import { Op, Transaction } from "sequelize";
 import SMSService from "../../../../common/services/sms/sms";
 import { sequelize } from "../../../../common/db/postgres";
 import { phoneNumberSchema, customerSignUpSchema } from "../../../../common/validations/customerSchema";
-import { debugLogger as debug, infoLog, infoLogger as log } from "../../../../utils/logger";
+import { debugLogger as debug, infoLog, logger as log } from "../../../../utils/logger";
 import { debugLog as newDebug, infoLog as newInfo } from "../../../../utils/logger";
 import { Customer } from "../../../core/models/customer";
 import { generateReferralCode } from "../../../core/function/referCode";
@@ -43,11 +43,13 @@ export const generatedCustomerToken = async (
 }
 
 
-export const customerLogin = async (req: Request, res: Response): Promise<void> => {
+export const customerLogin = async (req: Request, res: Response) => {
 
     const adminId = req.body.adminId ?? req.query.adminId;
     const { type } = req.params;
-    const { phone, otp, smsToken } = req.body;
+    const { phone, otp, smsToken, customerId, fcmToken } = req.body;
+
+    log.info(`[DEBUG] customerLogin HIT. Type: ${type}, Phone: ${phone}`);
 
     try {
 

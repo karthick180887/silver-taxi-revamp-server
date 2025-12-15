@@ -18,7 +18,7 @@ import { createInvoice, InvoiceResponse } from "../../../core/function/createFn/
 import { sumSingleObject } from "../../../core/function/objectArrays";
 import { createCustomerNotification, createNotification } from "../../../core/function/notificationCreate";
 import { sendToSingleToken } from "../../../../common/services/firebase/appNotify";
-import { sendNotification } from "../../../../common/services/socket/websocket";
+import { sendNotification, emitTripUpdateToCustomer } from "../../../../common/services/socket/websocket";
 import { publishNotification } from "../../../../common/services/rabbitmq/publisher";
 import { toLocalTime } from "../../../core/function/dataFn";
 
@@ -596,7 +596,6 @@ export const tripStarted = async (req: Request, res: Response) => {
             });
         }
 
-        // Send FCM notifications
         // Send FCM notification to customer
         const customer = await Customer.findOne({
             where: { customerId: booking.customerId, adminId },
@@ -624,6 +623,15 @@ export const tripStarted = async (req: Request, res: Response) => {
         } else {
             debug.info(`Customer FCM token not available for customerId: ${booking.customerId}`);
         }
+
+        // 🟢 NEW: Emit Socket Event for Live Tracking
+        emitTripUpdateToCustomer(booking.customerId, {
+            bookingId: booking.bookingId,
+            status: 'Started',
+            tripStartedTime: booking.tripStartedTime,
+            driverId: driverId,
+            message: "Trip Started"
+        });
 
         // Send FCM notification to vendor (if booking was created by vendor)
         if (booking.createdBy === "Vendor" && booking.vendorId) {
@@ -843,7 +851,7 @@ export const tripCompleted = async (req: Request, res: Response) => {
 
             await activityLog.update({
                 tripCompletedTime: now.toDate(),
-                activeDrivingMinutes : isNaN(activeDrivingMinutes) ? 0 : activeDrivingMinutes,
+                activeDrivingMinutes: isNaN(activeDrivingMinutes) ? 0 : activeDrivingMinutes,
                 tripStatus: "Completed"
             });
 
@@ -1021,6 +1029,15 @@ export const tripCompleted = async (req: Request, res: Response) => {
                 isCustomerAvailable = true
 
             }
+
+            // 🟢 NEW: Emit Socket Event for Trip Completion
+            emitTripUpdateToCustomer(booking.customerId, {
+                bookingId: booking.bookingId,
+                status: 'Completed',
+                tripCompletedTime: new Date(),
+                finalAmount: booking.tripCompletedFinalAmount,
+                message: "Trip Completed"
+            });
 
             // Send FCM notification to vendor (if booking was created by vendor)
             if (booking.createdBy === "Vendor" && booking.vendorId) {

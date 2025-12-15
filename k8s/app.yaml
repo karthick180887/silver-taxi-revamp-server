@@ -5,6 +5,7 @@ metadata:
 data:
   PORT: "8081"
   NODE_ENV: development
+  MOCK_OTP: "true"
   # External URL for mobile app to access images via API proxy
   BASE_URL: http://10.0.6.2:30060
   FRONT_END_BASE_URL: http://localhost:3000

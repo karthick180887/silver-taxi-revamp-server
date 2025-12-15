@@ -19,3 +19,12 @@ docker-compose.yml
 # Ignore build artifacts
 dist/
 build/
+# Ignore frontend applications
+admin-dashboard/
+customer/
+driver/
+vendor/
+
+# Ignore K8s configs (managed by Tilt/Helm)
+k8s/
+helm.zip

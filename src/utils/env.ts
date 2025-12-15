@@ -13,6 +13,7 @@ const envSchema = z.object({
     .enum(["development", "production", "prod", "dev", "test", "local"])
     .default("production"),
   APP_MODULES: z.string().default("all"),
+  MOCK_OTP: z.string().optional(),
   // postgres - config
   // dev
   POSTGRES_USER: z.string().optional(),

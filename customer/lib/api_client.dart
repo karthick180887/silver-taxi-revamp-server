@@ -378,6 +378,38 @@ class CustomerApiClient {
     );
   }
 
+  /// GET /customer/services - Get service types
+  Future<ApiResult> getServices({
+    required String token,
+    required String adminId,
+    String? customerId,
+  }) async {
+    final queryParams = {'adminId': adminId};
+    if (customerId != null) queryParams['customerId'] = customerId;
+
+    return _get(
+      '/customer/services',
+      token: token,
+      queryParams: queryParams,
+    );
+  }
+
+  /// GET /customer/vehicles-by-service - Get vehicles for a service
+  Future<ApiResult> getVehiclesByService({
+    required String token,
+    required String adminId,
+    required String serviceId,
+  }) async {
+    return _get(
+      '/customer/vehicles-by-service',
+      token: token,
+      queryParams: {
+        'adminId': adminId,
+        'serviceId': serviceId,
+      },
+    );
+  }
+
   // ============================================
   // Helper Methods
   // ============================================

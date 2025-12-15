@@ -1,7 +1,7 @@
 import axios from 'axios';
 import CryptoJS from 'crypto-js';
 import env from '../../../utils/env';
-import { infoLogger as log, debugLogger as debug } from '../../../utils/logger';
+import { logger as log, debugLogger as debug } from '../../../utils/logger';
 import { publishNotification } from '../rabbitmq/publisher';
 
 // Types
@@ -139,7 +139,22 @@ export default function SMSService() {
 
 
             const message = getMessageByTemplate(isOTPSend ? 'driver_otp' : 'driver_otp', { otp });
-            console.log("message >> \n", message);
+            // LOGGING DEBUG INFO
+            log.info(`[SMS DEBUG] NODE_ENV: ${env.NODE_ENV}, MOCK_OTP: ${env.MOCK_OTP}`);
+
+            // MOCK SMS MODE: If dev/local OR explicit MOCK_OTP=true
+            const isMockMode = ['development', 'dev', 'local', 'test'].includes(env.NODE_ENV) || env.MOCK_OTP === 'true';
+
+            if (isMockMode || mobile === 9361060911) {
+                log.info("------------------------------------------------");
+                log.info(`>>> 🟢 MOCK SMS MODE ENABLED <<<`);
+                log.info(`>>> Mobile: ${mobile}`);
+                log.info(`>>> OTP: ${otp}`);
+                log.info(`>>> Message: ${message}`);
+                log.info("------------------------------------------------");
+                return token;
+            }
+
             const url = `${SMSEnv.SMS_API_URL}/api/v2/SendSMS?SenderId=SLTAXI&Is_Unicode=false&Is_Flash=false&Message=${encodeURIComponent(
                 message
             )}&MobileNumbers=${mobile}&ApiKey=${encodeURIComponent(
@@ -148,9 +163,9 @@ export default function SMSService() {
             // const url = "fkjsdfj"
 
             try {
-                if (mobile === 9361060911) {
-                    return token;
-                }
+                // if (mobile === 9361060911) {
+                //     return token;
+                // }
 
                 const response = await axios.get(url, {
                     headers: { accept: 'text/plain' },

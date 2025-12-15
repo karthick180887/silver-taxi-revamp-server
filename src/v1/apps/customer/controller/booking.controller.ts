@@ -247,12 +247,13 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         const adminId = req.body.adminId ?? req.query.adminId;
         const customerId = req.body.customerId ?? req.query.id;
         const {
-            pickup, drop, pickupDateTime,
+            pickupDateTime,
             stops,
             dropDate, enquiryId,
             serviceType,
             offerId,
             type,
+            tripType,
             paymentMethod,
             advanceAmount,
             discountAmount,
@@ -260,7 +261,6 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             finalAmount,
             distance,
             tariffId,
-            vehicleId,
             serviceId,
             upPaidAmount,
             packageId, packageType,
@@ -287,6 +287,27 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             walletAmount,
         } = req.body;
 
+        // Map frontend keys to backend keys
+        const pickup = req.body.pickup ?? req.body.pickupLocation;
+        const drop = req.body.drop ?? req.body.dropLocation;
+        const vehicleId = req.body.vehicleId ?? req.body.vehicleTypeId;
+
+        // MAP tripType to serviceType if missing
+        let validServiceType = serviceType;
+        if (!validServiceType) {
+            if (tripType === 'one_way') validServiceType = 'Daily';
+            else if (tripType === 'round_trip') validServiceType = 'Round trip';
+            else if (tripType === 'rental') validServiceType = 'Rental';
+        }
+
+        if (!validServiceType) {
+            res.status(400).json({
+                success: false,
+                message: "Service Name (serviceType) is required (e.g. Daily, Round trip, Rental)",
+            });
+            return;
+        }
+
         const today = dayjs().toDate();
 
         const usageId = `pu-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -296,7 +317,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         let days = 1;
 
 
-        if (serviceType === "Round trip" && !dropDate) {
+        if (validServiceType === "Round trip" && !dropDate) {
             res.status(400).json({
                 success: false,
                 message: "dropDate is required for Round trip",
@@ -344,13 +365,13 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         start.setHours(0, 0, 0, 0);
         end.setHours(0, 0, 0, 0);
 
-        days = serviceType === "Round trip"
+        days = validServiceType === "Round trip"
             ? Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
             : 1;
 
 
         const getService = await Service.findOne({
-            where: { name: serviceType, adminId },
+            where: { name: validServiceType, adminId },
         });
 
         if (!getService) {
@@ -412,7 +433,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             pickupDateTime: pickupDateTimeObj,
             dropDate: dropDateObj,
             enquiryId: enquiryId ?? null,
-            serviceType,
+            serviceType: validServiceType,
             tariffId: tariffId ?? null,
             serviceId: serviceId ?? service,
             vehicleId,

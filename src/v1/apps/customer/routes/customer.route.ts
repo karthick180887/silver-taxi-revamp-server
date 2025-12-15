@@ -1,6 +1,6 @@
 import express, { Router } from "express";
-import { getCustomerDetails, getTopDestinations, updateProfile, fcmTokenUpdate , getAdminDetails} from "../controller/customer.controller";
-import { getServices } from "../controller/common.controller";
+import { getCustomerDetails, getTopDestinations, updateProfile, fcmTokenUpdate, getAdminDetails } from "../controller/customer.controller";
+import { getServices, getVehiclesByService } from "../controller/common.controller";
 const router: Router = express.Router();
 
 
@@ -8,7 +8,8 @@ router.get("/get-details", getCustomerDetails);
 
 router.get("/get-destinations", getTopDestinations);
 
-router.get("/services", getServices)
+router.get("/services", getServices);
+router.get("/vehicles-by-service", getVehiclesByService);
 
 
 router.get("/admin-details", getAdminDetails);

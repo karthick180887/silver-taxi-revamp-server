@@ -81,7 +81,14 @@ export async function appAuth(req: Request, res: Response, next: NextFunction) {
 //Customer App
 
 export async function customerApp(req: Request, res: Response, next: NextFunction) {
+  console.log(`[DEBUG] customerApp Middleware. Path: ${req.path}, OriginalUrl: ${req.originalUrl}`);
   try {
+    // Allow login route without token
+    if (req.path.startsWith('/auth')) {
+      next();
+      return;
+    }
+
     const token = await getJwtToken(req);
 
     if (!token) {
