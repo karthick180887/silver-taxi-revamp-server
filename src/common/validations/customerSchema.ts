@@ -12,9 +12,10 @@ export const customerSignUpSchema = z.object({
   fcmToken: z.string().min(1, "FCM Token is required"),
   walletAmount: z.number().optional().default(0),
 
-  otp: z.string().min(6, "OTP must be at least 6 characters long").max(6, "OTP must be exactly 6 characters long"),
-  smsToken: z.string().min(1, "SMS Token is required"),
-  referralCode: z.string().optional()
+  otp: z.string().min(6, "OTP must be at least 6 characters long").max(6, "OTP must be exactly 6 characters long").optional(),
+  smsToken: z.string().min(1, "SMS Token is required").optional(),
+  referralCode: z.string().optional(),
+  accessToken: z.string().optional()
 })
 
 

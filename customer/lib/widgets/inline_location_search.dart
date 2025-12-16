@@ -186,17 +186,16 @@ class _InlineLocationSearchState extends State<InlineLocationSearch> {
       children: [
         // Input Field
         Container(
-          decoration: BoxDecoration(
-            color: widget.iconColor.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
+          color: Colors.transparent, // Transparent to blend with parent card
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Icon(widget.icon, color: widget.iconColor, size: 20),
-              ),
+               // Icon is handled by parent Timeline now, removing from here if desired? 
+               // Wait, keeping it for now but making it optional or styled differently.
+               // Actually, for the timeline look, we should hide the icon here and let HomeScreen draw it.
+               // But to keep this widget reusable, let's keep it but make it minimal.
+               // Refactoring:
+               
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -204,23 +203,25 @@ class _InlineLocationSearchState extends State<InlineLocationSearch> {
                   children: [
                     if (_controller.text.isNotEmpty || _focusNode.hasFocus)
                       Padding(
-                        padding: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.only(bottom: 2),
                         child: Text(
                           widget.label,
-                          style: AppTextStyles.label.copyWith(fontSize: 10, color: AppColors.textLight),
+                          style: AppTextStyles.label.copyWith(fontSize: 10, color: AppColors.textTertiary),
                         ),
                       ),
                     TextField(
                       controller: _controller,
                       focusNode: _focusNode,
                       onChanged: _onSearchChanged,
-                      style: AppTextStyles.bodyMedium,
+                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+                      cursorColor: AppColors.primary,
                       decoration: InputDecoration(
                         hintText: widget.label,
-                        hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textLight),
+                        hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textTertiary),
                         border: InputBorder.none,
                         isDense: true,
-                        contentPadding: const EdgeInsets.only(right: 12, bottom: 12, top: 4),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                        // Remove prefix icon from Input Decoration
                       ),
                     ),
                   ],
@@ -228,7 +229,7 @@ class _InlineLocationSearchState extends State<InlineLocationSearch> {
               ),
               if (_controller.text.isNotEmpty)
                 IconButton(
-                  icon: const Icon(Icons.close, size: 16, color: AppColors.textLight),
+                  icon: const Icon(Icons.close, size: 16, color: AppColors.textTertiary),
                   onPressed: () {
                     _controller.clear();
                     _onSearchChanged('');

@@ -1,4 +1,5 @@
 allow_k8s_contexts('do-blr1-k8s-1-34-1-do-1-blr1-1765796098736')
+update_settings(suppress_unused_image_warnings=["admin-dashboard:dev"])
 default_registry('registry.digitalocean.com/cabigo')
 # Config: mode (default: all)
 # Options: 

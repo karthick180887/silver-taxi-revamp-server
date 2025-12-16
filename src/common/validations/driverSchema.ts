@@ -14,8 +14,9 @@ export const signUpSchema = z.object({
     email: z.string().optional().default(""),
     fcmToken: z.string().min(1, "FCM Token is required"),
     walletAmount: z.number().optional().default(0),
-    otp: z.string().min(6, "OTP must be at least 6 characters long").max(6, "OTP must be exactly 6 characters long"),
-    smsToken: z.string().min(1, "SMS Token is required"),
+    otp: z.string().min(6, "OTP must be at least 6 characters long").max(6, "OTP must be exactly 6 characters long").optional(),
+    smsToken: z.string().min(1, "SMS Token is required").optional(),
+    accessToken: z.string().optional(),
 })
 
 // ✅ Step 1: Basic Driver Info
@@ -42,13 +43,13 @@ export const step2Schema = z.object({
     vehicleType: z.string().min(1),
     vehicleNumber: z.string().min(1),
     // vehicleYear: z.string().min(1, { message: "Vehicle year is required" })
-        // .refine(
-        //     (val) => {
-        //         const year = Number(val);
-        //         return !isNaN(year) && year >= 1900 && year <= 2100;
-        //     },
-        //     { message: "Year must be between 1900 and 2100" }
-        // ),
+    // .refine(
+    //     (val) => {
+    //         const year = Number(val);
+    //         return !isNaN(year) && year >= 1900 && year <= 2100;
+    //     },
+    //     { message: "Year must be between 1900 and 2100" }
+    // ),
     fuelType: z.string().optional(),
     isActive: z.boolean().optional(),
 });

@@ -37,8 +37,8 @@ spec:
         - name: do-registry-secret
       containers:
         - name: app
-          image: admin-dashboard:dev
-          imagePullPolicy: IfNotPresent
+          image: registry.digitalocean.com/cabigo/admin-dashboard:latest
+          imagePullPolicy: Always
           resources:
             requests:
               cpu: "100m"

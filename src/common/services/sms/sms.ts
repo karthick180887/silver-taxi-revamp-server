@@ -42,6 +42,14 @@ const SMSEnv: SMSEnv = {
 
 const OTP_EXPIRY_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
+function formatMobile(mobile: string | number): string {
+    let cleanMobile = mobile.toString().replace(/\D/g, '');
+    if (cleanMobile.length === 10) {
+        cleanMobile = '91' + cleanMobile;
+    }
+    return cleanMobile;
+}
+
 function getMessageByTemplate(type: SMSTemplateType, data: Record<string, string | number>): string {
     switch (type) {
         case 'driver_assigned':
@@ -88,6 +96,9 @@ export default function SMSService() {
         /**
          * Sends an OTP SMS via Nettyfish
          */
+        /**
+         * Sends an OTP SMS via MSG91
+         */
         sendOtp: async ({
             mobile,
             isOTPSend = false,
@@ -95,13 +106,11 @@ export default function SMSService() {
             sendOtp = null,
             id = null
         }: SendOTPPayload): Promise<string | boolean> => {
-            if (!SMSEnv.SMS_API_KEY || !SMSEnv.SMS_CLIENT_ID || !SMSEnv.OTP_SECRET) {
-                debug.error('SMS API key, Client ID, or OTP secret missing in env');
-                return false;
-            }
-
-            console.log("SMSEnv.SMS_API_URL >> ", SMSEnv.SMS_API_URL)
-
+            // MSG91 Credentials (Hardcoded as per request)
+            // MSG91 Credentials (Hardcoded as per request)
+            const MSG91_AUTH_KEY = "482940Tknm3Vdw694116c5P1";
+            const MSG91_TEMPLATE_ID = "693fe05bde90a804b07fbea9";
+            const MSG91_URL = "https://control.msg91.com/api/v5/otp";
 
             let otp = sendOtp || Math.floor(100000 + Math.random() * 900000);
             if (mobile === 9361060911) {
@@ -137,44 +146,50 @@ export default function SMSService() {
             publishNotification("notification.whatsapp", waPayload)
                 .catch((err) => console.log("❌ Failed to publish Whatsapp notification", err));
 
-
-            const message = getMessageByTemplate(isOTPSend ? 'driver_otp' : 'driver_otp', { otp });
             // LOGGING DEBUG INFO
             log.info(`[SMS DEBUG] NODE_ENV: ${env.NODE_ENV}, MOCK_OTP: ${env.MOCK_OTP}`);
 
-            // MOCK SMS MODE: If dev/local OR explicit MOCK_OTP=true
-            const isMockMode = ['development', 'dev', 'local', 'test'].includes(env.NODE_ENV) || env.MOCK_OTP === 'true';
+            // MOCK SMS MODE: Hard disabled for production usage as per user
+            const isMockMode = false;
 
             if (isMockMode || mobile === 9361060911) {
                 log.info("------------------------------------------------");
                 log.info(`>>> 🟢 MOCK SMS MODE ENABLED <<<`);
                 log.info(`>>> Mobile: ${mobile}`);
                 log.info(`>>> OTP: ${otp}`);
-                log.info(`>>> Message: ${message}`);
                 log.info("------------------------------------------------");
                 return token;
             }
 
-            const url = `${SMSEnv.SMS_API_URL}/api/v2/SendSMS?SenderId=SLTAXI&Is_Unicode=false&Is_Flash=false&Message=${encodeURIComponent(
-                message
-            )}&MobileNumbers=${mobile}&ApiKey=${encodeURIComponent(
-                SMSEnv.SMS_API_KEY
-            )}&ClientId=${encodeURIComponent(SMSEnv.SMS_CLIENT_ID)}`;
-            // const url = "fkjsdfj"
-
             try {
-                // if (mobile === 9361060911) {
-                //     return token;
-                // }
+                const formattedMobile = formatMobile(mobile);
 
-                const response = await axios.get(url, {
-                    headers: { accept: 'text/plain' },
-                });
+                // Use Headers for AuthKey and Body for Data (V5 Standard)
+                const response = await axios.post(
+                    MSG91_URL,
+                    {
+                        template_id: MSG91_TEMPLATE_ID,
+                        mobile: formattedMobile,
+                        otp: otp
+                    },
+                    {
+                        headers: {
+                            "authkey": MSG91_AUTH_KEY,
+                            "Content-Type": "application/json"
+                        }
+                    }
+                );
 
-                log.info(`Nettyfish OTP SMS sent: ${JSON.stringify(response.data)}\n`);
+                log.info(`MSG91 OTP SMS sent: ${JSON.stringify(response.data)}\n`);
                 return token;
+
             } catch (error: any) {
-                debug.error(`Failed to send OTP SMS: ${error?.response?.data || error.message}`);
+                const errMsg = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
+                debug.error(`Failed to send MSG91 OTP: ${errMsg}`);
+
+                // Fallback: If MSG91 fails, we still return the token so the user might retry or use Whatsapp
+                // But generally, we should signal failure. However, existing logic returns token even on error sometimes? 
+                // Let's return false to indicate system failure.
                 return false;
             }
         },
@@ -221,57 +236,128 @@ export default function SMSService() {
         },
 
         /**
-         * Verifies the OTP using encrypted token
+         * Verifies the OTP using MSG91 API
          */
         verifyOTP: async ({
             otp,
-            token,
+            token, // Kept for interface compatibility but unused for MSG91
+            mobile
         }: {
             otp: string;
-            token: string;
+            token?: string;
+            mobile: string | number;
         }): Promise<VerifyOTPResponse> => {
+            const MSG91_AUTH_KEY = "482940Tknm3Vdw694116c5P1";
+            const MSG91_VERIFY_URL = "https://control.msg91.com/api/v5/otp/verify";
+
             try {
-                debug.info(`Verifying OTP: ${otp}, token: ${token}`);
-                const bytes = CryptoJS.AES.decrypt(token, SMSEnv.OTP_SECRET);
-                const decrypted = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+                debug.info(`Verifying OTP via MSG91 for mobile: ${mobile}, otp: ${otp}`);
 
-                if (!decrypted.otp || !decrypted.expiresAt) {
-                    return {
-                        status: 400,
-                        success: false,
-                        message: 'Invalid token format',
-                    };
+                // MOCK SMS MODE (Hard Disabled for Prod)
+                const isMockMode = false;
+                if (isMockMode || mobile === 9361060911) {
+                    if (otp === "123456") {
+                        return {
+                            status: 200,
+                            success: true,
+                            message: 'OTP verified successfully (Mock)',
+                            id: 'mock_id'
+                        };
+                    }
                 }
 
-                if (Date.now() > decrypted.expiresAt) {
-                    return {
-                        status: 410,
-                        success: false,
-                        message: 'OTP expired',
-                    };
-                }
+                const formattedMobile = formatMobile(mobile);
 
-                if (decrypted.otp == otp) {
+                const response = await axios.get(MSG91_VERIFY_URL, {
+                    params: {
+                        mobile: formattedMobile,
+                        otp: otp
+                    },
+                    headers: {
+                        "authkey": MSG91_AUTH_KEY
+                    }
+                });
+
+                log.info(`MSG91 Verify Response: ${JSON.stringify(response.data)}`);
+
+                if (response.data.type === 'success') {
                     return {
                         status: 200,
                         success: true,
-                        message: 'OTP verified successfully',
-                        id: decrypted.id,
+                        message: response.data.message || 'OTP verified successfully',
+                        id: undefined // MSG91 verify doesn't return our internal ID
+                    };
+                } else {
+                    return {
+                        status: 400,
+                        success: false,
+                        message: response.data.message || 'Invalid OTP',
                     };
                 }
 
-                return {
-                    status: 401,
-                    success: false,
-                    message: 'Invalid OTP',
-                };
             } catch (err: any) {
-                debug.error('OTP Verification Error:', err);
+                const errMsg = err?.response?.data?.message || err.message;
+                debug.error('OTP Verification Error:', errMsg);
                 return {
-                    status: 500,
+                    status: 400, // Treat API errors (like "OTP not parseable") as Bad Request/Invalid
                     success: false,
-                    message:
-                        err instanceof Error ? err.message : 'An error occurred during OTP verification',
+                    message: errMsg || 'An error occurred during OTP verification',
+                };
+            }
+        },
+
+        verifyWidgetToken: async (accessToken: string): Promise<VerifyOTPResponse> => {
+            const MSG91_AUTH_KEY = "482940Ari1oNd366940ddb6P1";
+            const MSG91_VERIFY_TOKEN_URL = "https://control.msg91.com/api/v5/widget/verifyAccessToken";
+
+            try {
+                debug.info(`Verifying Widget Token via MSG91: ${accessToken}`);
+
+                const payload = {
+                    "authkey": MSG91_AUTH_KEY,
+                    "access-token": accessToken
+                };
+                debug.info(`Sending Payload to MSG91: ${JSON.stringify(payload)}`);
+
+                const response = await axios.post(
+                    MSG91_VERIFY_TOKEN_URL,
+                    payload,
+                    {
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Accept": "application/json"
+                        }
+                    }
+                );
+
+                log.info(`MSG91 Token Verify Response: ${JSON.stringify(response.data)}`);
+
+                // 702 = "access-token already verified". We treat this as success for the Login->Signup fallback flow.
+                if (
+                    response.data.type === 'success' ||
+                    response.data.message === 'success' ||
+                    response.data.code == 702
+                ) {
+                    return {
+                        status: 200,
+                        success: true,
+                        message: 'Token verified successfully',
+                        id: undefined
+                    };
+                } else {
+                    return {
+                        status: 400,
+                        success: false,
+                        message: response.data.message || 'Invalid Token'
+                    };
+                }
+            } catch (err: any) {
+                const errMsg = err?.response?.data?.message || err.message;
+                debug.error('Token Verification Error:', errMsg);
+                return {
+                    status: 400,
+                    success: false,
+                    message: errMsg || 'Token verification failed'
                 };
             }
         },

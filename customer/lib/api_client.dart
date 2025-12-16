@@ -37,6 +37,7 @@ class CustomerApiClient {
     String? phone,
     String? otp,
     String? smsToken, // Required for verify
+    String? accessToken,
   }) async {
     if (type == 'send') {
       return _post(
@@ -52,13 +53,24 @@ class CustomerApiClient {
         '/customer/auth/login/verify',
         {
           'adminId': adminId,
-          'otp': otp!,
-          'smsToken': smsToken!,
+          if (otp != null) 'otp': otp,
+          if (smsToken != null) 'smsToken': smsToken,
+          if (accessToken != null) 'accessToken': accessToken,
+          if (phone != null) 'phone': phone,
         },
         allowedStatus: {200, 400, 401},
       );
+    } else if (type == 'sdk_login') {
+      return _post(
+        '/customer/auth/login/sdk_login',
+        {
+          'adminId': adminId,
+          'phone': phone!,
+        },
+        allowedStatus: {200, 400, 404},
+      );
     } else {
-      throw ArgumentError('type must be "send" or "verify"');
+      throw ArgumentError('type must be "send", "verify" or "sdk_login"');
     }
   }
 
@@ -72,13 +84,15 @@ class CustomerApiClient {
     String? email,
     String? otp,
     String? smsToken, // Required for verify
+    String? fcmToken,
+    String? accessToken,
   }) async {
     if (type == 'send') {
       return _post(
         '/customer/auth/signup-otp/send',
         {
           'adminId': adminId,
-          'phone': phone!,
+          'phoneNo': phone!,
           'name': name!,
           if (email != null) 'email': email,
         },
@@ -89,10 +103,13 @@ class CustomerApiClient {
         '/customer/auth/signup-otp/verify',
         {
           'adminId': adminId,
-          'otp': otp!,
-          'smsToken': smsToken!,
+          'phone': phone!,
+          if (otp != null) 'otp': otp,
+          if (smsToken != null) 'smsToken': smsToken,
+          if (accessToken != null) 'accessToken': accessToken,
           'name': name!,
           if (email != null) 'email': email,
+          if (fcmToken != null) 'fcmToken': fcmToken,
         },
         allowedStatus: {200, 400, 409},
       );

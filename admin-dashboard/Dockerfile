@@ -10,7 +10,8 @@ RUN npm ci
 
 # Copy source code
 # Force cache invalidation
-ARG CACHE_BUST=202512131610
+# Force cache invalidation - Updated for Logout Fix
+ARG CACHE_BUST=202512161745
 ENV NEXT_PUBLIC_API_URL=https://api.cabigo.in
 COPY . .
 

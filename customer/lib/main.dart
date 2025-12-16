@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sendotp_flutter_sdk/sendotp_flutter_sdk.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 import 'design_system.dart';
@@ -36,6 +37,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   void initState() {
     super.initState();
+    // Initialize MSG91 OTP Widget
+    OTPWidget.initializeWidget(
+      '356c70646b5a303735303838', // Widget ID
+      '482940T8rHqdAb4J56940e1baP1', // Auth Token
+    );
     _checkAuth();
   }
 

@@ -55,9 +55,15 @@ export function ClientHeader({ pageTitle, sidebarCollapsed }: ClientHeaderProps)
     const handleLogout = () => {
         if (typeof window !== 'undefined') {
             localStorage.removeItem('token');
-            localStorage.removeItem('admin_token');
-            document.cookie = 'token=; Max-Age=0; path=/;';
-            document.cookie = 'admin_token=; Max-Age=0; path=/;';
+            localStorage.removeItem('admin_token'); // Keep for legacy if needed
+            localStorage.removeItem('user');
+
+            // Clear Middleware Cookie (adminToken)
+            document.cookie = 'adminToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+            // Also clear legacy/wrong named cookies just in case
+            document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+            document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+
             window.location.href = '/login';
         }
     };

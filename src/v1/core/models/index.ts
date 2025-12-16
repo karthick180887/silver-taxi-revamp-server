@@ -195,9 +195,9 @@ export const singleModelSync = async (model: any, options: SyncOptions = { alter
 )();
 
 
-(async () => {
-    await syncDatabase({ alter: true });
-})();
+// (async () => {
+//     await syncDatabase({ alter: true });
+// })();
 
 // Define associations
 // Admin has many Vendors

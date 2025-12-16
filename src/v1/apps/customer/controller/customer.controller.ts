@@ -318,7 +318,7 @@ export const updateProfile = async (req: Request, res: Response) => {
                 return;
             }
 
-            const smsResponse = await sms.verifyOTP({ otp, token: smsToken });
+            const smsResponse = await sms.verifyOTP({ otp, token: smsToken, mobile: phone });
 
             if (!smsResponse.success) {
                 res.status(401).json({

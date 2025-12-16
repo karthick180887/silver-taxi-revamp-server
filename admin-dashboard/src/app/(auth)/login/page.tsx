@@ -24,6 +24,9 @@ export default function LoginPage() {
       const data = response.data.data;
       if (typeof window !== 'undefined') {
         localStorage.setItem('token', data.token);
+        // Set Cookie for Middleware
+        document.cookie = `adminToken=${data.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`;
+
         // Save the whole data object (minus token if preferred, but data is cleaner)
         // Construct a user object to ensure we capture all needed fields
         const userObj = {

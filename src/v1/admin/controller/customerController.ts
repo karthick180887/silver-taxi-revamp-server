@@ -289,9 +289,22 @@ export const getAdminAndVendorCustomers = async (req: Request, res: Response): P
 export const getCustomerById = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
+
+        let whereCondition: any = { customerId: id };
+
+        // Smart Lookup: Check both CustomerID (String) and ID (Integer)
+        if (!isNaN(Number(id))) {
+            whereCondition = {
+                [Op.or]: [
+                    { customerId: id },
+                    { id: Number(id) }
+                ]
+            };
+        }
+
         const customer = await Customer.findOne({
-            where: { customerId: id },
-            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
+            where: whereCondition,
+            attributes: { exclude: ['updatedAt', 'deletedAt'] } // Removed 'id' from exclude to ensure frontend gets the PK
         });
 
         if (!customer) {
@@ -321,7 +334,19 @@ export const deleteCustomer = async (req: Request, res: Response): Promise<void>
     try {
         const { id } = req.params;
 
-        const customer = await Customer.findOne({ where: { customerId: id } });
+        let whereCondition: any = { customerId: id };
+
+        // If id is numeric, allow lookup by primary key 'id' as well
+        if (!isNaN(Number(id))) {
+            whereCondition = {
+                [Op.or]: [
+                    { customerId: id },
+                    { id: Number(id) }
+                ]
+            };
+        }
+
+        const customer = await Customer.findOne({ where: whereCondition });
 
         if (!customer) {
             res.status(404).json({

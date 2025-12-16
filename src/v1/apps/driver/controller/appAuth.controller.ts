@@ -231,10 +231,16 @@ export const driverLogin = async (req: Request, res: Response): Promise<void> =>
                 log.info(`Driver login for adminId: ${adminId} and driverId: ${driverId} exit <<$`);
                 break;
             case "verify":
-                const smsResponse = await sms.verifyOTP({
-                    otp,
-                    token: smsToken
-                });
+                let smsResponse;
+                if (req.body.accessToken) {
+                    smsResponse = await sms.verifyWidgetToken(req.body.accessToken);
+                } else {
+                    smsResponse = await sms.verifyOTP({
+                        otp,
+                        token: smsToken,
+                        mobile: phone
+                    });
+                }
 
                 if (!smsResponse.success) {
                     debug.info(`Driver login for driverId: ${driverId} OTP verification failed`);
@@ -394,9 +400,22 @@ export const driverSignup = async (req: Request, res: Response): Promise<void> =
                     return;
                 }
 
-                const { name, phone, email, walletAmount = 0, fcmToken, otp, smsToken } = validData.data;
+                const { name, phone, email, walletAmount = 0, fcmToken, otp, smsToken, accessToken } = validData.data;
 
-                const smsResponse = await sms.verifyOTP({ otp, token: smsToken });
+                if (!accessToken && (!otp || !smsToken)) {
+                    res.status(400).json({
+                        success: false,
+                        message: "OTP and SMS Token are required if Access Token is not provided"
+                    });
+                    return;
+                }
+
+                let smsResponse;
+                if (accessToken) {
+                    smsResponse = await sms.verifyWidgetToken(accessToken);
+                } else {
+                    smsResponse = await sms.verifyOTP({ otp: otp!, token: smsToken!, mobile: phone });
+                }
 
                 if (!smsResponse.success) {
                     debug.info(`Driver signup for adminId: ${adminId} OTP verification failed`);

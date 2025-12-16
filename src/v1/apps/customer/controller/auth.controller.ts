@@ -113,43 +113,44 @@ export const customerLogin = async (req: Request, res: Response) => {
 
                 log.info(`Customer login for adminId: ${adminId} and customerId: ${customer.customerId} exit <<$`);
                 break;
-            case "verify":
-                const smsResponse = await sms.verifyOTP({
-                    otp,
-                    token: smsToken
-                });
+            case "verify": {
+                const { phone, otp, smsToken, accessToken } = req.body;
 
-
-                const id = smsResponse.id;
-
-
-                const customerData = await Customer.findOne({
-                    where: {
-                        adminId,
-                        customerId: id
-                    },
-                    attributes: { exclude: ['updatedAt', 'deletedAt'] }
-
-                });
-
-                if (!customerData) {
-                    res.status(404).json({
+                if (!accessToken && (!otp || !smsToken)) {
+                    res.status(400).json({
                         success: false,
-                        message: "Customer not found",
+                        message: "OTP and SMS Token are required if Access Token is provided",
                     });
                     return;
                 }
 
-
+                let smsResponse;
+                if (accessToken) {
+                    smsResponse = await sms.verifyWidgetToken(accessToken);
+                } else {
+                    smsResponse = await sms.verifyOTP({ otp: otp!, token: smsToken!, mobile: phone });
+                }
 
                 if (!smsResponse.success) {
-                    debug.info(`Customer login for customerId: ${customerData.customerId} OTP verification failed`);
+                    debug.info(`Customer login for phone: ${phone} OTP verification failed`);
                     res.status(smsResponse.status).json({
                         success: false,
                         message: smsResponse.message || "Invalid OTP",
                     });
                     return;
                 }
+
+                // Logic change: We no longer have 'id' from AES token.
+                // We rely on the phone number we just verified.
+                const formattedPhone = `91 ${phone}`;
+                const customerData = await Customer.findOne({
+                    where: {
+                        adminId,
+                        phone: formattedPhone
+                    },
+                    attributes: { exclude: ['updatedAt', 'deletedAt'] }
+                });
+
 
                 if (!customerData) {
                     debug.info(`Customer login for not found`);
@@ -182,6 +183,59 @@ export const customerLogin = async (req: Request, res: Response) => {
 
                 log.info(`Customer login for adminId: ${adminId} and customerId: ${customerData.customerId} exit <<$`);
                 return;
+            }
+            case "sdk_login":
+                // Login Trusted by Client-Side SDK Verification
+                const validSdkData = phoneNumberSchema.safeParse({ phoneNo: phone });
+
+                if (!validSdkData.success) {
+                    res.status(400).json({
+                        success: false,
+                        message: "Invalid phone number",
+                    });
+                    return;
+                }
+
+                // const sdkFormattedPhone = `91 ${phone}`; 
+                // Using exact same format as 'send' case
+                const sdkFormattedPhone = `91 ${phone}`;
+
+                const sdkCustomer = await Customer.findOne({
+                    where: {
+                        adminId,
+                        phone: sdkFormattedPhone
+                    },
+                    attributes: { exclude: ['updatedAt', 'deletedAt'] }
+                });
+
+                if (!sdkCustomer) {
+                    res.status(404).json({
+                        success: false,
+                        message: "Customer not found. Please sign up first.",
+                    });
+                    return;
+                }
+
+                const sdkAuthToken = await generatedCustomerToken(sdkCustomer.adminId, sdkCustomer.customerId, sdkCustomer.name);
+
+                if (typeof sdkAuthToken === "string") sdkCustomer.accessToken = sdkAuthToken;
+
+                // Update FCM Token if provided
+                if (req.body.fcmToken) {
+                    sdkCustomer.fcmToken = req.body.fcmToken;
+                    await sdkCustomer.save();
+                }
+
+                res.status(200).json({
+                    success: true,
+                    message: "Login successful (SDK Verified)",
+                    data: {
+                        customer: sdkCustomer,
+                        token: sdkAuthToken,
+                    }
+                });
+                return;
+
             default:
                 debug.info(`Customer login for customerId: ${phone} invalid type ${type}`);
                 res.status(400).json({
@@ -298,9 +352,19 @@ export const customerSignup = async (req: Request, res: Response): Promise<void>
                     return;
                 }
 
-                const { name, phone, fcmToken, walletAmount = 0, email, otp, smsToken, referralCode } = validData.data;
+                const { name, phone, fcmToken, walletAmount = 0, email, otp, smsToken, referralCode, accessToken } = validData.data;
 
-                const smsResponse = await sms.verifyOTP({ otp, token: smsToken });
+                if (!accessToken && (!otp || !smsToken)) {
+                    res.status(400).json({
+                        success: false,
+                        message: "OTP and SMS Token are required if Access Token is not provided"
+                    });
+                    return;
+                }
+
+                const smsResponse = accessToken
+                    ? await sms.verifyWidgetToken(accessToken)
+                    : await sms.verifyOTP({ otp: otp!, token: smsToken!, mobile: phone });
 
                 if (!smsResponse.success) {
                     debug.info(`Customer signup for adminId: ${adminId} OTP verification failed`);
