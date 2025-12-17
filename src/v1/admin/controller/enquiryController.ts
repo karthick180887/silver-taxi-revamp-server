@@ -5,22 +5,19 @@ import { sendNotification } from "../../../common/services/socket/websocket";
 import { createNotification } from "../../core/function/notificationCreate";
 
 // Get all enquires
+// Get all enquires
 export const getAllEnquiries = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
-        console.log(`[Enquiries] Fetching for adminId: ${adminId}`);
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
 
+        console.log(`[Enquiries] Fetching for adminId: ${adminId}, page: ${page}, limit: ${limit}`);
 
-        // if (!adminId) {
-        //     res.status(400).json({
-        //         success: false,
-        //         message: "adminId is required in Enquiry",
-        //     });
-        //     return;
-        // }
+        const offset = (page - 1) * limit;
 
-        const [enquires, totalEnquiriesCount, todayEnquiriesCount, websiteEnquiriesCount] = await Promise.all([
-            Enquiry.findAll({
+        const [enquiresData, totalEnquiriesCount, todayEnquiriesCount, websiteEnquiriesCount] = await Promise.all([
+            Enquiry.findAndCountAll({
                 // where: { adminId },
                 attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
                 include: {
@@ -28,7 +25,10 @@ export const getAllEnquiries = async (req: Request, res: Response): Promise<void
                     as: 'services',
                     attributes: ['serviceId', 'name'],
                 },
-                order: [['createdAt', 'DESC']]
+                order: [['createdAt', 'DESC']],
+                limit: limit,
+                offset: offset,
+                distinct: true
             }),
             Enquiry.count({}), // where: { adminId }
             Enquiry.count({
@@ -47,15 +47,25 @@ export const getAllEnquiries = async (req: Request, res: Response): Promise<void
             })
         ]);
 
+        const totalPages = Math.ceil(enquiresData.count / limit);
+
         res.status(200).json({
             success: true,
             message: "Enquires retrieved successfully",
             data: {
-                enquiries: enquires,
+                enquiries: enquiresData.rows,
                 stats: {
                     totalEnquiries: totalEnquiriesCount,
                     todayEnquiries: todayEnquiriesCount,
                     websiteEnquiries: websiteEnquiriesCount
+                },
+                pagination: {
+                    currentPage: page,
+                    totalPages: totalPages,
+                    totalCount: enquiresData.count,
+                    hasNext: page < totalPages,
+                    hasPrev: page > 1,
+                    limit: limit
                 }
             },
         });

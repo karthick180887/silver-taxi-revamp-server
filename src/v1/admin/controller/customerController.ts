@@ -101,21 +101,29 @@ export const createCustomer = async (req: Request, res: Response): Promise<void>
 };
 
 // Get all customers
+// Get all customers
 export const getAllCustomers = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
 
-        console.log(`[Customers] Fetching all customers for adminId: ${adminId}`);
+        console.log(`[Customers] Fetching customers for adminId: ${adminId}, page: ${page}, limit: ${limit}`);
 
         if (!adminId) {
-            console.log("[Customers] Missing adminId");
+            console.log("[Customers] Missing adminId"); // Should probably enforce this
         }
 
-        const [customers, totalCustomersCount, newCustomersToday, activeCustomers] = await Promise.all([
-            Customer.findAll({
+        const offset = (page - 1) * limit;
+
+        const [customersData, totalCustomersCount, newCustomersToday, activeCustomers] = await Promise.all([
+            Customer.findAndCountAll({
                 where: { adminId },
                 order: [['createdAt', 'DESC']],
-                attributes: { exclude: ['updatedAt', 'deletedAt'] }
+                attributes: { exclude: ['updatedAt', 'deletedAt'] },
+                limit: limit,
+                offset: offset,
+                distinct: true
             }),
             Customer.count({ where: { adminId } }),
             Customer.count({
@@ -134,25 +142,27 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<void
             })
         ]);
 
-        console.log(`[Customers] Found ${customers.length} records.`);
+        console.log(`[Customers] Found ${customersData.count} total records. Returning page ${page}.`);
+
+        const totalPages = Math.ceil(customersData.count / limit);
 
         res.status(200).json({
             success: true,
             message: "Customers retrieved successfully",
             data: {
-                customers: customers,
+                customers: customersData.rows,
                 stats: {
                     totalCustomers: totalCustomersCount,
                     newCustomersToday: newCustomersToday,
                     activeCustomers: activeCustomers
                 },
                 pagination: {
-                    currentPage: 1,
-                    totalPages: 1,
-                    totalCount: totalCustomersCount,
-                    hasNext: false,
-                    hasPrev: false,
-                    limit: totalCustomersCount
+                    currentPage: page,
+                    totalPages: totalPages,
+                    totalCount: customersData.count,
+                    hasNext: page < totalPages,
+                    hasPrev: page > 1,
+                    limit: limit
                 }
             }
         });

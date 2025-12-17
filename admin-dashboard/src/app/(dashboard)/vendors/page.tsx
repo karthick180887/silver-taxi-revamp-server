@@ -44,7 +44,7 @@ export default function VendorsPage() {
 
             setVendors(validVendors);
 
-            const totalCount = data.count || data.total || 0;
+            const totalCount = data.pagination?.totalCount || data.count || data.total || 0;
             setTotal(totalCount);
 
             // Calculate stats (using current page data for wallet sum as approximation)
@@ -128,7 +128,7 @@ export default function VendorsPage() {
                 <Input
                     placeholder="Search by name or company..."
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                     style={{ maxWidth: '300px' }}
                 />
             </div>

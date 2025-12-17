@@ -43,7 +43,7 @@ export default function DriversPage() {
             const data = res.data?.data || res.data || {};
             const driversArray = Array.isArray(data) ? data : (data.drivers || data.rows || []);
             setDrivers(Array.isArray(driversArray) ? driversArray : []);
-            setTotal(data.count || data.total || 0);
+            setTotal(data.pagination?.totalCount || data.count || data.total || 0);
         } catch (error) {
             console.error('Failed to fetch drivers:', error);
         } finally {
@@ -138,7 +138,7 @@ export default function DriversPage() {
                 <Input
                     placeholder="Search by name or phone..."
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                     style={{ maxWidth: '300px' }}
                 />
                 {selectedIds.length > 0 && (

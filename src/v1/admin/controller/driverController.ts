@@ -23,8 +23,11 @@ import { publishDriverWork } from "../../../common/services/rabbitmq/publisher";
 export const getAllDrivers = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const search = req.query.search as string;
 
-        console.log(`[Drivers] Fetching drivers for adminId: ${adminId}`);
+        console.log(`[Drivers] Fetching drivers for adminId: ${adminId}, page: ${page}, limit: ${limit}`);
 
         if (!adminId) {
             res.status(400).json({
@@ -33,9 +36,9 @@ export const getAllDrivers = async (req: Request, res: Response): Promise<void> 
             });
             return;
         }
-        const search = req.query.search as string;
 
         const whereCondition: any = { adminId };
+        const offset = (page - 1) * limit;
 
         if (search) {
             whereCondition[Op.or] = [
@@ -44,43 +47,55 @@ export const getAllDrivers = async (req: Request, res: Response): Promise<void> 
             ];
         }
 
-        const drivers = await Driver.findAll({
-            where: whereCondition,
-            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-            include: [{
-                model: DriverWallet,
-                as: 'wallet',
-                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
-            },
-            {
-                model: Vehicle,
-                as: 'vehicle',
-                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
-            }]
-        });
+        // Parallelize queries for better performance
+        const [driversData, totalActive, totalInactive] = await Promise.all([
+            Driver.findAndCountAll({
+                where: whereCondition,
+                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+                include: [{
+                    model: DriverWallet,
+                    as: 'wallet',
+                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
+                },
+                {
+                    model: Vehicle,
+                    as: 'vehicle',
+                    attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] }
+                }],
+                limit: limit,
+                offset: offset,
+                order: [['createdAt', 'DESC']],
+                distinct: true // Important for correct count with includes
+            }),
+            // Statistics counts (ignoring pagination but respecting search/adminId)
+            Driver.count({ where: { ...whereCondition, isActive: true } }),
+            Driver.count({ where: { ...whereCondition, isActive: false } })
+        ]);
 
-        console.log(`[Drivers] Found ${drivers.length} drivers.`);
+        console.log(`[Drivers] Found ${driversData.count} total matching drivers. Returning page ${page}.`);
 
         const driversCount = {
-            total: drivers.length,
-            active: drivers.filter(d => d.isActive).length,
-            inactive: drivers.filter(d => !d.isActive).length
+            total: driversData.count,
+            active: totalActive,
+            inactive: totalInactive
         };
+
+        const totalPages = Math.ceil(driversData.count / limit);
 
         res.status(200).json({
             success: true,
             message: "Drivers retrieved successfully",
             data: {
-                drivers: drivers,
+                drivers: driversData.rows,
                 driversCount: driversCount,
-                total: drivers.length, // Added for frontend pagination compatibility
+                total: driversData.count,
                 pagination: {
-                    currentPage: 1,
-                    totalPages: 1,
-                    totalCount: drivers.length,
-                    hasNext: false,
-                    hasPrev: false,
-                    limit: drivers.length
+                    currentPage: page,
+                    totalPages: totalPages,
+                    totalCount: driversData.count,
+                    hasNext: page < totalPages,
+                    hasPrev: page > 1,
+                    limit: limit
                 }
             }
         });

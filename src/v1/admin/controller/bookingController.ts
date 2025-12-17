@@ -194,9 +194,12 @@ export const getRecentBookings = async (req: Request, res: Response): Promise<vo
 
 // Get all bookings
 
+// Get all bookings
 export const getAllBookings = async (req: Request, res: Response): Promise<void> => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
 
         if (!adminId) {
             res.status(400).json({
@@ -212,49 +215,79 @@ export const getAllBookings = async (req: Request, res: Response): Promise<void>
         if (customerId) whereCondition.customerId = customerId;
         if (vendorId) whereCondition.vendorId = vendorId;
 
-        const bookings = await Booking.findAll({
-            where: whereCondition,
-            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-            order: [['createdAt', 'DESC']],
-            include: [
-                {
-                    model: Driver,
-                    as: 'driver',
-                    attributes: ['name', 'phone', 'driverId']
-                },
-                {
-                    model: Customer,
-                    as: 'customer',
-                    attributes: ['name', 'phone', 'customerId']
-                }
-            ]
-        });
+        const offset = (page - 1) * limit;
+
+        // Parallelize queries
+        const [bookingsData, ...stats] = await Promise.all([
+            Booking.findAndCountAll({
+                where: whereCondition,
+                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+                order: [['createdAt', 'DESC']],
+                limit: limit,
+                offset: offset,
+                include: [
+                    {
+                        model: Driver,
+                        as: 'driver',
+                        attributes: ['name', 'phone', 'driverId']
+                    },
+                    {
+                        model: Customer,
+                        as: 'customer',
+                        attributes: ['name', 'phone', 'customerId']
+                    }
+                ],
+                distinct: true
+            }),
+            // Statistics Counts (Admin Scope Only)
+            Booking.count({ where: { adminId, status: "Booking Confirmed" } }),
+            Booking.count({ where: { adminId, status: "Not-Started" } }),
+            Booking.count({ where: { adminId, status: "Started" } }),
+            Booking.count({ where: { adminId, status: "Completed" } }),
+            Booking.count({ where: { adminId, status: "Cancelled" } }),
+            Booking.count({ where: { adminId, vendorId: { [Op.ne]: null as any } } }),
+            Booking.count({ where: { adminId, isContacted: true } }),
+            Booking.count({ where: { adminId, isContacted: false } })
+        ]);
+
+        const [
+            bookingConfirmed,
+            notStarted,
+            started,
+            completed,
+            cancelled,
+            vendor,
+            contacted,
+            notContacted
+        ] = stats;
 
 
         const bookingsCount = {
-            bookingConfirmed: bookings.filter(b => b.status === "Booking Confirmed").length,
-            notStarted: bookings.filter(b => b.status === "Not-Started").length,
-            started: bookings.filter(b => b.status === "Started").length,
-            completed: bookings.filter(b => b.status === "Completed").length,
-            cancelled: bookings.filter(b => b.status === "Cancelled").length,
-            vendor: bookings.filter(b => b.vendorId !== null).length,
-            contacted: bookings.filter(b => b.isContacted).length,
-            notContacted: bookings.filter(b => !b.isContacted).length
+            bookingConfirmed,
+            notStarted,
+            started,
+            completed,
+            cancelled,
+            vendor,
+            contacted,
+            notContacted
         };
+
+        const totalPages = Math.ceil(bookingsData.count / limit);
 
         res.status(200).json({
             success: true,
             message: "Bookings retrieved successfully",
             data: {
-                bookings: bookings,
+                bookings: bookingsData.rows,
                 bookingsCount: bookingsCount,
                 pagination: {
-                    currentPage: 1,
-                    totalPages: 1,
-                    totalCount: bookings.length,
-                    hasNext: false,
-                    hasPrev: false,
-                    limit: bookings.length
+                    currentPage: page,
+                    totalPages: totalPages,
+                    totalCount: bookingsData.count,
+                    hasNext: page < totalPages,
+                    hasPrev: page > 1,
+                    limit: limit
                 }
             }
         });

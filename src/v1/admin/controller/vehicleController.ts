@@ -3,6 +3,7 @@ import { Vehicle } from "../../core/models/vehicles";
 import { Tariff, VehicleTypes } from "../../core/models";
 import fs from 'fs/promises';
 import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
+import { Op } from "sequelize";
 
 
 
@@ -14,8 +15,10 @@ export const getAllVehicles = async (req: Request, res: Response) => {
 
         const where: any = { adminId };
         // Default to unassigned vehicles (driverId is null) unless explicitly requested otherwise
+        // STRICT REQUIREMENT: driverId is NULL AND imageUrl is NOT NULL
         if (unassigned !== 'false') {
             where.driverId = null;
+            where.imageUrl = { [Op.ne]: null };
         }
 
         const vehicles = await Vehicle.findAll({

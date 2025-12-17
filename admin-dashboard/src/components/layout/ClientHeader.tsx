@@ -68,190 +68,6 @@ export function ClientHeader({ pageTitle, sidebarCollapsed }: ClientHeaderProps)
         }
     };
 
-    const styles = {
-        header: {
-            position: 'fixed' as const,
-            top: 0,
-            left: sidebarWidth,
-            right: 0,
-            height: '64px',
-            background: '#ffffff',
-            borderBottom: '1px solid #e2e8f0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 1.5rem',
-            zIndex: 90,
-            transition: 'left 250ms ease',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-        },
-        leftSection: {
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1.5rem',
-        },
-        pageTitle: {
-            fontSize: '1.25rem',
-            fontWeight: 600,
-            color: '#1e293b',
-            margin: 0,
-        },
-        searchContainer: {
-            position: 'relative' as const,
-            display: 'flex',
-            alignItems: 'center',
-        },
-        searchInput: {
-            width: '300px',
-            padding: '0.5rem 1rem 0.5rem 2.5rem',
-            border: '1px solid #e2e8f0',
-            borderRadius: '8px',
-            fontSize: '0.875rem',
-            background: '#f8fafc',
-            color: '#1e293b',
-            outline: 'none',
-            transition: 'all 150ms ease',
-        },
-        searchIcon: {
-            position: 'absolute' as const,
-            left: '0.75rem',
-            color: '#94a3b8',
-            fontSize: '1rem',
-        },
-        rightSection: {
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-        },
-        iconBtn: {
-            width: '40px',
-            height: '40px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: '#f8fafc',
-            border: '1px solid #e2e8f0',
-            borderRadius: '10px',
-            cursor: 'pointer',
-            position: 'relative' as const,
-            fontSize: '1.125rem',
-            transition: 'all 150ms ease',
-        },
-        notificationBadge: {
-            position: 'absolute' as const,
-            top: '-4px',
-            right: '-4px',
-            background: 'linear-gradient(135deg, #ef4444 0%, #f87171 100%)',
-            color: 'white',
-            fontSize: '0.625rem',
-            fontWeight: 600,
-            padding: '2px 5px',
-            borderRadius: '10px',
-            minWidth: '18px',
-            textAlign: 'center' as const,
-        },
-        userBtn: {
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.375rem 0.75rem 0.375rem 0.375rem',
-            background: '#f8fafc',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            cursor: 'pointer',
-            transition: 'all 150ms ease',
-        },
-        avatar: {
-            width: '32px',
-            height: '32px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-            borderRadius: '8px',
-            color: 'white',
-            fontWeight: 600,
-            fontSize: '0.875rem',
-        },
-        userInfo: {
-            display: 'flex',
-            flexDirection: 'column' as const,
-            textAlign: 'left' as const,
-        },
-        userName: {
-            fontSize: '0.875rem',
-            fontWeight: 500,
-            color: '#1e293b',
-        },
-        userRole: {
-            fontSize: '0.75rem',
-            color: '#64748b',
-        },
-        chevron: {
-            fontSize: '0.625rem',
-            color: '#94a3b8',
-        },
-        dropdown: {
-            position: 'absolute' as const,
-            top: 'calc(100% + 0.5rem)',
-            right: 0,
-            minWidth: '200px',
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            boxShadow: '0 10px 40px rgba(0,0,0,0.12)',
-            padding: '0.5rem',
-            zIndex: 100,
-        },
-        dropdownItem: (danger?: boolean) => ({
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            width: '100%',
-            padding: '0.625rem 0.75rem',
-            background: 'none',
-            border: 'none',
-            borderRadius: '8px',
-            color: danger ? '#ef4444' : '#475569',
-            fontSize: '0.875rem',
-            cursor: 'pointer',
-            textDecoration: 'none',
-            transition: 'all 150ms ease',
-        }),
-        dropdownDivider: {
-            height: '1px',
-            background: '#e2e8f0',
-            margin: '0.5rem 0',
-        },
-        notifItem: {
-            padding: '0.75rem',
-            borderBottom: '1px solid #f1f5f9',
-            display: 'flex',
-            flexDirection: 'column' as const,
-            gap: '0.25rem',
-            cursor: 'pointer',
-            transition: 'background 150ms',
-        },
-        notifTitle: {
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            color: '#1e293b',
-        },
-        notifMsg: {
-            fontSize: '0.75rem',
-            color: '#64748b',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical' as const,
-            overflow: 'hidden',
-        },
-        notifTime: {
-            fontSize: '0.7rem',
-            color: '#94a3b8',
-            marginTop: '0.25rem',
-        }
-    };
-
     return (
         <header
             className={`fixed top-0 right-0 h-[64px] bg-white border-b border-slate-200 flex items-center justify-between px-6 z-40 transition-all duration-300 shadow-sm`}
@@ -267,7 +83,7 @@ export function ClientHeader({ pageTitle, sidebarCollapsed }: ClientHeaderProps)
                         placeholder="Search Booking ID, Phone, Driver..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all placeholder:text-slate-400"
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400"
                     />
                 </div>
             </div>
@@ -339,7 +155,7 @@ export function ClientHeader({ pageTitle, sidebarCollapsed }: ClientHeaderProps)
                 {/* User Menu */}
                 <div className="relative">
                     <button
-                        className="flex items-center gap-3 pl-1 pr-3 py-1 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 transition-all"
+                        className="flex items-center gap-3 pl-1 pr-3 py-1 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 transition-all cursor-pointer"
                         onClick={() => setShowUserMenu(!showUserMenu)}
                     >
                         <div className="w-8 h-8 flex items-center justify-center bg-gradient-to-br from-indigo-500 to-violet-600 rounded-lg text-white font-bold text-sm shadow-md shadow-indigo-500/20">

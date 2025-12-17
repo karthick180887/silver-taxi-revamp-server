@@ -50,7 +50,6 @@ auth:
   postgresPassword: "admin_password"
   replicationPassword: "repl_password"
 
-primary:
   persistence:
     enabled: true
     size: 20Gi
@@ -61,6 +60,22 @@ primary:
   service:
     type: LoadBalancer
 
+  livenessProbe:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - exec pg_isready -U "taxi_user" -d "dbname=defaultdb" -h /tmp -p 5432
+  readinessProbe:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - -e
+        - |
+          exec pg_isready -U "taxi_user" -d "dbname=defaultdb" -h /tmp -p 5432
+          [ -f /opt/bitnami/postgresql/tmp/.initialized ] || [ -f /bitnami/postgresql/.initialized ]
+
 readReplicas:
   replicaCount: 1 # Reduced from 2
   persistence:
@@ -70,14 +85,19 @@ readReplicas:
     requests:
       cpu: 100m
       memory: 150Mi
+  # Probe Tuning for Large Dataset Cloning (~19GB)
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+    successThreshold: 1
+  readinessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+    successThreshold: 1
 
 # Enable PgBouncer
-pgbouncer:
-  enabled: true
-  image:
-    tag: "1.23.1" # Using latest stable as 17.7.0 is not a valid PgBouncer version
-  replicas: 1 # Reduced from 2
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
+

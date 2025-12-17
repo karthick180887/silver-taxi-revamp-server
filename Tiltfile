@@ -56,8 +56,11 @@ k8s_yaml("k8s/issuer.yaml")
 # Helm: Local HA Postgres (Complex Config)
 # We generate YAMLs via 'helm template' and feed them to Tilt.
 # This gives Tilt full visibility and control over the Pods/Services.
-postgres_yaml = local(".\\deps\\windows-amd64\\helm.exe template postgres bitnami/postgresql -f k8s/db/values.yaml --set pgbouncer.enabled=true")
+postgres_yaml = local(".\\deps\\windows-amd64\\helm.exe template postgres bitnami/postgresql -f k8s/db/values.yaml")
+watch_file("k8s/db/values.yaml")
+# Force reload 4
 k8s_yaml(postgres_yaml)
+k8s_yaml('k8s/pgbouncer.yaml')
 
 # Now we can explicitly track the workloads because Tilt knows about the YAML
 k8s_resource(
@@ -79,7 +82,7 @@ k8s_resource("redis")
 if mode == "admin" or mode == "all":
     print("Loading Admin Dashboard...")
     docker_build(
-        "admin-dashboard:dev",
+        "registry.digitalocean.com/cabigo/admin-dashboard:latest",
         "admin-dashboard",
         dockerfile="admin-dashboard/Dockerfile",
         ignore=["node_modules/", ".next/", ".git/"],

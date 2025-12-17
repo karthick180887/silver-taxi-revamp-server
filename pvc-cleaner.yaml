@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-cleaner
+spec:
+  containers:
+  - name: cleaner
+    image: alpine:latest
+    command: ["/bin/sh", "-c", "echo 'Pre-Clean:'; ls -laR /data; echo 'Usage:'; df -h /data; echo 'Cleaning...'; rm -rf /data/* /data/.[!.]*; echo 'Post-Clean:'; ls -laR /data; sleep 3600"]
+    volumeMounts:
+    - name: data
+      mountPath: /data
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: data-postgres-postgresql-read-0
+  restartPolicy: Never

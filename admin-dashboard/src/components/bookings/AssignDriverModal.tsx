@@ -210,7 +210,7 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
                             <Button
                                 onClick={handleAssignAll}
                                 disabled={isAssigning}
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all hover:scale-[1.02]"
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all hover:scale-[1.02]"
                             >
                                 {isAssigning ? 'Sending...' : 'Assign All Drivers'}
                             </Button>
@@ -249,7 +249,7 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
                                         key={driver.id || driver.driverId}
                                         onClick={() => setSelectedDriver(driver.id || driver.driverId)}
                                         className={`p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md ${selectedDriver === (driver.id || driver.driverId)
-                                            ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
+                                            ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
                                             : 'border-slate-100 hover:border-slate-300'
                                             }`}
                                     >
@@ -275,7 +275,7 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
                             <Button
                                 onClick={handleAssignSingle}
                                 disabled={!selectedDriver || isAssigning}
-                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
                             >
                                 {isAssigning ? 'Assigning...' : 'Confirm'}
                             </Button>

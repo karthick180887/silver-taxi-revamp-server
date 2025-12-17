@@ -5,11 +5,24 @@ import env from "../../utils/env";
 // Development Sequelize instance
 const sequelizeDev: any = new Sequelize({
   dialect: "postgres",
-  host: env.POSTGRES_HOST,          // silvertaxi-do-user-xxxxxxx.m.db.ondigitalocean.com
-  port: Number(env.POSTGRES_PORT), // 25060
-  username: env.POSTGRES_USER,     // doadmin
-  password: env.POSTGRES_PASSWORD, // your password
-  database: env.POSTGRES_DB,       // defaultdb or your DB name
+  replication: {
+    read: [
+      {
+        host: env.POSTGRES_HOST,
+        port: Number(env.POSTGRES_PORT),
+        username: env.POSTGRES_USER,
+        password: env.POSTGRES_PASSWORD,
+        database: 'replica',
+      },
+    ],
+    write: {
+      host: env.POSTGRES_HOST,
+      port: Number(env.POSTGRES_PORT),
+      username: env.POSTGRES_USER,
+      password: env.POSTGRES_PASSWORD,
+      database: env.POSTGRES_DB,
+    },
+  },
   logging: false,
   pool: {
     max: 15,

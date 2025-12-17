@@ -47,7 +47,7 @@ export default function EnquiriesPage() {
             const enquiriesArray = Array.isArray(data.enquiries) ? data.enquiries : (Array.isArray(data) ? data : []);
 
             setEnquiries(enquiriesArray);
-            setTotal(data.count || data.total || enquiriesArray.length || 0);
+            setTotal(data.pagination?.totalCount || data.count || data.total || enquiriesArray.length || 0);
 
             if (data.stats) {
                 setStats(data.stats);
@@ -143,7 +143,7 @@ export default function EnquiriesPage() {
                         <Input
                             placeholder="Search ..."
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                             className="max-w-xs"
                         />
                         <Button variant="outline" size="sm">↻</Button>

@@ -12,25 +12,8 @@ interface ClientLayoutProps {
 export function ClientLayout({ children, pageTitle = 'Dashboard' }: ClientLayoutProps) {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-    const sidebarWidth = sidebarCollapsed ? '80px' : '280px';
-    const headerHeight = '64px';
-
-    const styles = {
-        container: {
-            minHeight: '100vh',
-            background: '#f8fafc',
-        },
-        main: {
-            marginLeft: sidebarWidth,
-            marginTop: headerHeight,
-            padding: '1.5rem',
-            minHeight: `calc(100vh - ${headerHeight})`,
-            transition: 'margin-left 250ms ease',
-        },
-    };
-
     return (
-        <div style={styles.container}>
+        <div className="min-h-screen bg-slate-50">
             <ClientSidebar
                 collapsed={sidebarCollapsed}
                 onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -39,7 +22,12 @@ export function ClientLayout({ children, pageTitle = 'Dashboard' }: ClientLayout
                 pageTitle={pageTitle}
                 sidebarCollapsed={sidebarCollapsed}
             />
-            <main style={styles.main}>
+            <main
+                className="transition-all duration-300 ease-in-out pt-[88px] px-6 pb-6 min-h-screen"
+                style={{
+                    marginLeft: sidebarCollapsed ? '80px' : '260px'
+                }}
+            >
                 {children}
             </main>
         </div>

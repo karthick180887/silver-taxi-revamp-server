@@ -27,7 +27,6 @@ export default function VehiclesPage() {
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [showUnassigned, setShowUnassigned] = useState(true);
 
     // Stats
     const [stats, setStats] = useState({
@@ -39,7 +38,7 @@ export default function VehiclesPage() {
 
     useEffect(() => {
         fetchVehicles();
-    }, [search, showUnassigned]);
+    }, [search]);
 
     useEffect(() => {
         // Recalculate stats when vehicles change
@@ -54,7 +53,8 @@ export default function VehiclesPage() {
     const fetchVehicles = async () => {
         setLoading(true);
         try {
-            const res = await vehiclesApi.getAll({ search, unassigned: showUnassigned });
+            // Explicitly filter for unassigned vehicles (driverId is NULL)
+            const res = await vehiclesApi.getAll({ search, unassigned: true });
             const data = res.data?.data || res.data || [];
             // Handle both array directly or nested data properties
             const vehiclesArray = Array.isArray(data) ? data : (data.vehicles || data.rows || []);
@@ -116,15 +116,6 @@ export default function VehiclesPage() {
                     <p className="text-slate-500 text-sm">Manage your fleet and vehicle configurations</p>
                 </div>
                 <div className="flex items-center gap-4">
-                    <label className="flex items-center space-x-2 cursor-pointer bg-white px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm">
-                        <input
-                            type="checkbox"
-                            checked={showUnassigned}
-                            onChange={(e) => setShowUnassigned(e.target.checked)}
-                            className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500 border-gray-300"
-                        />
-                        <span className="text-sm font-medium text-slate-700">Show Unassigned Only</span>
-                    </label>
                     <Button onClick={() => router.push('/vehicles/create')} className="bg-teal-600 hover:bg-teal-700 text-white shadow-md">
                         + Create Vehicle
                     </Button>

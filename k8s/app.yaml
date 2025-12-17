@@ -12,8 +12,8 @@ data:
   TZ: UTC
   POSTGRES_DB: defaultdb
   POSTGRES_USER: taxi_user
-  POSTGRES_HOST: postgres-postgresql-primary
-  POSTGRES_PORT: "5432"
+  POSTGRES_HOST: pgbouncer
+  POSTGRES_PORT: "6432"
   POSTGRES_SSL: "disable"
   REDIS_HOST: redis
   REDIS_PORT: "6379"

@@ -6,12 +6,12 @@ import { ClientLayout } from '@/components/layout/ClientLayout';
 import { servicesApi } from '@/lib/api';
 
 interface Service {
-    id: string;
+    id?: string; // Optional or removed
+    serviceId: string; // The actual public ID
     name: string;
-    description: string;
-    basePrice: number;
-    pricePerKm: number;
-    pricePerMin: number;
+    minKm: number;
+    vendorCommission: number;
+    driverCommission: number;
     isActive: boolean;
     createdAt: string;
 }
@@ -44,15 +44,31 @@ export default function ServicesPage() {
 
     const columns = [
         { key: 'name', header: 'Name', sortable: true },
-        { key: 'description', header: 'Description', render: (s: Service) => s.description || '-' },
-        { key: 'basePrice', header: 'Base Price', render: (s: Service) => `₹${s.basePrice || 0}` },
-        { key: 'pricePerKm', header: 'Per KM', render: (s: Service) => `₹${s.pricePerKm || 0}` },
-        { key: 'pricePerMin', header: 'Per Min', render: (s: Service) => `₹${s.pricePerMin || 0}` },
+        { key: 'minKm', header: 'Min KM', render: (s: Service) => s.minKm || 0 },
+        {
+            key: 'commissions',
+            header: 'Commission',
+            render: (s: Service) => (
+                <div className="flex flex-col text-xs text-slate-500">
+                    <span>Vendor: {s.vendorCommission || 0}%</span>
+                    <span>Driver: {s.driverCommission || 0}%</span>
+                </div>
+            )
+        },
+        {
+            key: 'isActive',
+            header: 'Status',
+            render: (s: Service) => (
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {s.isActive ? 'Active' : 'Inactive'}
+                </span>
+            )
+        },
         {
             key: 'actions',
             header: 'Actions',
             render: (s: Service) => (
-                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined') window.location.href = `/services/${s.id}`; }}>
+                <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined') window.location.href = `/services/${s.serviceId}`; }}>
                     Edit
                 </Button>
             )
@@ -74,10 +90,10 @@ export default function ServicesPage() {
             <DataTable
                 data={services}
                 columns={columns}
-                keyExtractor={(s) => s.id}
+                keyExtractor={(s) => s.serviceId}
                 loading={loading}
                 emptyMessage="No services found"
-                onRowClick={(s) => { if (typeof window !== 'undefined') window.location.href = `/services/${s.id}`; }}
+                onRowClick={(s) => { if (typeof window !== 'undefined') window.location.href = `/services/${s.serviceId}`; }}
                 pagination={{ page, pageSize, total, onPageChange: setPage }}
             />
         </ClientLayout>

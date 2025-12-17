@@ -1,3 +1,3 @@
-export { Sidebar } from './Sidebar';
-export { Header } from './Header';
-export { DashboardLayout } from './DashboardLayout';
+export * from './ClientLayout';
+export * from './ClientSidebar';
+export * from './ClientHeader';
