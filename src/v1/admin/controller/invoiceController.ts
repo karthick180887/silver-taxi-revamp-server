@@ -6,8 +6,15 @@ import { Op } from "sequelize";
 export const getAllInvoices = async (req: Request, res: Response) => {
     try {
         const adminId = req.body.adminId ?? req.query.adminId;
-        const invoices = await Invoice.findAll({
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 10;
+        const offset = (page - 1) * limit;
+
+        const { rows, count } = await Invoice.findAndCountAll({
             where: { adminId },
+            limit,
+            offset,
+            order: [['createdAt', 'DESC']],
             attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
             include: [
                 {
@@ -26,7 +33,13 @@ export const getAllInvoices = async (req: Request, res: Response) => {
         res.status(200).json({
             success: true,
             message: "Invoices retrieved successfully",
-            data: invoices
+            data: {
+                rows,
+                count,
+                totalPages: Math.ceil(count / limit),
+                page,
+                limit
+            }
         });
 
 

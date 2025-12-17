@@ -11,7 +11,8 @@ import {
     getAllVehiclesAdmin,
     createVehicleTypes,
     acceptVehicleTypes,
-    deleteVehicleTypes
+    deleteVehicleTypes,
+    getVehicleMakes
 } from "../controller/vehicleController";
 import upload from "../../../utils/multer.fileUpload";
 
@@ -24,6 +25,8 @@ router.get("/admin", getAllVehiclesAdmin);
 router.get("/active", getActiveVehicles);
 
 router.get("/types", getVehicleTypes);
+
+router.get("/makes", getVehicleMakes);
 
 router.get("/:id", getVehicleById);
 

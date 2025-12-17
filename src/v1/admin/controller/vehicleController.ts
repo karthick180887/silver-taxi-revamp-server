@@ -497,3 +497,30 @@ export const deleteVehicleTypes = async (req: Request, res: Response) => {
     }
 
 }
+
+// Get all vehicle makes
+export const getVehicleMakes = async (req: Request, res: Response) => {
+    try {
+        const vehicleMakes = [
+            "Maruti Suzuki", "Hyundai", "Tata Motors", "Mahindra", "Kia", "Toyota",
+            "Honda", "MG", "Renault", "Volkswagen", "Skoda", "Nissan",
+            "Jeep", "Citroen", "Audi", "BMW", "Mercedes-Benz", "Jaguar",
+            "Land Rover", "Volvo", "Porsche", "Lexus", "Isuzu", "Force Motors"
+        ];
+
+        // Return sorted list
+        vehicleMakes.sort();
+
+        res.status(200).json({
+            success: true,
+            message: "Vehicle makes retrieved successfully",
+            data: vehicleMakes,
+        });
+    } catch (error) {
+        console.error("Error fetching vehicle makes:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error fetching vehicle makes",
+        });
+    }
+}
