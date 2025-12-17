@@ -6,8 +6,8 @@ import '../design_system.dart';
 
 class InlineLocationSearch extends StatefulWidget {
   final String label;
-  final IconData icon;
-  final Color iconColor;
+  final IconData? icon;
+  final Color? iconColor;
   final String googleMapsKey;
   final Function(Map<String, dynamic>) onLocationSelected;
   final String? initialAddress;
@@ -15,8 +15,8 @@ class InlineLocationSearch extends StatefulWidget {
   const InlineLocationSearch({
     super.key,
     required this.label,
-    required this.icon,
-    required this.iconColor,
+    this.icon,
+    this.iconColor,
     required this.googleMapsKey,
     required this.onLocationSelected,
     this.initialAddress,
@@ -213,14 +213,14 @@ class _InlineLocationSearchState extends State<InlineLocationSearch> {
                       controller: _controller,
                       focusNode: _focusNode,
                       onChanged: _onSearchChanged,
-                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+                      style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w600, fontSize: 16),
                       cursorColor: AppColors.primary,
                       decoration: InputDecoration(
                         hintText: widget.label,
-                        hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textTertiary),
+                        hintStyle: AppTextStyles.bodyLarge.copyWith(color: AppColors.textTertiary, fontSize: 16),
                         border: InputBorder.none,
                         isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
                         // Remove prefix icon from Input Decoration
                       ),
                     ),

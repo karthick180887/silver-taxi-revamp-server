@@ -5,3 +5,4 @@ export * from './DataTable';
 export * from './Badge';
 export * from './Modal';
 export * from './LocationAutocomplete';
+export * from './Switch';

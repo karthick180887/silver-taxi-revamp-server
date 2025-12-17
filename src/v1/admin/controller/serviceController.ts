@@ -30,13 +30,29 @@ export const getAllServices = async (req: Request, res: Response) => {
 };
 
 // Get service by ID
+// Get service by ID
 export const getServiceById = async (req: Request, res: Response) => {
     try {
-        const adminId = req.body.adminId ?? req.query.adminId;
+        // Prioritize token-derived adminId (req.query) for security, fall back to body only if necessary (though usually unsafe)
+        // In this architecture, auth middleware populates req.query.adminId
+        const adminId = (req.query.adminId as string) ?? (req.body.adminId as string);
         const { id } = req.params;
+
+        console.log(`[DEBUG] getServiceById: Fetching service ${id} for adminId: ${adminId}`);
+
+        if (!adminId) {
+            console.error("[ERROR] getServiceById: No adminId found in request");
+            res.status(401).json({
+                success: false,
+                message: "Unauthorized: Admin ID missing",
+            });
+            return;
+        }
+
         const service = await Service.findOne({ where: { serviceId: id, adminId } });
 
         if (!service) {
+            console.warn(`[WARN] getServiceById: Service ${id} not found for adminId ${adminId}`);
             res.status(404).json({
                 success: false,
                 message: "Service not found",

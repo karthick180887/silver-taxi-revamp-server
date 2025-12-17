@@ -1,5 +1,6 @@
 name: customer_app
 description: Silver Taxi Customer App - Flutter application for customers
+version: 1.0.0+1
 publish_to: "none"
 
 environment:
@@ -35,11 +36,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/
 
 
 
 flutter_launcher_icons:
   android: "ic_launcher"
   ios: true
-  image_path: "assets/icon/icon.png" # TODO: Place your icon.png here and run: dart run flutter_launcher_icons
+  image_path: "assets/icon/logo.png" # TODO: Place your icon.png here and run: dart run flutter_launcher_icons
   min_sdk_android: 21

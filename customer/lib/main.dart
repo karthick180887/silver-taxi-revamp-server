@@ -16,6 +16,7 @@ class CustomerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'Silver Taxi Customer',
       theme: AppTheme.lightTheme,
       home: const AuthWrapper(),

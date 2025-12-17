@@ -324,20 +324,48 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 16),
                   
                   // Service Type Selector
-                  SizedBox(
-                    height: 100,
-                    child: _isLoadingServices 
-                       ? const Center(child: CircularProgressIndicator(color: AppColors.secondary))
-                       : ListView.separated(
-                           padding: const EdgeInsets.symmetric(horizontal: 24),
-                           scrollDirection: Axis.horizontal,
-                           itemCount: _services.length,
-                           separatorBuilder: (_,__) => const SizedBox(width: 12),
-                           itemBuilder: (context, index) {
-                              final service = _services[index];
-                              return _buildServiceCard(service);
-                           },
-                         ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: _services.map((service) {
+                          final isSelected = _selectedService == service;
+                          return Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _selectedService = service),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? AppColors.secondary : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                  boxShadow: isSelected ? [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.1),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    )
+                                  ] : null,
+                                ),
+                                child: Text(
+                                  service['name'] ?? '',
+                                  textAlign: TextAlign.center,
+                                  style: AppTextStyles.label.copyWith(
+                                    color: isSelected ? AppColors.primary : Colors.white.withOpacity(0.8),
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                   ),
                   
                   // Booking Card
@@ -362,37 +390,36 @@ class _HomeScreenState extends State<HomeScreen> {
                           // -----------------------------------------------------------------
                           // Timeline Location Inputs (Enhanced)
                           // -----------------------------------------------------------------
+                          // -----------------------------------------------------------------
+                          // Timeline Location Inputs (Enhanced)
+                          // -----------------------------------------------------------------
                           Container(
                             decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(24),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 15,
-                                  offset: const Offset(0, 5),
-                                ),
-                              ],
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(16),
                               border: Border.all(color: AppColors.border.withOpacity(0.5)),
                             ),
-                            padding: const EdgeInsets.all(20),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                             child: Column(
                               children: [
                                 // PICKUP SECTION
                                 Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                      Column(
+                                       mainAxisSize: MainAxisSize.min,
                                        children: [
-                                         const SizedBox(height: 4),
-                                         const Icon(Icons.my_location_rounded, color: AppColors.success, size: 20),
+                                         const Icon(Icons.my_location_rounded, color: AppColors.success, size: 22),
                                          Container(
-                                           height: 40,
+                                           height: 30,
                                            width: 2,
                                            margin: const EdgeInsets.symmetric(vertical: 4),
                                            decoration: BoxDecoration(
-                                             color: AppColors.border,
-                                             borderRadius: BorderRadius.circular(1),
+                                             gradient: LinearGradient(
+                                               begin: Alignment.topCenter,
+                                               end: Alignment.bottomCenter,
+                                               colors: [AppColors.success.withOpacity(0.5), AppColors.error.withOpacity(0.5)],
+                                             ),
                                            ),
                                          ),
                                        ],
@@ -402,38 +429,31 @@ class _HomeScreenState extends State<HomeScreen> {
                                        child: Column(
                                          crossAxisAlignment: CrossAxisAlignment.start,
                                          children: [
-                                           Text('PICKUP', style: AppTextStyles.label.copyWith(fontSize: 10, color: AppColors.textTertiary, letterSpacing: 1)),
+                                           Text('PICKUP LOCATION', style: AppTextStyles.label.copyWith(fontSize: 12, color: AppColors.textTertiary, fontWeight: FontWeight.bold)),
                                            const SizedBox(height: 4),
-                                           Container(
-                                             decoration: BoxDecoration(
-                                               color: AppColors.background,
-                                               borderRadius: BorderRadius.circular(12),
-                                               border: Border.all(color: Colors.transparent), // Border handling by widget focus if needed, or remove
-                                             ),
-                                             child: InlineLocationSearch(
-                                               label: 'Current Location',
-                                               icon: Icons.my_location_rounded,
-                                               iconColor: AppColors.success,
-                                               googleMapsKey: _googleMapsKey,
-                                               initialAddress: _pickupLocation?['address'],
-                                               onLocationSelected: (loc) => setState(() => _pickupLocation = loc),
-                                             ),
+                                           InlineLocationSearch(
+                                             label: 'Current Location',
+                                             icon: null, // Icon handled in timeline
+                                             iconColor: Colors.transparent, 
+                                             googleMapsKey: _googleMapsKey,
+                                             initialAddress: _pickupLocation?['address'],
+                                             onLocationSelected: (loc) => setState(() => _pickupLocation = loc),
                                            ),
+                                           const Divider(height: 16),
                                          ],
                                        ),
                                      ),
                                   ],
                                 ),
                                 
-                                const SizedBox(height: 8),
-
                                 // DROP SECTION
                                 Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                      const Column(
                                        children: [
-                                          Icon(Icons.location_on_rounded, color: AppColors.error, size: 20),
+                                          Icon(Icons.location_on_rounded, color: AppColors.error, size: 24),
+                                             SizedBox(height: 18), // Visual balance
                                        ],
                                      ),
                                      const SizedBox(width: 16),
@@ -441,21 +461,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                        child: Column(
                                          crossAxisAlignment: CrossAxisAlignment.start,
                                          children: [
-                                           Text('DROP OFF', style: AppTextStyles.label.copyWith(fontSize: 10, color: AppColors.textTertiary, letterSpacing: 1)),
+                                           Text('DROP OFF LOCATION', style: AppTextStyles.label.copyWith(fontSize: 12, color: AppColors.textTertiary, fontWeight: FontWeight.bold)),
                                            const SizedBox(height: 4),
-                                           Container(
-                                             decoration: BoxDecoration(
-                                               color: AppColors.background,
-                                               borderRadius: BorderRadius.circular(12),
-                                             ),
-                                             child: InlineLocationSearch(
-                                               label: 'Where to?',
-                                               icon: Icons.location_on_rounded,
-                                               iconColor: AppColors.error,
-                                               googleMapsKey: _googleMapsKey,
-                                               initialAddress: _dropLocation?['address'],
-                                               onLocationSelected: (loc) => setState(() => _dropLocation = loc),
-                                             ),
+                                           InlineLocationSearch(
+                                             label: 'Where to?',
+                                             icon: null,
+                                             iconColor: Colors.transparent,
+                                             googleMapsKey: _googleMapsKey,
+                                             initialAddress: _dropLocation?['address'],
+                                             onLocationSelected: (loc) => setState(() => _dropLocation = loc),
                                            ),
                                          ],
                                        ),
@@ -466,7 +480,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 20),
                           
                           // Date Picker
                           InkWell(
