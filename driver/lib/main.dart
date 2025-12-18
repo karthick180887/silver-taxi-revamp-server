@@ -5,6 +5,9 @@ import 'services/storage_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'services/fcm_service.dart';
+import 'design_system.dart';
+
+import 'package:sendotp_flutter_sdk/sendotp_flutter_sdk.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +19,13 @@ void main() async {
   } catch (e) {
     debugPrint('Error initializing Firebase: $e');
   }
+  
+  // Initialize MSG91 OTP Widget
+  OTPWidget.initializeWidget(
+    '356c70646b5a303735303838', // Widget ID
+    '482940T8rHqdAb4J56940e1baP1', // Auth Token
+  );
+  
   runApp(const DriverApp());
 }
 
@@ -73,13 +83,8 @@ class _DriverAppState extends State<DriverApp> {
     
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Driver Partner',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
-        useMaterial3: true,
-        scaffoldBackgroundColor: Colors.white,
-        fontFamily: 'Inter', // Applying global font if available, fallback to default
-      ),
+      title: 'Silver Taxi Driver',
+      theme: AppTheme.lightTheme,
       home: _initialRoute,
     );
   }

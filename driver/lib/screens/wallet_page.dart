@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../api_client.dart';
 import 'payout_request_page.dart';
+import '../design_system.dart';
 
 class WalletPage extends StatefulWidget {
   const WalletPage({super.key, required this.token});
@@ -142,16 +143,16 @@ class _WalletPageState extends State<WalletPage> {
     final minusAmount = _toDouble(_walletData?['minusAmount'] ?? 0.0);
     
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('My Wallet', style: TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
+        title: Text('My Wallet', style: AppTextStyles.h2),
+        backgroundColor: AppColors.background,
         elevation: 0,
         centerTitle: true,
-        leading: const BackButton(color: Color(0xFF1E293B)),
+        leading: const BackButton(color: AppColors.textPrimary),
         actions: [
            IconButton(
-            icon: const Icon(CupertinoIcons.arrow_right_arrow_left, color: Color(0xFF2563EB)),
+            icon: const Icon(CupertinoIcons.arrow_right_arrow_left, color: AppColors.secondary),
             tooltip: 'Request Payout',
             onPressed: () {
               Navigator.push(
@@ -166,9 +167,9 @@ class _WalletPageState extends State<WalletPage> {
       ),
       body: RefreshIndicator(
         onRefresh: _loadAll,
-        color: const Color(0xFF2563EB),
+        color: AppColors.primary,
         child: _loading
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
+            ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
             : ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
@@ -176,15 +177,11 @@ class _WalletPageState extends State<WalletPage> {
                    Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF2563EB), Color(0xFF1E40AF)],
-                        begin: Alignment.topLeft, 
-                        end: Alignment.bottomRight
-                      ),
+                      color: AppColors.primary,
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF2563EB).withValues(alpha: 0.3),
+                          color: AppColors.primary.withOpacity(0.3),
                           blurRadius: 15,
                           offset: const Offset(0, 8),
                         ),
@@ -192,25 +189,24 @@ class _WalletPageState extends State<WalletPage> {
                     ),
                      child: Column(
                        children: [
-                         const Text(
+                         Text(
                            'Available Balance',
-                           style: TextStyle(color: Colors.white70, fontSize: 14),
+                           style: AppTextStyles.bodyMedium.copyWith(color: Colors.white70),
                          ),
                          const SizedBox(height: 8),
                          Text(
                            _formatAmount(balance),
-                           style: const TextStyle(
+                           style: AppTextStyles.h1.copyWith(
                              color: Colors.white,
                              fontSize: 36,
-                             fontWeight: FontWeight.bold,
                            ),
                          ),
                          const SizedBox(height: 24),
                          Row(
                            children: [
-                             Expanded(child: _buildSummaryItem('Total Income', plusAmount, Colors.greenAccent)),
+                             Expanded(child: _buildSummaryItem('Total Income', plusAmount, AppColors.success)),
                              Container(width: 1, height: 40, color: Colors.white24),
-                             Expanded(child: _buildSummaryItem('Total Spend', minusAmount, Colors.orangeAccent)),
+                             Expanded(child: _buildSummaryItem('Total Spend', minusAmount, AppColors.error)),
                            ],
                          )
                        ],
@@ -218,13 +214,9 @@ class _WalletPageState extends State<WalletPage> {
                    ),
                    
                    const SizedBox(height: 32),
-                   const Text(
+                   Text(
                      'Recent Transactions',
-                     style: TextStyle(
-                       fontSize: 18,
-                       fontWeight: FontWeight.bold,
-                       color: Color(0xFF1E293B),
-                     ),
+                     style: AppTextStyles.h3,
                    ),
                    const SizedBox(height: 16),
                    
@@ -243,7 +235,7 @@ class _WalletPageState extends State<WalletPage> {
                                     padding: const EdgeInsets.symmetric(vertical: 8),
                                     child: ElevatedButton(
                                       onPressed: _loadMore,
-                                      style: ElevatedButton.styleFrom(elevation: 0, backgroundColor: Colors.white, foregroundColor: Colors.blue),
+                                      style: ElevatedButton.styleFrom(elevation: 0, backgroundColor: Colors.white, foregroundColor: AppColors.primary),
                                       child: const Text('Load More'),
                                     ),
                                   );
@@ -264,12 +256,12 @@ class _WalletPageState extends State<WalletPage> {
       children: [
         Text(
           label,
-          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+          style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),
         ),
         const SizedBox(height: 4),
         Text(
           _formatAmount(amount),
-          style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold),
+          style: AppTextStyles.h3.copyWith(color: color, fontSize: 16),
         ),
       ],
     );
@@ -281,9 +273,9 @@ class _WalletPageState extends State<WalletPage> {
          padding: const EdgeInsets.only(top: 40),
          child: Column(
            children: [
-             Icon(CupertinoIcons.doc_text_search, size: 48, color: Colors.grey.shade300),
+             const Icon(CupertinoIcons.doc_text_search, size: 48, color: AppColors.textTertiary),
              const SizedBox(height: 16),
-             Text('No transactions yet', style: TextStyle(color: Colors.grey.shade500)),
+             Text('No transactions yet', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textTertiary)),
            ],
          ),
        ),
@@ -301,21 +293,21 @@ class _WalletPageState extends State<WalletPage> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: isCredit ? Colors.green.shade50 : Colors.red.shade50,
+              color: isCredit ? AppColors.success.withOpacity(0.1) : AppColors.error.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(
               isCredit ? CupertinoIcons.arrow_down_left_square_fill : CupertinoIcons.arrow_up_right_square_fill,
-              color: isCredit ? Colors.green.shade600 : Colors.red.shade600,
+              color: isCredit ? AppColors.success : AppColors.error,
               size: 20,
             ),
           ),
@@ -326,22 +318,22 @@ class _WalletPageState extends State<WalletPage> {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: Color(0xFF1E293B)),
+                  style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600),
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Text(date, style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                    Text(date, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary)),
                     const SizedBox(width: 8),
                     if (tag.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                           color: Colors.grey.shade100,
+                           color: AppColors.border,
                            borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text(tag, style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                        child: Text(tag, style: AppTextStyles.bodySmall.copyWith(fontSize: 10)),
                       ),
                   ],
                 ),
@@ -350,10 +342,9 @@ class _WalletPageState extends State<WalletPage> {
           ),
           Text(
             (isCredit ? '+' : '') + _formatAmount(amount),
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
+            style: AppTextStyles.h3.copyWith(
               fontSize: 15,
-              color: isCredit ? Colors.green.shade700 : Colors.red.shade700,
+              color: isCredit ? AppColors.success : AppColors.error,
             ),
           ),
         ],

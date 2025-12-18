@@ -25,7 +25,7 @@ export const generatedDriverToken = async (
     adminId: any,
     driverId: any,
     name: any,
-): Promise<void> => {
+): Promise<string> => {
     const userData = {
         adminId,
         id: driverId,
@@ -39,7 +39,7 @@ export const generatedDriverRefreshToken = async (
     adminId: any,
     driverId: any,
     name: any,
-): Promise<void> => {
+): Promise<string> => {
     const userData = {
         adminId,
         refreshId: driverId,
@@ -253,26 +253,56 @@ export const driverLogin = async (req: Request, res: Response): Promise<void> =>
 
                 const id = driverId || smsResponse.id;
 
-                const verifyWhere: any = { driverId: id };
-                if (adminId) verifyWhere.adminId = adminId;
+                let driverData = null;
 
-                const driverData = await Driver.findOne({
-                    where: verifyWhere,
-                    attributes: { exclude: ['updatedAt', 'deletedAt'] },
-                    include: [
-                        {
-                            model: Vehicle,
-                            as: "vehicle",
-                            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
-                        },
-                    ]
-                });
+                if (id) {
+                    const verifyWhere: any = { driverId: id };
+                    if (adminId) verifyWhere.adminId = adminId;
+
+                    driverData = await Driver.findOne({
+                        where: verifyWhere,
+                        attributes: { exclude: ['updatedAt', 'deletedAt'] },
+                        include: [
+                            {
+                                model: Vehicle,
+                                as: "vehicle",
+                                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+                            },
+                        ]
+                    });
+                } else if (smsResponse.success && smsResponse.message) {
+                    // Try to find by phone if driverId is missing (Widget Flow)
+                    // widget response message usually contains the phone number
+                    const phoneFromWidget = smsResponse.message;
+
+                    const verifyWhere: any = { phone: phoneFromWidget };
+                    if (adminId) verifyWhere.adminId = adminId;
+
+                    driverData = await Driver.findOne({
+                        where: verifyWhere,
+                        attributes: { exclude: ['updatedAt', 'deletedAt'] },
+                        include: [
+                            {
+                                model: Vehicle,
+                                as: "vehicle",
+                                attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+                            },
+                        ]
+                    });
+                }
 
                 if (!driverData) {
                     debug.info(`Driver login for driverId: ${driverId} not found`);
+
+                    // Generate a temporary signup token since MSG91 token is now burnt
+                    const signupData = { phone: smsResponse.message, adminId };
+                    const signupToken = await encodeToken(signupData); // Short expiry implicit or add one
+
                     res.status(404).json({
                         success: false,
-                        message: "Now this Driver does not exist",
+                        message: "Driver not found",
+                        signupToken,
+                        phone: smsResponse.message
                     });
                     return;
                 }
@@ -400,18 +430,45 @@ export const driverSignup = async (req: Request, res: Response): Promise<void> =
                     return;
                 }
 
-                const { name, phone, email, walletAmount = 0, fcmToken, otp, smsToken, accessToken } = validData.data;
+                // Add signupToken to destructuring
+                const { name, phone, email, walletAmount = 0, fcmToken, otp, smsToken, accessToken, signupToken } = req.body; // Using req.body as safeParse might strip unknown fields if schema is strict
 
-                if (!accessToken && (!otp || !smsToken)) {
-                    res.status(400).json({
-                        success: false,
-                        message: "OTP and SMS Token are required if Access Token is not provided"
-                    });
-                    return;
-                }
+                // Logic: If signupToken is present, verify it. Else check standard flow.
 
                 let smsResponse;
-                if (accessToken) {
+                if (signupToken) {
+                    try {
+                        const decoded = decodeToken(signupToken);
+                        console.log(`[DEBUG] Decoded Signup Token:`, JSON.stringify(decoded));
+                        if (decoded && decoded.phone) {
+                            // Verify phone matches (last 10 digits)
+                            const decodedPhoneRaw = String(decoded.phone);
+                            const requestPhoneRaw = String(phone);
+
+                            const decodedPhone = decodedPhoneRaw.replace(/\D/g, '').slice(-10);
+                            const requestPhone = requestPhoneRaw.replace(/\D/g, '').slice(-10);
+
+                            console.log(`[DEBUG] Phone Mismatch Check: 
+                                Token Raw: ${decodedPhoneRaw} -> Processed: ${decodedPhone}
+                                Request Raw: ${requestPhoneRaw} -> Processed: ${requestPhone}
+                            `);
+
+                            if (decodedPhone !== requestPhone) {
+                                res.status(400).json({
+                                    success: false,
+                                    message: `Phone number mismatch. Token: ${decodedPhone}, Request: ${requestPhone}`
+                                });
+                                return;
+                            }
+                            smsResponse = { success: true, message: "Token Verified", status: 200 };
+                        } else {
+                            throw new Error("Invalid Token");
+                        }
+                    } catch (e) {
+                        res.status(401).json({ success: false, message: "Invalid Signup Token" });
+                        return;
+                    }
+                } else if (accessToken) {
                     smsResponse = await sms.verifyWidgetToken(accessToken);
                 } else {
                     smsResponse = await sms.verifyOTP({ otp: otp!, token: smsToken!, mobile: phone });
@@ -426,11 +483,11 @@ export const driverSignup = async (req: Request, res: Response): Promise<void> =
                     return;
                 }
 
+                const whereClause: any = { phone };
+                if (adminId) whereClause.adminId = adminId;
+
                 const checkDriver = await Driver.findOne({
-                    where: {
-                        adminId,
-                        phone,
-                    },
+                    where: whereClause,
                     paranoid: false
                 });
 

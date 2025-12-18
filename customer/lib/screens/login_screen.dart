@@ -4,6 +4,7 @@ import 'package:sendotp_flutter_sdk/sendotp_flutter_sdk.dart';
 import '../api_client.dart';
 import '../design_system.dart';
 import 'main_screen.dart';
+import '../services/notification_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     OTPWidget.initializeWidget(_widgetId, _widgetToken);
+    NotificationService().requestPermission();
   }
 
   @override

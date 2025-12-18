@@ -10,6 +10,7 @@ import 'vehicle_selection_screen.dart';
 import '../widgets/app_drawer.dart';
 import 'notifications_screen.dart';
 import '../api_client.dart';
+import '../services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.token});
@@ -39,12 +40,27 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoadingBooking = true;
   String _adminId = 'admin-1';
   String? _customerId;
+  StreamSubscription? _notificationSubscription;
+
+  // int _unreadCount = 0; // Removed local state
 
   @override
   void initState() {
     super.initState();
     _pickupDateTime = DateTime.now().add(const Duration(minutes: 15));
     _loadData();
+
+    _notificationSubscription = NotificationService().onNotificationReceived.listen((event) {
+        if (mounted) {
+             NotificationService().incrementUnreadCount();
+        }
+    });
+  }
+
+  @override
+  void dispose() {
+    _notificationSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -52,7 +68,24 @@ class _HomeScreenState extends State<HomeScreen> {
     _fetchServices(); 
     _fetchGoogleMapsKey();
     _fetchRecentBooking();
+
     _fetchOffersAndPromos();
+    _fetchUnreadCount();
+  }
+
+  Future<void> _fetchUnreadCount() async {
+      if (_customerId == null) return;
+      try {
+           final result = await _apiClient.getAllNotifications(token: widget.token, adminId: _adminId, customerId: _customerId!);
+           if (result.success && result.body['data'] != null) {
+               final list = result.body['data'] as List;
+               final unread = list.where((n) => n['read'] == false).length;
+               // if (mounted) setState(() => _unreadCount = unread);
+               NotificationService().updateUnreadCount(unread);
+           }
+      } catch (e) {
+          debugPrint("Error fetching unread count: $e");
+      }
   }
 
   Future<void> _loadCustomerDetails() async {
@@ -285,18 +318,52 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined, color: AppColors.secondary, size: 28),
-            onPressed: () {
-              Navigator.push(
-                context, 
-                MaterialPageRoute(builder: (_) => NotificationsScreen(
-                  token: widget.token, 
-                  customerId: _customerId, 
-                  adminId: _adminId
-                )),
-              );
-            },
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined, color: AppColors.secondary, size: 28),
+                onPressed: () async {
+                  await Navigator.push(
+                    context, 
+                    MaterialPageRoute(builder: (_) => NotificationsScreen(
+                      token: widget.token, 
+                      customerId: _customerId, 
+                      adminId: _adminId
+                    )),
+                  );
+                  _fetchUnreadCount();
+                },
+              ),
+              ValueListenableBuilder<int>(
+                valueListenable: NotificationService().unreadCount,
+                builder: (context, count, child) {
+                  if (count == 0) return const SizedBox.shrink();
+                  return Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 14,
+                        minHeight: 14,
+                      ),
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+              ),
+            ],
           ),
         ],
       ),
@@ -306,6 +373,65 @@ class _HomeScreenState extends State<HomeScreen> {
         token: widget.token,
         customerId: _customerId ?? '',
         adminId: _adminId,
+      ),
+      floatingActionButton: FloatingActionButton(
+        mini: true,
+        backgroundColor: Colors.red,
+        child: const Icon(Icons.bug_report, color: Colors.white),
+        onPressed: () {
+          // Show Debug Dialog
+           showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text("Notification Debugger"),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 300,
+                child: Column(
+                  children: [
+                    FutureBuilder<String?>(
+                      future: NotificationService().getToken(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) return SelectableText("Error: ${snapshot.error}", style: const TextStyle(color: Colors.red));
+                        if (snapshot.connectionState == ConnectionState.waiting) return const Text("Token: Loading...");
+                        return SelectableText("Token: ${snapshot.data ?? 'No Token'}");
+                      },
+                    ),
+                    const Divider(),
+                    Expanded(
+                      child: ValueListenableBuilder<List<String>>(
+                        valueListenable: NotificationService().debugLogs,
+                        builder: (context, logs, _) {
+                            if (logs.isEmpty) return const Text("No logs yet.");
+                            return ListView.builder(
+                              itemCount: logs.length,
+                              itemBuilder: (context, index) => Text(logs[index], style: const TextStyle(fontSize: 12)),
+                            );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    NotificationService().debugLogs.value = [];
+                  }, 
+                  child: const Text("Clear Log")
+                ),
+                 TextButton(
+                  onPressed: () async {
+                    await NotificationService().showLocalNotification("Test", "Test Message");
+                    NotificationService().debugLogs.value = [...NotificationService().debugLogs.value, "Test Notification Sent"];
+                  }, 
+                  child: const Text("Test Notify")
+                ),
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text("Close"))
+              ],
+            ),
+          );
+        },
       ),
       body: SingleChildScrollView(
         child: Column(

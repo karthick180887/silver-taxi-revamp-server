@@ -283,98 +283,38 @@ export const updateProfile = async (req: Request, res: Response) => {
             return;
         }
 
-        if (isPhoneChanged && (!otp || !smsToken)) {
-            const formattedNumber = phone.replace(/^\+?91|\D/g, "");
-            const token = await sms.sendOtp({
-                mobile: Number(formattedNumber),
-                isOTPSend: true,
-                websiteName: null,
-                sendOtp: null,
-                id: customer.customerId,
-            });
+        // 🚫 RESTRICTION: Name and Phone cannot be updated by the customer.
 
-            if (typeof token === "string") {
-                res.status(200).json({
-                    success: true,
-                    message: "OTP sent successfully",
-                    smsToken: token,
-                });
-                return;
-            }
-
-            res.status(500).json({
+        // 1. Check Phone Restriction
+        if (isPhoneChanged) {
+            res.status(403).json({
                 success: false,
-                message: "Failed to send OTP",
+                message: "Updating phone number is restricted. Please contact support.",
             });
             return;
         }
 
-        if (otp && smsToken) {
-            if (!phone) {
-                res.status(400).json({
-                    success: false,
-                    message: "Phone number is required for OTP verification",
-                });
-                return;
-            }
+        // 2. Update Allowed Fields Only (Email, Gender, DOB)
+        // Note: We intentionally ignore 'name' and 'phone' from the request body here.
+        customer.gender = gender ?? customer.gender;
+        customer.dob = dob ?? customer.dob;
+        customer.email = email ?? customer.email;
 
-            const smsResponse = await sms.verifyOTP({ otp, token: smsToken, mobile: phone });
+        await customer.save();
 
-            if (!smsResponse.success) {
-                res.status(401).json({
-                    success: false,
-                    message: smsResponse.message || "Invalid OTP",
-                });
-                return;
-            }
-
-            // OTP success — update phone and other fields
-            customer.phone = formattedNewPhone ?? phone;
-            customer.name = name ?? customer.name;
-            customer.gender = gender ?? customer.gender;
-            customer.dob = dob ?? customer.dob;
-            customer.email = email ?? customer.email;
-
-            await customer.save();
-
-            res.status(200).json({
-                success: true,
-                message: "Phone and profile updated successfully",
-                data: {
-                    customerId: customer.customerId,
-                    name: customer.name,
-                    email: customer.email,
-                    phone: customer.phone,
-                    gender: customer.gender,
-                    dob: customer.dob,
-                },
-            });
-            return;
-        }
-
-        // ✅ Case: No phone involved — update only other fields
-        if (!phone) {
-            customer.name = name ?? customer.name;
-            customer.gender = gender ?? customer.gender;
-            customer.dob = dob ?? customer.dob;
-            customer.email = email ?? customer.email;
-
-            await customer.save();
-
-            res.status(200).json({
-                success: true,
-                message: "Customer profile updated successfully",
-                data: {
-                    customerId: customer.customerId,
-                    name: customer.name,
-                    email: customer.email,
-                    phone: customer.phone,
-                    gender: customer.gender,
-                    dob: customer.dob,
-                },
-            });
-            return;
-        }
+        res.status(200).json({
+            success: true,
+            message: "Profile updated successfully (Name/Phone unchanged)",
+            data: {
+                customerId: customer.customerId,
+                name: customer.name,
+                email: customer.email,
+                phone: customer.phone,
+                gender: customer.gender,
+                dob: customer.dob,
+            },
+        });
+        return;
 
         // If phone is present with otp+token already handled above, no fallback needed here.
 

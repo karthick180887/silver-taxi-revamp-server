@@ -12,7 +12,7 @@ import {
 } from '../../core/models/index'
 import { bookingConfirm } from "../../../common/services/mail/mail";
 import { commissionCalculation } from "../../core/function/commissionCalculation";
-import { sendNotification } from "../../../common/services/socket/websocket";
+import { sendNotification, emitNewTripOfferToDriver, emitNewTripOfferToDrivers } from "../../../common/services/socket/websocket";
 import { createNotification } from "../../core/function/notificationCreate";
 import { createDriverNotification, createCustomerNotification } from '../../core/function/notificationCreate';
 import { sendToSingleToken, sendToMultipleTokens } from "../../../common/services/firebase/appNotify";
@@ -1352,6 +1352,14 @@ export const assignDriver = async (req: Request, res: Response) => {
             requestSentTime,
         });
 
+        // 🟢 Emit Socket Event for Real-time Popup
+        try {
+            emitNewTripOfferToDriver(driverId, booking.toJSON());
+            debug.info(`✅ Socket event 'NEW_TRIP_OFFER' sent to driver ${driverId} from assignDriver`);
+        } catch (socketError) {
+            debug.error(`❌ Error emitting socket event in assignDriver: ${socketError}`);
+        }
+
 
         try {
             const message = {
@@ -1444,6 +1452,17 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
             assignAllDriver: true,
             requestSentTime,
         });
+
+        // 🟢 Emit Socket Event for Real-time Popup (Broadcast)
+        if (drivers.length > 0) {
+            const driverIds = drivers.map(d => d.driverId);
+            try {
+                emitNewTripOfferToDrivers(driverIds, booking.toJSON());
+                debug.info(`✅ Socket broadcast 'NEW_TRIP_OFFER' sent to ${driverIds.length} drivers from assignAllDrivers`);
+            } catch (socketError) {
+                debug.error(`❌ Error emitting socket broadcast in assignAllDrivers: ${socketError}`);
+            }
+        }
 
         // Extract active FCM tokens
         const fcmTokens = drivers

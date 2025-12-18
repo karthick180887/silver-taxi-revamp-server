@@ -9,6 +9,7 @@ import 'payment_details_page.dart';
 import 'payout_request_page.dart';
 import 'vehicle_details_page.dart';
 import 'driver_details_page.dart';
+import '../design_system.dart';
 
 class MenuTab extends StatefulWidget {
   const MenuTab({super.key, required this.token});
@@ -49,7 +50,14 @@ class _MenuTabState extends State<MenuTab> {
     final adminVerified = _profile?['adminVerified']?.toString() ?? '';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Menu'), automaticallyImplyLeading: false),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: Text('Menu', style: AppTextStyles.h2),
+        automaticallyImplyLeading: false,
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        centerTitle: true,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -58,47 +66,55 @@ class _MenuTabState extends State<MenuTab> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.surface,
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+                border: Border.all(color: AppColors.border),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
               ),
               child: Column(
                 children: [
                   Row(
                     children: [
-                      CircleAvatar(
-                        radius: 30,
-                        backgroundImage: photo != null && photo.isNotEmpty 
-                            ? NetworkImage(transformImageUrl(photo)) 
-                            : null,
-                        child: photo == null || photo.isEmpty ? const Icon(Icons.person, size: 30) : null,
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.secondary, width: 2),
+                          image: photo != null && photo.isNotEmpty 
+                              ? DecorationImage(
+                                  image: NetworkImage(transformImageUrl(photo)),
+                                  fit: BoxFit.cover) 
+                              : null,
+                        ),
+                        child: photo == null || photo.isEmpty ? const Icon(Icons.person, size: 30, color: AppColors.textTertiary) : null,
                       ),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                            Text(phone, style: TextStyle(color: Colors.grey.shade600)),
+                            Text(name, style: AppTextStyles.h3),
+                            Text(phone, style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textTertiary)),
                             if (driverId.isNotEmpty) ...[
                               const SizedBox(height: 2),
                               Text(
                                 'ID: $driverId',
-                                style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                                style: AppTextStyles.bodySmall,
                               ),
                             ],
                             const SizedBox(height: 4),
                             Row(
                               children: [
                                 if (rating > 0) ...[
-                                  const Icon(Icons.star, color: Colors.amber, size: 16),
-                                  Text(' $rating', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  const Icon(Icons.star, color: AppColors.secondary, size: 16),
+                                  Text(' $rating', style: AppTextStyles.label),
                                   const SizedBox(width: 12),
                                 ],
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: isOnline ? Colors.green.shade50 : Colors.grey.shade100,
+                                    color: isOnline ? AppColors.success.withOpacity(0.1) : AppColors.border,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Row(
@@ -108,16 +124,15 @@ class _MenuTabState extends State<MenuTab> {
                                         width: 8,
                                         height: 8,
                                         decoration: BoxDecoration(
-                                          color: isOnline ? Colors.green : Colors.grey,
+                                          color: isOnline ? AppColors.success : AppColors.textTertiary,
                                           shape: BoxShape.circle,
                                         ),
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
                                         isOnline ? 'Online' : 'Offline',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: isOnline ? Colors.green.shade700 : Colors.grey.shade700,
+                                        style: AppTextStyles.bodySmall.copyWith(
+                                          color: isOnline ? AppColors.success : AppColors.textTertiary,
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
@@ -129,10 +144,10 @@ class _MenuTabState extends State<MenuTab> {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right),
+                      const Icon(Icons.chevron_right, color: AppColors.textTertiary),
                     ],
                   ),
-                  const Divider(height: 24),
+                  const Divider(height: 24, color: AppColors.divider),
                   // Additional Profile Info
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -149,8 +164,8 @@ class _MenuTabState extends State<MenuTab> {
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: adminVerified.toLowerCase() == 'approved' 
-                            ? Colors.green.shade50 
-                            : Colors.orange.shade50,
+                            ? AppColors.success.withOpacity(0.1) 
+                            : AppColors.secondary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -160,18 +175,17 @@ class _MenuTabState extends State<MenuTab> {
                             adminVerified.toLowerCase() == 'approved' ? Icons.check_circle : Icons.pending,
                             size: 16,
                             color: adminVerified.toLowerCase() == 'approved' 
-                                ? Colors.green.shade700 
-                                : Colors.orange.shade700,
+                                ? AppColors.success 
+                                : AppColors.secondary,
                           ),
                           const SizedBox(width: 6),
                           Text(
                             'Status: $adminVerified',
-                            style: TextStyle(
-                              fontSize: 12,
+                            style: AppTextStyles.bodySmall.copyWith(
                               fontWeight: FontWeight.w600,
                               color: adminVerified.toLowerCase() == 'approved' 
-                                  ? Colors.green.shade700 
-                                  : Colors.orange.shade700,
+                                  ? AppColors.success 
+                                  : AppColors.secondary,
                             ),
                           ),
                         ],
@@ -267,7 +281,7 @@ class _MenuTabState extends State<MenuTab> {
                       ElevatedButton(
                         onPressed: () => Navigator.pop(ctx, true),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
+                          backgroundColor: AppColors.error,
                           foregroundColor: Colors.white,
                         ),
                         child: const Text('Log Out'),
@@ -297,22 +311,23 @@ class _MenuTabState extends State<MenuTab> {
   Widget _buildMenuSection(List<_MenuItem> items) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+        border: Border.all(color: AppColors.border),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
       ),
       child: Column(
         children: items.map((item) {
           return ListTile(
-            leading: Icon(item.icon, color: item.isDestructive ? Colors.red : Colors.black87),
+            leading: Icon(item.icon, color: item.isDestructive ? AppColors.error : AppColors.textPrimary),
             title: Text(
               item.title, 
-              style: TextStyle(
+              style: AppTextStyles.bodyMedium.copyWith(
                 fontWeight: FontWeight.w500, 
-                color: item.isDestructive ? Colors.red : Colors.black87
+                color: item.isDestructive ? AppColors.error : AppColors.textPrimary
               )
             ),
-            trailing: const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
+            trailing: const Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
             onTap: item.onTap,
           );
         }).toList(),
@@ -323,21 +338,15 @@ class _MenuTabState extends State<MenuTab> {
   Widget _buildStatItem(String label, String value, IconData icon) {
     return Column(
       children: [
-        Icon(icon, color: const Color(0xFF2575FC), size: 24),
+        Icon(icon, color: AppColors.primary, size: 24),
         const SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: AppTextStyles.h3.copyWith(fontSize: 16),
         ),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 11,
-            color: Colors.grey.shade600,
-          ),
+          style: AppTextStyles.bodySmall,
         ),
       ],
     );

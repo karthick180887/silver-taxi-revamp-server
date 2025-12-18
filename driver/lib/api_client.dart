@@ -49,21 +49,24 @@ class DriverApiClient extends BaseApiClient {
 
   Future<ApiResult> verifyLoginOtp({
     required String phone,
-    required String otp,
-    required String smsToken,
+    String? otp,
+    String? smsToken,
+    String? accessToken,
     String? driverId,
     String type = 'verify',
   }) async {
     final body = <String, dynamic>{
       'phone': phone,
-      'otp': otp,
-      'smsToken': smsToken,
     };
+    if (otp != null) body['otp'] = otp;
+    if (smsToken != null) body['smsToken'] = smsToken;
+    if (accessToken != null) body['accessToken'] = accessToken;
     if (driverId != null) body['driverId'] = driverId;
+
     return post(
       '/app/auth/login/$type',
       body,
-      allowedStatus: {200, 401, 404},
+      allowedStatus: {200, 401},
     );
   }
 
@@ -82,19 +85,23 @@ class DriverApiClient extends BaseApiClient {
 
   Future<ApiResult> verifySignupOtp({
     required String phone,
-    required String otp,
-    required String smsToken,
+    String? otp,
+    String? smsToken,
+    String? accessToken,
     required String fcmToken, // Backend requires this field
     String? name,
     String? email,
+    String? signupToken,
     String type = 'verify',
   }) async {
     final body = <String, dynamic>{
       'phone': phone,
-      'otp': otp,
-      'smsToken': smsToken,
       'fcmToken': fcmToken, // Required by backend
     };
+    if (otp != null) body['otp'] = otp;
+    if (smsToken != null) body['smsToken'] = smsToken;
+    if (accessToken != null) body['accessToken'] = accessToken;
+    if (signupToken != null) body['signupToken'] = signupToken;
     if (name != null) body['name'] = name;
     if (email != null) body['email'] = email;
     return post(

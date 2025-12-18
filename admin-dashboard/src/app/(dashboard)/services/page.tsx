@@ -125,7 +125,8 @@ export default function ServicesPage() {
             await servicesApi.update(service.serviceId, {
                 minKm: Number(service.minKm),
                 vendorCommission: Number(service.vendorCommission),
-                driverCommission: Number(service.driverCommission)
+                driverCommission: Number(service.driverCommission),
+                isActive: service.isActive
             });
 
             // 2. Save all tariffs for this service
@@ -174,26 +175,74 @@ export default function ServicesPage() {
                 {services.map(service => (
                     <Card key={service.serviceId} className="overflow-hidden border border-slate-200 shadow-sm bg-white">
                         {/* Service Header */}
-                        <div className="bg-slate-50/50 p-6 border-b border-slate-100 flex flex-wrap gap-6 justify-between items-center">
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-800">{service.name}</h2>
-                                <div className="flex gap-4 mt-2 text-sm text-slate-500">
-                                    <span className="bg-slate-100 px-2 py-1 rounded">Min: {service.minKm} km</span>
-                                    <span>Vendor Comm: {service.vendorCommission}%</span>
-                                    <span>Driver Comm: {service.driverCommission}%</span>
+                        <div className="bg-slate-50/50 p-6 border-b border-slate-100 grid grid-cols-1 lg:grid-cols-12 gap-6 items-end">
+                            {/* Title & Status */}
+                            <div className="lg:col-span-3">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <h2 className="text-lg font-bold text-slate-800">{service.name}</h2>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-[10px] font-bold uppercase ${service.isActive ? 'text-green-600' : 'text-slate-400'}`}>
+                                            {service.isActive ? 'Active' : 'Inactive'}
+                                        </span>
+                                        <Switch
+                                            checked={service.isActive}
+                                            onChange={(c) => updateServiceField(service.serviceId, 'isActive', c)}
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-slate-400">Edit base details below</p>
+                            </div>
+
+                            {/* Editable Fields */}
+                            <div className="lg:col-span-7 flex flex-wrap gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-slate-500 uppercase">Min Km</label>
+                                    <div className="relative">
+                                        <Input
+                                            type="number"
+                                            className="w-24 h-9 bg-white text-sm pl-2 pr-8"
+                                            value={service.minKm}
+                                            onChange={(e) => updateServiceField(service.serviceId, 'minKm', e.target.value)}
+                                        />
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">km</span>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-slate-500 uppercase">Vendor Comm</label>
+                                    <div className="relative">
+                                        <Input
+                                            type="number"
+                                            className="w-24 h-9 bg-white text-sm pl-2 pr-6"
+                                            value={service.vendorCommission}
+                                            onChange={(e) => updateServiceField(service.serviceId, 'vendorCommission', e.target.value)}
+                                        />
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-slate-500 uppercase">Driver Comm</label>
+                                    <div className="relative">
+                                        <Input
+                                            type="number"
+                                            className="w-24 h-9 bg-white text-sm pl-2 pr-6"
+                                            value={service.driverCommission}
+                                            onChange={(e) => updateServiceField(service.serviceId, 'driverCommission', e.target.value)}
+                                        />
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-4">
-                                <div className={`px-3 py-1 rounded-full text-xs font-bold ${service.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                                    {service.isActive ? 'Active' : 'Inactive'}
-                                </div>
+                            {/* Action Button */}
+                            <div className="lg:col-span-2 flex justify-end">
                                 <Button
                                     onClick={() => handleSaveService(service)}
                                     disabled={savingMap[service.serviceId]}
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-200"
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-200"
                                 >
-                                    {savingMap[service.serviceId] ? 'Saving...' : 'Save Rates'}
+                                    {savingMap[service.serviceId] ? 'Saving...' : 'Save All'}
                                 </Button>
                             </div>
                         </div>

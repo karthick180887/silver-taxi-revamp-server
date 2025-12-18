@@ -5,6 +5,7 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -32,11 +33,22 @@ android {
 
     signingConfigs {
         create("release") {
-            // Hardcoding for debugging
-            storeFile = file("upload-keystore.jks")
-            storePassword = "android"
-            keyAlias = "upload"
-            keyPassword = "android"
+            val keyPropertiesFile = rootProject.file("key.properties")
+            if (keyPropertiesFile.exists()) {
+                val keyProperties = Properties()
+                keyProperties.load(FileInputStream(keyPropertiesFile))
+                
+                storeFile = if (keyProperties.getProperty("storeFile") != null) file(keyProperties.getProperty("storeFile")) else null
+                storePassword = keyProperties.getProperty("storePassword")
+                keyAlias = keyProperties.getProperty("keyAlias")
+                keyPassword = keyProperties.getProperty("keyPassword")
+            } else {
+                // Return default debug key if no key.properties found (Safe fallback)
+                storeFile = file("upload-keystore.jks")
+                storePassword = "android"
+                keyAlias = "upload"
+                keyPassword = "android"
+            }
         }
     }
 

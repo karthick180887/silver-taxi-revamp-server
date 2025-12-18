@@ -7,6 +7,7 @@ import '../services/trip_service.dart';
 import 'home_tab.dart';
 import 'notification_tab.dart';
 import 'menu_tab.dart';
+import '../design_system.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key, required this.token, required this.driverId});
@@ -170,10 +171,10 @@ class _MainScreenState extends State<MainScreen> {
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.surface,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
@@ -183,16 +184,16 @@ class _MainScreenState extends State<MainScreen> {
           currentIndex: _selectedIndex,
           onTap: (i) => _navigate(i),
           type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
-          selectedItemColor: const Color(0xFF2575FC),
-          unselectedItemColor: Colors.grey.shade400,
+          backgroundColor: AppColors.surface,
+          selectedItemColor: AppColors.primary,
+          unselectedItemColor: AppColors.textTertiary,
           showUnselectedLabels: true,
-          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+          selectedLabelStyle: AppTextStyles.label.copyWith(fontSize: 12),
+          unselectedLabelStyle: AppTextStyles.label.copyWith(fontSize: 12, fontWeight: FontWeight.normal),
           items: const [
             BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.notifications), label: 'Notification'),
-            BottomNavigationBarItem(icon: Icon(Icons.menu), label: 'Menu'),
+            BottomNavigationBarItem(icon: Icon(Icons.notifications_rounded), label: 'Notification'),
+            BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'Menu'),
           ],
         ),
       ),

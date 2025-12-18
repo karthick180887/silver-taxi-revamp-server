@@ -13,6 +13,7 @@ import 'payment_details_page.dart';
 import 'payment_processing_page.dart';
 import 'wallet_page.dart';
 import 'all_trips_page.dart';
+import '../design_system.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({
@@ -451,15 +452,9 @@ class _HomeTabState extends State<HomeTab> {
   @override
   Widget build(BuildContext context) {
     final name = _driverDetails?['name'] ?? 'Driver';
-    final phone = _driverDetails?['phone'] ?? widget.driverId;
     final photo = _driverDetails?['profilePicture'];
     final balance = _wallet?['balance'] ?? 0.0;
     final counts = _bookingCounts ?? {};
-
-    // Theme Colors
-    const kPrimaryBlue = Color(0xFF2563EB); // Royal Blue
-    const kDarkBg = Color(0xFF0F172A); // Slate 900
-    const kCardBg = Colors.white;
 
     return PopScope(
       canPop: !_paymentInProgress,
@@ -467,19 +462,18 @@ class _HomeTabState extends State<HomeTab> {
         if (_paymentInProgress && didPop) {
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(
             const SnackBar(
-              content: Text(
-                  'Payment in progress. Please complete or cancel the payment first.'),
+              content: Text('Payment in progress. Please complete or cancel the payment first.'),
               duration: Duration(seconds: 3),
             ),
           );
         }
       },
       child: Scaffold(
-        backgroundColor: Colors.grey.shade50,
+        backgroundColor: AppColors.background,
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: _loadDetails,
-            color: kPrimaryBlue,
+            color: AppColors.primary,
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
               children: [
@@ -490,9 +484,9 @@ class _HomeTabState extends State<HomeTab> {
                       width: 50,
                       height: 50,
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
+                        color: AppColors.surface,
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
+                        border: Border.all(color: AppColors.border, width: 2),
                         boxShadow: [
                           BoxShadow(
                               color: Colors.black.withOpacity(0.05),
@@ -506,7 +500,7 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                       child: photo == null || photo.isEmpty
                           ? const Icon(CupertinoIcons.person_fill,
-                              color: Colors.grey)
+                              color: AppColors.textTertiary)
                           : null,
                     ),
                     const SizedBox(width: 16),
@@ -516,21 +510,14 @@ class _HomeTabState extends State<HomeTab> {
                         children: [
                           Text(
                             'Hello, $name',
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E293B),
-                              letterSpacing: -0.5,
-                            ),
+                            style: AppTextStyles.h2,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
                             _online ? 'You are Online' : 'You are Offline',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: _online ? Colors.green : Colors.grey,
+                            style: AppTextStyles.label.copyWith(
+                              color: _online ? AppColors.success : AppColors.textTertiary,
                             ),
                           ),
                         ],
@@ -548,15 +535,11 @@ class _HomeTabState extends State<HomeTab> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: AppColors.primary,
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF2563EB).withOpacity(0.3),
+                        color: AppColors.primary.withOpacity(0.3),
                         blurRadius: 20,
                         offset: const Offset(0, 10),
                       ),
@@ -574,20 +557,12 @@ class _HomeTabState extends State<HomeTab> {
                             children: [
                               Text(
                                 'Total Balance',
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.8),
-                                  fontSize: 14,
-                                ),
+                                style: AppTextStyles.bodyMedium.copyWith(color: Colors.white.withOpacity(0.8)),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 '₹ ${balance.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: -1,
-                                ),
+                                style: AppTextStyles.h1.copyWith(color: Colors.white, fontSize: 32),
                               ),
                             ],
                           ),
@@ -611,13 +586,13 @@ class _HomeTabState extends State<HomeTab> {
                               label: const Text('Add Money'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.white,
-                                foregroundColor: kPrimaryBlue,
+                                foregroundColor: AppColors.primary,
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                textStyle: AppTextStyles.button.copyWith(fontSize: 14),
                               ),
                             ),
                           ),
@@ -656,13 +631,9 @@ class _HomeTabState extends State<HomeTab> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
+                    Text(
                       'Overview',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E293B),
-                      ),
+                      style: AppTextStyles.h3,
                     ),
                     InkWell(
                       onTap: () => Navigator.of(context).push(
@@ -670,12 +641,9 @@ class _HomeTabState extends State<HomeTab> {
                           builder: (_) => AllTripsPage(token: widget.token),
                         ),
                       ),
-                      child: const Text(
+                      child: Text(
                         'See All',
-                        style: TextStyle(
-                          color: kPrimaryBlue,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: AppTextStyles.label.copyWith(color: AppColors.secondary),
                       ),
                     ),
                   ],
@@ -694,7 +662,7 @@ class _HomeTabState extends State<HomeTab> {
                     _buildModernStatCard(
                       label: 'New Requests',
                       count: counts['offers'] ?? 0,
-                      color: const Color(0xFFF59E0B), // Amber
+                      color: AppColors.secondary,
                       icon: CupertinoIcons.bell_fill,
                       onTap: () {
                          Navigator.of(context).push(
@@ -728,7 +696,7 @@ class _HomeTabState extends State<HomeTab> {
                     _buildModernStatCard(
                       label: 'Started',
                       count: counts['started'] ?? 0,
-                      color: const Color(0xFF10B981), // Emerald
+                      color: AppColors.success,
                       icon: CupertinoIcons.car_detailed,
                       onTap: () {
                          Navigator.of(context).push(
@@ -745,7 +713,7 @@ class _HomeTabState extends State<HomeTab> {
                     _buildModernStatCard(
                       label: 'Completed',
                       count: counts['completed'] ?? 0,
-                      color: const Color(0xFF2563EB), // Blue
+                      color: AppColors.primary,
                       icon: CupertinoIcons.checkmark_circle_fill,
                       onTap: () {
                          Navigator.of(context).push(
@@ -762,7 +730,7 @@ class _HomeTabState extends State<HomeTab> {
                     _buildModernStatCard(
                       label: 'Cancelled',
                       count: counts['cancelled'] ?? 0,
-                      color: const Color(0xFFEF4444), // Red
+                      color: AppColors.error,
                       icon: CupertinoIcons.xmark_circle_fill,
                       onTap: () {
                          Navigator.of(context).push(
@@ -782,13 +750,9 @@ class _HomeTabState extends State<HomeTab> {
                 const SizedBox(height: 24),
 
                 // 5. Tools / Extras Section
-                const Text(
+                Text(
                   'Tools',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E293B),
-                  ),
+                  style: AppTextStyles.h3,
                 ),
                 const SizedBox(height: 16),
 
@@ -848,7 +812,7 @@ class _HomeTabState extends State<HomeTab> {
         width: 60,
         height: 34,
         decoration: BoxDecoration(
-          color: _online ? const Color(0xFF10B981) : Colors.grey.shade300,
+          color: _online ? AppColors.success : AppColors.border,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Stack(
@@ -860,21 +824,21 @@ class _HomeTabState extends State<HomeTab> {
               child: Container(
                 width: 26,
                 height: 26,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.white,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black12,
+                      color: Colors.black.withOpacity(0.1),
                       blurRadius: 4,
-                      offset: Offset(0, 2),
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
                 child: Icon(
                   _online ? Icons.bolt : Icons.power_settings_new,
                   size: 16,
-                  color: _online ? const Color(0xFF10B981) : Colors.grey,
+                  color: _online ? AppColors.success : AppColors.textTertiary,
                 ),
               ),
             ),
@@ -892,7 +856,7 @@ class _HomeTabState extends State<HomeTab> {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: Colors.white,
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(20),
       elevation: 0,
       child: InkWell(
@@ -902,7 +866,7 @@ class _HomeTabState extends State<HomeTab> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.grey.shade100),
+            border: Border.all(color: AppColors.border),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.03),
@@ -928,20 +892,12 @@ class _HomeTabState extends State<HomeTab> {
                 children: [
                   Text(
                     count.toString(),
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF1E293B),
-                    ),
+                    style: AppTextStyles.h2,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey.shade500,
-                    ),
+                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary),
                   ),
                 ],
               ),
@@ -960,7 +916,7 @@ class _HomeTabState extends State<HomeTab> {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: Colors.white,
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -984,24 +940,17 @@ class _HomeTabState extends State<HomeTab> {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1E293B),
-                      ),
+                      style: AppTextStyles.label.copyWith(fontSize: 16),
                     ),
                     Text(
                       subtitle,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade500,
-                      ),
+                      style: AppTextStyles.bodySmall,
                     ),
                   ],
                 ),
               ),
               Icon(CupertinoIcons.chevron_right,
-                  size: 16, color: Colors.grey.shade400),
+                  size: 16, color: AppColors.textTertiary),
             ],
           ),
         ),

@@ -5,8 +5,19 @@ import 'screens/login_screen.dart';
 import 'screens/main_screen.dart';
 import 'design_system.dart';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'services/notification_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  try {
+    await Firebase.initializeApp();
+    await NotificationService().initialize();
+  } catch (e) {
+    print("Failed to initialize Firebase/Notifications: $e");
+  }
+
   runApp(const CustomerApp());
 }
 

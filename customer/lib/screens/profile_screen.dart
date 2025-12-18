@@ -309,6 +309,201 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       appBar: AppBar(
         title: const Text('Edit Profile'),
       ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      _customer!.phone,
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Account Information',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildInfoRow('Customer ID', _customer!.customerId),
+                    if (_customer!.referralCode != null)
+                      _buildInfoRow('Referral Code', _customer!.referralCode!),
+                    _buildInfoRow('Status', _customer!.status),
+                    _buildInfoRow('Rating', _customer!.rating.toStringAsFixed(1)),
+                    _buildInfoRow('Total Trips', _customer!.totalTrips.toString()),
+                    _buildInfoRow('Total Bookings', _customer!.bookingCount.toString()),
+                    _buildInfoRow('Total Amount', '₹${_customer!.totalAmount}'),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                // Navigate to edit profile screen
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditProfileScreen(
+                      token: widget.token,
+                      customer: _customer!,
+                      onUpdated: _loadCustomerDetails,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.edit),
+              label: const Text('Edit Profile'),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Colors.grey),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class EditProfileScreen extends StatefulWidget {
+  const EditProfileScreen({
+    super.key,
+    required this.token,
+    required this.customer,
+    required this.onUpdated,
+  });
+  final String token;
+  final Customer customer;
+  final VoidCallback onUpdated;
+
+  @override
+  State<EditProfileScreen> createState() => _EditProfileScreenState();
+}
+
+class _EditProfileScreenState extends State<EditProfileScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _apiClient = CustomerApiClient(baseUrl: kApiBaseUrl);
+  String? _selectedGender;
+  DateTime? _selectedDob;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController.text = widget.customer.name;
+    _emailController.text = widget.customer.email ?? '';
+    _phoneController.text = widget.customer.phone;
+    _selectedGender = widget.customer.gender;
+    _selectedDob = widget.customer.dob;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final result = await _apiClient.updateCustomerProfile(
+        token: widget.token,
+        name: _nameController.text,
+        email: _emailController.text.isEmpty ? null : _emailController.text,
+        phone: _phoneController.text,
+        gender: _selectedGender,
+        dob: _selectedDob,
+      );
+
+      if (result.success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Profile updated successfully')),
+          );
+          widget.onUpdated();
+          Navigator.pop(context);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result.body['message'] ?? 'Failed to update profile')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _selectDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDob ?? DateTime.now(),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDob = picked;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Edit Profile'),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -316,9 +511,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           children: [
             TextFormField(
               controller: _nameController,
-              decoration: const InputDecoration(
+              readOnly: true, // User cannot edit name
+              decoration: InputDecoration(
                 labelText: 'Name',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: Colors.grey[200],
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
@@ -339,9 +537,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _phoneController,
-              decoration: const InputDecoration(
+              readOnly: true, // User cannot edit phone
+              decoration: InputDecoration(
                 labelText: 'Phone',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: Colors.grey[200],
               ),
               keyboardType: TextInputType.phone,
               validator: (value) {
@@ -354,8 +555,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               initialValue: _selectedGender,
-              decoration: const InputDecoration(
-                labelText: 'Gender',
                 border: OutlineInputBorder(),
               ),
               items: const [

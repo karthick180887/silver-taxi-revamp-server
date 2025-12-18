@@ -8,6 +8,7 @@ import { bookingsApi, servicesApi, vehiclesApi, tariffsApi } from '@/lib/api';
 interface Service {
     serviceId: string;
     name: string;
+    isActive: boolean;
 }
 
 interface VehicleType {
@@ -78,8 +79,9 @@ export default function CreateBookingPage() {
                 tariffsApi.getAll().catch(() => ({ data: [] })),
             ]);
 
-            const servicesData = servicesRes.data?.data || servicesRes.data || [];
-            setServices(Array.isArray(servicesData) ? servicesData : servicesData.services || []);
+            const servicesData = servicesRes.data?.data?.services || servicesRes.data?.data || servicesRes.data || [];
+            const allServices = Array.isArray(servicesData) ? servicesData : [];
+            setServices(allServices.filter((s: Service) => s.isActive));
 
             const vehiclesData = vehiclesRes.data?.data || vehiclesRes.data || [];
             setVehicleTypes(Array.isArray(vehiclesData) ? vehiclesData : vehiclesData.vehicles || []);

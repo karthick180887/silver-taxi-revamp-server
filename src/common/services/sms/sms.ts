@@ -341,7 +341,7 @@ export default function SMSService() {
                     return {
                         status: 200,
                         success: true,
-                        message: 'Token verified successfully',
+                        message: response.data.message || 'Token verified successfully',
                         id: undefined
                     };
                 } else {

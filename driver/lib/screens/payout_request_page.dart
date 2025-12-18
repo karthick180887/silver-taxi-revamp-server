@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api_client.dart';
+import '../design_system.dart';
 
 class PayoutRequestPage extends StatefulWidget {
   const PayoutRequestPage({super.key, required this.token});
@@ -98,16 +99,16 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
     return value.toString();
   }
 
-  String _getStatusColor(String status) {
+  Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'completed':
-        return 'green';
+        return AppColors.success;
       case 'pending':
-        return 'orange';
+        return AppColors.secondary;
       case 'rejected':
-        return 'red';
+        return AppColors.error;
       default:
-        return 'grey';
+        return AppColors.textTertiary;
     }
   }
 
@@ -115,7 +116,7 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
     final amount = double.tryParse(_amountController.text);
     if (amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid amount')),
+        SnackBar(content: Text('Please enter a valid amount', style: AppTextStyles.bodyMedium.copyWith(color: Colors.white)), backgroundColor: AppColors.error),
       );
       return;
     }
@@ -123,7 +124,7 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
     final balance = _toDouble(_walletData?['balance'] ?? 0.0);
     if (amount > balance) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Insufficient balance')),
+        SnackBar(content: Text('Insufficient balance', style: AppTextStyles.bodyMedium.copyWith(color: Colors.white)), backgroundColor: AppColors.error),
       );
       return;
     }
@@ -134,7 +135,7 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
           _ifscController.text.isEmpty ||
           _accountHolderNameController.text.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please fill all bank details')),
+          SnackBar(content: Text('Please fill all bank details', style: AppTextStyles.bodyMedium.copyWith(color: Colors.white)), backgroundColor: AppColors.error),
         );
         return;
       }
@@ -146,7 +147,7 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
     } else if (_selectedType == 'upi') {
       if (_upiIdController.text.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter UPI ID')),
+          SnackBar(content: Text('Please enter UPI ID', style: AppTextStyles.bodyMedium.copyWith(color: Colors.white)), backgroundColor: AppColors.error),
         );
         return;
       }
@@ -167,7 +168,7 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
       if (res.success) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Payout request submitted successfully')),
+            SnackBar(content: Text('Payout request submitted successfully', style: AppTextStyles.bodyMedium.copyWith(color: Colors.white)), backgroundColor: AppColors.success),
           );
           // Clear form
           _amountController.clear();
@@ -184,20 +185,20 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text('Error: $e', style: AppTextStyles.bodyMedium.copyWith(color: Colors.white)), backgroundColor: AppColors.error),
         );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
-
+  
   void _showRequestDialog() {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Request Payout'),
+          title: Text('Request Payout', style: AppTextStyles.h3),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -205,7 +206,7 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
               children: [
                 Text(
                   'Available Balance: ${_formatAmount(_toDouble(_walletData?['balance'] ?? 0.0))}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -284,6 +285,7 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
                 Navigator.pop(ctx);
                 _requestPayout();
               },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
               child: const Text('Submit'),
             ),
           ],
@@ -296,55 +298,63 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
   Widget build(BuildContext context) {
     final balance = _toDouble(_walletData?['balance'] ?? 0.0);
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Payout Requests'),
+        title: Text('Payout Requests', style: AppTextStyles.h2),
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        centerTitle: true,
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: AppColors.primary),
             onPressed: _loadData,
           ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _loadData,
+        color: AppColors.primary,
         child: _loading && _payouts.isEmpty
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
             : _error != null && _payouts.isEmpty
                 ? ListView(
                     padding: const EdgeInsets.all(16),
                     children: [
                       Text(
                         'Failed to load payout requests',
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: AppTextStyles.h3,
                       ),
                       const SizedBox(height: 8),
-                      Text(_error!, style: TextStyle(color: Colors.red.shade600)),
+                      Text(_error!, style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error)),
                       const SizedBox(height: 12),
-                      ElevatedButton(onPressed: _loadData, child: const Text('Retry')),
+                      ElevatedButton(
+                        onPressed: _loadData, 
+                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+                        child: const Text('Retry'),
+                      ),
                     ],
                   )
                 : ListView(
                     padding: const EdgeInsets.all(16),
                     children: [
                       Card(
-                        color: const Color(0xFF2575FC),
+                        color: AppColors.primary,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 4,
                         child: Padding(
                           padding: const EdgeInsets.all(24),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Available Balance',
-                                style: TextStyle(color: Colors.white70),
+                                style: AppTextStyles.bodyMedium.copyWith(color: Colors.white70),
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 _formatAmount(balance),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                style: AppTextStyles.h1.copyWith(color: Colors.white, fontSize: 32),
                               ),
                               const SizedBox(height: 16),
                               ElevatedButton.icon(
@@ -353,40 +363,35 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
                                 label: const Text('Request Payout'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.white,
-                                  foregroundColor: const Color(0xFF2575FC),
+                                  foregroundColor: AppColors.primary,
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 24,
                                     vertical: 12,
                                   ),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 ),
                               ),
                             ],
                           ),
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 24),
                       Text(
                         'Payout History',
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: AppTextStyles.h3,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 16),
                       if (_payouts.isEmpty)
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: AppColors.surface,
                             borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
+                            border: Border.all(color: AppColors.border),
                           ),
                           child: Text(
                             'No payout requests found',
-                            style: TextStyle(color: Colors.grey.shade600),
+                            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textTertiary),
                           ),
                         )
                       else
@@ -397,16 +402,17 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
                           final method = (payout['paymentMethod'] ?? 'N/A').toString();
                           final statusColor = _getStatusColor(status);
                           return Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(14),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: AppColors.surface,
                               borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
+                              border: Border.all(color: AppColors.border),
+                              boxShadow: const [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.04),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
+                                  color: Colors.black12,
+                                  blurRadius: 4,
+                                  offset: Offset(0, 2),
                                 ),
                               ],
                             ),
@@ -418,10 +424,7 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
                                   children: [
                                     Text(
                                       _formatAmount(amount),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
-                                      ),
+                                      style: AppTextStyles.h3.copyWith(fontSize: 18),
                                     ),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
@@ -429,23 +432,14 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
                                         vertical: 6,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: statusColor == 'green'
-                                            ? Colors.green.shade50
-                                            : statusColor == 'red'
-                                                ? Colors.red.shade50
-                                                : Colors.orange.shade50,
+                                        color: statusColor.withOpacity(0.1),
                                         borderRadius: BorderRadius.circular(20),
                                       ),
                                       child: Text(
                                         status.toUpperCase(),
-                                        style: TextStyle(
-                                          color: statusColor == 'green'
-                                              ? Colors.green.shade700
-                                              : statusColor == 'red'
-                                                  ? Colors.red.shade700
-                                                  : Colors.orange.shade700,
+                                        style: AppTextStyles.bodySmall.copyWith(
+                                          color: statusColor,
                                           fontWeight: FontWeight.w600,
-                                          fontSize: 12,
                                         ),
                                       ),
                                     ),
@@ -454,12 +448,12 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
                                 const SizedBox(height: 8),
                                 Text(
                                   'Method: $method',
-                                  style: TextStyle(color: Colors.grey.shade600),
+                                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
                                   'Date: $date',
-                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary, fontSize: 12),
                                 ),
                               ],
                             ),
@@ -470,6 +464,8 @@ class _PayoutRequestPageState extends State<PayoutRequestPage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _toDouble(_walletData?['balance'] ?? 0.0) > 0 ? _showRequestDialog : null,
+        backgroundColor: AppColors.secondary,
+        foregroundColor: Colors.white,
         icon: const Icon(Icons.account_balance_wallet),
         label: const Text('Request Payout'),
       ),

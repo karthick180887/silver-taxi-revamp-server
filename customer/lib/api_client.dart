@@ -463,6 +463,57 @@ class CustomerApiClient {
     );
   }
 
+  /// DELETE /customer/notifications/delete - Delete notifications (Bulk)
+  Future<ApiResult> deleteNotification({
+    required String token,
+    required String adminId,
+    required String customerId,
+    required List<String> notificationIds,
+  }) async {
+    return _delete(
+      '/customer/notifications/delete',
+      {
+        'adminId': adminId,
+        'customerId': customerId,
+        'ids': notificationIds,
+      },
+      token: token,
+    );
+  }
+
+  /// PUT /customer/notifications/read/:id - Mark single notification as read
+  Future<ApiResult> markNotificationAsRead({
+    required String token,
+    required String adminId,
+    required String customerId,
+    required String notificationId,
+  }) async {
+    return _put(
+      '/customer/notifications/read/$notificationId',
+      {
+        'adminId': adminId,
+        'customerId': customerId,
+      },
+      token: token,
+    );
+  }
+
+  /// PUT /customer/notifications/read-all - Mark all notifications as read
+  Future<ApiResult> markAllNotificationsAsRead({
+    required String token,
+    required String adminId,
+    required String customerId,
+  }) async {
+    return _put(
+      '/customer/notifications/read-all',
+      {
+        'adminId': adminId,
+        'customerId': customerId,
+      },
+      token: token,
+    );
+  }
+
   // ============================================
   // Promo Code APIs
   // ============================================
@@ -739,6 +790,107 @@ class CustomerApiClient {
         body: {
           'success': false,
           'message': e.toString(),
+          'error': e.toString(),
+        },
+        success: false,
+      );
+    } catch (e) {
+      _log('[CustomerApiClient] ❌ Unexpected error: $e');
+      return ApiResult(
+        statusCode: 0,
+        body: {
+          'success': false,
+          'message': 'Unexpected error occurred',
+          'error': e.toString(),
+        },
+        success: false,
+      );
+    }
+  }
+
+  Future<ApiResult> _delete(
+    String path,
+    Map<String, dynamic> data, {
+    String? token,
+    Set<int> allowedStatus = const {200},
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl$path');
+      
+      _log('[CustomerApiClient] DELETE $path');
+      if (token != null) {
+        _log('[CustomerApiClient] Token provided: ${token.substring(0, 20)}...');
+      } else {
+        _log('[CustomerApiClient] ⚠️ No token provided');
+      }
+      
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+      };
+      if (token != null) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+
+      final resp = await http.delete(
+        uri,
+        headers: headers,
+        body: jsonEncode(data),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Request timeout: Server did not respond within 30 seconds');
+        },
+      );
+
+      _log('[CustomerApiClient] Response status: ${resp.statusCode}');
+      _log('[CustomerApiClient] Response body preview: ${_bodyPreview(resp.body)}');
+
+      Map<String, dynamic> body;
+      try {
+        if (resp.body.isNotEmpty) {
+          body = jsonDecode(resp.body) as Map<String, dynamic>;
+        } else {
+          body = {
+            'success': resp.statusCode >= 200 && resp.statusCode < 300,
+            'message': resp.statusCode >= 200 && resp.statusCode < 300 
+                ? 'Request successful' 
+                : 'Request failed',
+          };
+        }
+      } catch (e) {
+        _log('[CustomerApiClient] ⚠️ Failed to parse JSON response: $e');
+        final errorPreview = resp.body.length > 200 
+            ? resp.body.substring(0, 200) 
+            : resp.body;
+        body = {
+          'success': false,
+          'message': 'Server returned invalid response format',
+          'error': 'Failed to parse JSON: ${e.toString()}',
+          'rawBody': errorPreview,
+        };
+        _log('[CustomerApiClient] Response body: $errorPreview');
+      }
+
+      if (resp.statusCode == 401) {
+        final errorMsg = body['message']?.toString() ?? 
+                        body['error']?.toString() ?? 
+                        'Authentication required';
+        _log('[CustomerApiClient] ❌ 401 Unauthorized: $errorMsg');
+      }
+
+      return ApiResult(
+        statusCode: resp.statusCode,
+        body: body,
+        success: allowedStatus.contains(resp.statusCode) || 
+                (resp.statusCode >= 200 && resp.statusCode < 300),
+      );
+    } on http.ClientException catch (e) {
+      _log('[CustomerApiClient] ❌ Network error: $e');
+      return ApiResult(
+        statusCode: 0,
+        body: {
+          'success': false,
+          'message': 'Network error: Unable to connect to server.',
           'error': e.toString(),
         },
         success: false,
