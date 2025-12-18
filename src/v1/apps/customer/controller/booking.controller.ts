@@ -131,7 +131,14 @@ export const specificBooking = async (req: Request, res: Response) => {
                 res.status(200).json({
                     success: true,
                     message: "Cancelled Booking fetched successfully",
-                    data: bookings,
+                    data: bookings.map((b: any) => {
+                        const booking = b.toJSON();
+                        try {
+                            if (booking.pickup?.startsWith('{')) booking.pickup = JSON.parse(booking.pickup);
+                            if (booking.drop?.startsWith('{')) booking.drop = JSON.parse(booking.drop);
+                        } catch (_) { }
+                        return booking;
+                    }),
                 });
                 break;
 
@@ -158,6 +165,16 @@ export const specificBooking = async (req: Request, res: Response) => {
                     if (booking.status === "Reassign") {
                         booking.status = "Booking Confirmed";
                     }
+
+                    // Parse location JSON if stored as string
+                    try {
+                        if (booking.pickup && booking.pickup.startsWith('{')) {
+                            booking.pickup = JSON.parse(booking.pickup);
+                        }
+                        if (booking.drop && booking.drop.startsWith('{')) {
+                            booking.drop = JSON.parse(booking.drop);
+                        }
+                    } catch (e) { }
 
                     return booking;
                 });
@@ -239,6 +256,16 @@ export const getSingleBooking = async (req: Request, res: Response) => {
         data.description = data?.tariff?.description || null;
         delete data.tariff;
 
+        // Parse location JSON if stored as string
+        try {
+            if (data.pickup && data.pickup.startsWith('{')) {
+                data.pickup = JSON.parse(data.pickup);
+            }
+            if (data.drop && data.drop.startsWith('{')) {
+                data.drop = JSON.parse(data.drop);
+            }
+        } catch (e) { }
+
 
 
         res.status(200).json({
@@ -309,12 +336,12 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         const tariffId = req.body.tariffId ?? req.body.vehicleTypeId;
         const vehicleId = undefined;
 
-        // Ensure pickup and drop are strings (extract address if object)
-        if (typeof pickup === 'object' && pickup !== null && pickup.address) {
-            pickup = pickup.address;
+        // Ensure pickup and drop are stringified JSON if they are objects to preserve lat/lng
+        if (typeof pickup === 'object' && pickup !== null) {
+            pickup = JSON.stringify(pickup);
         }
-        if (typeof drop === 'object' && drop !== null && drop.address) {
-            drop = drop.address;
+        if (typeof drop === 'object' && drop !== null) {
+            drop = JSON.stringify(drop);
         }
 
         // MAP tripType to serviceType if missing
@@ -452,7 +479,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         });
 
         const { customAlphabet } = await import("nanoid");
-        const generateOtp = customAlphabet('1234567890', 4);
+        const generateOtp = customAlphabet('1234567890', 6);  // 6 digits for MSG91 compatibility
         const startOtp = generateOtp();
         const endOtp = generateOtp();
 

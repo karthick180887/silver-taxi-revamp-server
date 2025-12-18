@@ -25,12 +25,17 @@ class TripService {
     try {
       // Backend uses bookings table - use booking API for new offers
       // Get bookings with "Booking Confirmed" status (new offers)
+      _log('[TripService] ========================================');
       _log('[TripService] 🔄 Fetching live trips (Booking Confirmed)...');
-      final res = await _api.getBookingsByStatus(token: token, status: 'Booking Confirmed');
+      _log('[TripService] Status: booking-confirmed');
+      _log('[TripService] ========================================');
+      
+      final res = await _api.getBookingsByStatus(token: token, status: 'booking-confirmed');
       
       _log('[TripService] 📡 Live trips API response:');
       _log('[TripService]   - Success: ${res.success}');
       _log('[TripService]   - Status Code: ${res.statusCode}');
+      _log('[TripService]   - Full body: ${res.body}');
       
       _ensureSuccess(res, 'fetch live trips');
       
@@ -39,6 +44,9 @@ class TripService {
         _log('[TripService] ⚠️ No data in response, returning empty list');
         return LiveTrips(offers: [], count: 0);
       }
+      
+      _log('[TripService] Data type: ${data.runtimeType}');
+      _log('[TripService] Data: $data');
       
       final listData = _extractList(data);
       _log('[TripService] ✅ Found ${listData.length} live trips');
@@ -106,6 +114,44 @@ class TripService {
           .toList();
     } catch (e) {
       _log('[TripService] ❌ Error fetching trips by status: $e');
+      rethrow;
+    }
+  }
+
+  Future<TripModel?> getTripDetails({
+    required String token,
+    required String tripId,
+  }) async {
+    try {
+      _log('[TripService] 🔄 Fetching trip details for ID: $tripId');
+      
+      final res = await _api.getTripSummary(token: token, tripId: tripId);
+      _ensureSuccess(res, 'fetch trip details');
+      
+      final data = res.body['data'];
+      if (data == null) {
+        _log('[TripService] ⚠️ No data in response');
+        return null;
+      }
+      
+      _log('[TripService] ✅ Trip details fetched successfully');
+      // The response structure might be { data: { trip: {...} } } or directly { data: {...} }
+      // Adjust based on common patterns or check response
+      // The response structure is { data: { tripDetails: {...}, customerDetails: {...}, ... } }
+      final tripDetails = data['tripDetails'] ?? data['trip'] ?? data;
+      final customerDetails = data['customerDetails'];
+      
+      final Map<String, dynamic> mergedData = Map<String, dynamic>.from(tripDetails);
+      
+      // Merge customer details if available
+      if (customerDetails != null) {
+        mergedData['customer'] = customerDetails;
+        mergedData['customerName'] = customerDetails['name'];
+      }
+      
+      return TripModel.fromJson(mergedData);
+    } catch (e) {
+      _log('[TripService] ❌ Error fetching trip details: $e');
       rethrow;
     }
   }
@@ -243,6 +289,7 @@ class TripService {
     required String otp,
     required double startOdometer, // Now required, not optional
     String? startOdometerImage,
+    String? accessToken, // Added for Widget flow
   }) async {
     // Validate required fields
     if (otp.isEmpty) {
@@ -258,6 +305,7 @@ class TripService {
       otp: otp, 
       startOdometer: startOdometer,
       startOdometerImage: startOdometerImage,
+      accessToken: accessToken,
     );
     _ensureSuccess(res, 'start trip');
   }
@@ -270,6 +318,7 @@ class TripService {
     required int duration,
     required double endOdometer, // Now required, not optional
     Map<String, dynamic>? driverCharges,
+    String? accessToken, // Added for Widget flow
   }) async {
     // Validate required fields
     if (endOtp.isEmpty) {
@@ -287,6 +336,7 @@ class TripService {
       duration: duration,
       endOdometer: endOdometer,
       driverCharges: driverCharges,
+      accessToken: accessToken,
     );
     _ensureSuccess(res, 'end trip');
   }
@@ -348,21 +398,24 @@ class TripService {
   }
 
 
-  // Map UI status to Booking API status format
+  // Map UI status to Booking API status format (lowercase with hyphens)
+  // Backend uses switch with lowercase values like "booking-confirmed", "not-started"
   String _toBookingStatus(String uiStatus) {
     final statusMap = {
-      'booking confirmed': 'Booking Confirmed',
-      'new': 'Booking Confirmed',
-      'pending': 'Booking Confirmed',
-      'offered': 'Booking Confirmed',
-      'not-started': 'Not-Started',
-      'non-started': 'Not-Started',
-      'accepted': 'Not-Started', // accepted maps to Not-Started in bookings
-      'started': 'Started',
-      'completed': 'Completed',
-      'cancelled': 'Cancelled',
+      'booking confirmed': 'booking-confirmed',
+      'booking-confirmed': 'booking-confirmed',
+      'new': 'booking-confirmed',
+      'pending': 'booking-confirmed',
+      'offered': 'booking-confirmed',
+      'not-started': 'not-started',
+      'non-started': 'not-started',
+      'not started': 'not-started',
+      'accepted': 'not-started', // accepted maps to Not-Started in bookings
+      'started': 'started',
+      'completed': 'completed',
+      'cancelled': 'cancelled',
     };
-    return statusMap[uiStatus.toLowerCase()] ?? uiStatus;
+    return statusMap[uiStatus.toLowerCase()] ?? uiStatus.toLowerCase().replaceAll(' ', '-');
   }
 
 

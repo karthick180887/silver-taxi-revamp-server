@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
+
 import '../api_client.dart';
 
 class SocketService {
@@ -33,33 +34,29 @@ class SocketService {
 
     // Ensure we don't have duplicate listeners if re-initializing
     _socket?.dispose();
-    _isAuthenticated = false; // Reset auth status on re-init
+    _isAuthenticated = false;
 
-    debugPrint('Connecting to Socket.IO at $kApiBaseUrl with path /socket.io/');
-    debugPrint('Token (first 20 chars): ${token.substring(0, token.length > 20 ? 20 : token.length)}...');
+    debugPrint('[SocketService] Initializing socket connection to $kApiBaseUrl');
     
-    // For socket_io_client v1.0.2, pass token as query parameter in options map
-    // Backend extracts token from URL query string (see extractAuthToken in server.go)
-    final connectionUrl = '$kApiBaseUrl?token=${Uri.encodeComponent(token)}';
-    debugPrint('Connection URL (first 100 chars): ${connectionUrl.substring(0, connectionUrl.length > 100 ? 100 : connectionUrl.length)}...');
-    
+    // IMPORTANT: Use WebSocket-only transport
+    // The socket_io_client package has issues with HTTP polling transport
+    // that causes timeout errors even when the endpoint is reachable.
+    // WebSocket-only bypasses this bug.
     _socket = io.io(
       kApiBaseUrl,
-      <String, dynamic>{
-        'transports': ['websocket', 'polling'],
-        'path': '/socket.io/',
-        'forceNew': true,
-        'query': {'token': token},  // Pass token as query parameter
-        'reconnection': true,
-        'reconnectionAttempts': 10,  // Increased attempts for better reliability
-        'reconnectionDelay': 1000,
-        'reconnectionDelayMax': 5000,
-        'timeout': 60000,  // 60 seconds timeout to match backend PingTimeout
-      }
+      io.OptionBuilder()
+        .setTransports(['websocket'])  // WebSocket ONLY - polling is buggy
+        .enableForceNew()
+        .disableAutoConnect()
+        .setAuth({'token': token})
+        .setQuery({'token': token})
+        .enableReconnection()
+        .setReconnectionAttempts(5)
+        .setReconnectionDelay(2000)
+        .build()
     );
     
-    debugPrint('Socket instance created, setting up listeners...');
-    debugPrint('Socket state after creation: connected=${_socket!.connected}, id=${_socket!.id}');
+    debugPrint('[SocketService] Socket instance created, setting up listeners...');
 
     // Set up all listeners BEFORE connecting
     _socket!.onConnect((_) {
@@ -200,14 +197,42 @@ class SocketService {
       debugPrint('Attempt number: $attemptNumber');
       debugPrint('========================================');
     });
+    
+    _socket!.onReconnectAttempt((attemptNumber) {
+      debugPrint('🔄 Socket reconnect attempt #$attemptNumber');
+    });
+    
+    _socket!.onReconnectError((error) {
+      debugPrint('❌ Socket reconnect error: $error');
+    });
+    
+    _socket!.onReconnectFailed((_) {
+      debugPrint('❌❌❌ Socket reconnection FAILED after all attempts!');
+    });
+    
+    // Also listen for 'connect_error' event (different from onConnectError)
+    _socket!.on('connect_error', (error) {
+      debugPrint('========================================');
+      debugPrint('❌ connect_error event: $error');
+      debugPrint('========================================');
+    });
+    
+    _socket!.on('error', (error) {
+      debugPrint('❌ Socket error event: $error');
+    });
 
     debugPrint('========================================');
-    debugPrint('🚀 Socket.IO will auto-connect...');
+    debugPrint('🚀 Socket.IO listeners set up, now connecting explicitly...');
     debugPrint('URL: $kApiBaseUrl');
     debugPrint('Path: /socket.io/');
     debugPrint('Token: ${token.substring(0, 20)}...');
-    debugPrint('Socket state after setup: connected=${_socket!.connected}, id=${_socket!.id}');
     debugPrint('========================================');
+    
+    // Now connect explicitly after all listeners are set up
+    _socket!.connect();
+    
+    debugPrint('Socket.connect() called, waiting for connection...');
+    debugPrint('Socket state after connect(): connected=${_socket!.connected}, id=${_socket!.id}');
     
     // Add a timeout to detect if connection never happens
     Timer(const Duration(seconds: 10), () {
@@ -219,6 +244,7 @@ class SocketService {
         debugPrint('Attempting manual reconnect...');
         debugPrint('========================================');
         try {
+          _socket!.disconnect();
           _socket!.connect();
         } catch (e) {
           debugPrint('❌ Error during manual reconnect: $e');
@@ -226,7 +252,7 @@ class SocketService {
       }
     });
     
-    debugPrint('Waiting for auto-connection to complete...');
+    debugPrint('Waiting for connection to complete...');
   }
 
   void sendLocationUpdate(double lat, double lng, double heading) {

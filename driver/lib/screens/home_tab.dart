@@ -13,6 +13,7 @@ import 'payment_details_page.dart';
 import 'payment_processing_page.dart';
 import 'wallet_page.dart';
 import 'all_trips_page.dart';
+import 'package:geolocator/geolocator.dart'; // NEW: Import geolocator
 import '../design_system.dart';
 
 class HomeTab extends StatefulWidget {
@@ -42,6 +43,7 @@ class _HomeTabState extends State<HomeTab> {
 
   StreamSubscription? _walletSub;
   StreamSubscription? _bookingSub;
+  StreamSubscription? _positionStreamSub; // NEW: Position stream subscription
 
   @override
   void initState() {
@@ -54,6 +56,7 @@ class _HomeTabState extends State<HomeTab> {
   void dispose() {
     _walletSub?.cancel();
     _bookingSub?.cancel();
+    _positionStreamSub?.cancel(); // NEW: Cancel position stream
     RazorpayService.instance.dispose();
     super.dispose();
   }
@@ -92,19 +95,62 @@ class _HomeTabState extends State<HomeTab> {
           await TripService(apiClient: _api).getTripCounts(widget.token);
 
       if (mounted) {
+        // DEBUG: Log what the API returns for isOnline field
+        debugPrint('HomeTab: ========================================');
+        debugPrint('HomeTab: _loadDetails - API Response:');
+        debugPrint('HomeTab: isOnline value: ${resp['data']?['isOnline']}');
+        debugPrint('HomeTab: isOnline type: ${resp['data']?['isOnline'].runtimeType}');
+        debugPrint('HomeTab: Full driver data keys: ${(resp['data'] as Map?)?.keys.toList()}');
+        debugPrint('HomeTab: ========================================');
+        
         setState(() {
           _driverDetails = resp['data'] as Map<String, dynamic>?;
           _wallet = wallet['data'] as Map<String, dynamic>?;
           _bookingCounts = counts;
-          _online =
-              (_driverDetails?['onlineStatus']?.toString().toLowerCase() ==
-                  'online');
+          // Backend stores isOnline as boolean, not onlineStatus as string
+          _online = _driverDetails?['isOnline'] == true;
+          debugPrint('HomeTab: _online set to: $_online');
         });
+
+        // NEW: If backend says we are Online, resume location tracking immediately
+        if (_online) {
+          debugPrint('HomeTab: Driver is Online, resuming location streaming...');
+          _checkPermissionsAndStartStreaming();
+        }
       }
     } catch (e) {
       debugPrint('Error: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // Helper to check permissions and start streaming without making API calls
+  Future<void> _checkPermissionsAndStartStreaming() async {
+    try {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+             debugPrint('HomeTab: Location services disabled, cannot start stream');
+             return;
+        }
+
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+          if (permission == LocationPermission.denied) {
+             debugPrint('HomeTab: Location permission denied');
+             return;
+          }
+        }
+        
+        if (permission == LocationPermission.deniedForever) {
+             debugPrint('HomeTab: Location permission permanently denied');
+             return;
+        }
+
+        _startLocationStreaming();
+    } catch (e) {
+        debugPrint('HomeTab: Error in _checkPermissionsAndStartStreaming: $e');
     }
   }
 
@@ -143,16 +189,82 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> _toggleOnline(bool value) async {
+    // Optimistic UI update
     setState(() => _online = value);
+
     try {
+      // 1. If going ONLINE, handle permissions and start tracking BEFORE API call
+      if (value) {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          throw Exception('Location services are disabled.');
+        }
+
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+          if (permission == LocationPermission.denied) {
+            throw Exception('Location permissions are denied');
+          }
+        }
+        
+        if (permission == LocationPermission.deniedForever) {
+          throw Exception('Location permissions are permanently denied, we cannot request permissions.');
+        }
+
+        // Add 100ms delay to ensure context is valid if needed (optional safety)
+        
+        _startLocationStreaming();
+      } else {
+        // If going OFFLINE, stop tracking
+        _stopLocationStreaming();
+      }
+
+      // 2. Call API to update status
       await _api.updateOnlineStatus(token: widget.token, isOnline: value);
+      
     } catch (e) {
+      // Revert state on error
       setState(() => _online = !value);
+      _stopLocationStreaming(); // Ensure stopped if it failed
+      
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)
-            ?.showSnackBar(SnackBar(content: Text('Failed: $e')));
+            ?.showSnackBar(SnackBar(content: Text('Failed: ${e.toString().replaceAll("Exception: ", "")}')));
       }
     }
+  }
+
+  void _startLocationStreaming() {
+    _positionStreamSub?.cancel(); // Cancel existing if any
+    
+    debugPrint("HomeTab: Starting location streaming...");
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 20, // Send update every 20 meters to save bandwidth/battery while "Online" (not on trip)
+    );
+
+    _positionStreamSub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+      (Position? position) {
+        if (position != null) {
+          debugPrint("HomeTab: Location update: ${position.latitude}, ${position.longitude}");
+          SocketService().sendLocationUpdate(
+            position.latitude, 
+            position.longitude, 
+            position.heading
+          );
+        }
+      },
+      onError: (e) {
+         debugPrint("HomeTab: Location stream error: $e");
+      }
+    );
+  }
+
+  void _stopLocationStreaming() {
+    debugPrint("HomeTab: Stopping location streaming...");
+    _positionStreamSub?.cancel();
+    _positionStreamSub = null;
   }
 
   void _showRechargeDialog() {

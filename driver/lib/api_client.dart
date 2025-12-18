@@ -558,13 +558,17 @@ class DriverApiClient extends BaseApiClient {
     required String otp,
     required double startOdometer,
     String? startOdometerImage,
+    String? accessToken, // Added for Widget flow
   }) {
     final Map<String, dynamic> body = {
-      'startOtp': otp,  // Backend expects 'startOtp', not 'otp'
-      'startOdometerValue': startOdometer,  // Backend expects 'startOdometerValue', not 'startOdometer'
+      'startOtp': otp,
+      'startOdometerValue': startOdometer,
     };
     if (startOdometerImage != null && startOdometerImage.isNotEmpty) {
       body['startOdometerImage'] = startOdometerImage;
+    }
+    if (accessToken != null && accessToken.isNotEmpty) {
+      body['accessToken'] = accessToken;
     }
     return post('/app/trip/start/$tripId', body, token: token);
   }
@@ -578,10 +582,11 @@ class DriverApiClient extends BaseApiClient {
     required double endOdometer,
     String? endOdometerImage,
     Map<String, dynamic>? driverCharges,
+    String? accessToken, // Added for Widget flow
   }) {
     final Map<String, dynamic> body = {
-      'endOtp': endOtp,  // Backend expects 'endOtp'
-      'endOdometerValue': endOdometer,  // Backend expects 'endOdometerValue', not 'endOdometer'
+      'endOtp': endOtp,
+      'endOdometerValue': endOdometer,
     };
     if (endOdometerImage != null && endOdometerImage.isNotEmpty) {
       body['endOdometerImage'] = endOdometerImage;
@@ -589,6 +594,9 @@ class DriverApiClient extends BaseApiClient {
     if (distance != null) body['distance'] = distance;
     if (duration != null) body['duration'] = duration;
     if (driverCharges != null) body['driverCharges'] = driverCharges;
+    if (accessToken != null && accessToken.isNotEmpty) {
+      body['accessToken'] = accessToken;
+    }
     
     return post('/app/trip/end/$tripId', body, token: token);
   }

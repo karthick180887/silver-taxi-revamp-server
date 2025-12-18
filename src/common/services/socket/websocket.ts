@@ -43,16 +43,44 @@ export function initializeWebSocket(server: HTTPServer): SocketIOServer {
 function handleConnection(socket: Socket): void {
     logger.info(`New client connected: ${socket.id}`);
 
-    const token = socket.handshake.auth.token;
+    // Accept token from both auth object and query parameter
+    // Flutter client sends via query, web clients may use auth
+    const token = socket.handshake.auth.token || socket.handshake.query.token;
     if (token) {
-        handleAuthentication(socket, { token });
+        handleAuthentication(socket, { token: typeof token === 'string' ? token : String(token) });
+    } else {
+        logger.warn(`Client ${socket.id} connected without token`);
     }
 
+    socket.on('driver_location_update', async (data) => {
+        // logger.info(`Received location from client ${socket.id}`);
+        // console.log("Payload:", data);
+        try {
+            if (socket.data.id) {
+                const { lat, lng, heading } = data;
+                // Basic validation
+                if (lat && lng) {
+                    // Import Driver model dynamically or ensure it's imported at top
+                    // Ideally, use a controller function, but for performance we might do direct update here 
+                    // or delegate to a lightweight service.
+                    // For now, updating directly to keep it simple as per request.
+                    const { Driver } = require('../../core/models/driver');
 
-    socket.on('driver_location_update', (data) => {
-        logger.info(`Received notification from client ${socket.id}`);
-        console.log("Payload:", data);
-
+                    await Driver.update({
+                        geoLocation: {
+                            lat: lat,
+                            lng: lng,
+                            heading: heading || 0,
+                            lastUpdated: new Date()
+                        }
+                    }, {
+                        where: { driverId: socket.data.id }
+                    });
+                }
+            }
+        } catch (error) {
+            console.error("Error updating driver location via socket:", error);
+        }
     });
 
     socket.on('disconnect', () => handleDisconnect(socket));

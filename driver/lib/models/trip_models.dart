@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 class TripLocation {
@@ -21,9 +22,25 @@ class TripLocation {
       );
     }
     if (raw is String && raw.isNotEmpty) {
+      // Try to parse as JSON first
+      try {
+        // ignore: unused_local_variable
+        final decoded = _tryJsonDecode(raw);
+        if (decoded is Map) {
+          return TripLocation.fromJson(decoded);
+        }
+      } catch (_) {}
+      
       return TripLocation(address: raw);
     }
     return TripLocation(address: '');
+  }
+
+  static dynamic _tryJsonDecode(String source) {
+    if (!source.trim().startsWith('{') && !source.trim().startsWith('[')) {
+      throw const FormatException('Not JSON');
+    }
+    return jsonDecode(source);
   }
 }
 

@@ -328,11 +328,13 @@ class OverlayNotificationService {
                       dropLoc['Name']?.toString() ??
                       'Drop location';
 
-      // Extract fare - try multiple field names
+      // Extract fare - try multiple field names (backend uses estimatedAmount/finalAmount)
       final fare = _toDouble(eventData['estimatedFare'] ?? 
                              eventData['EstimatedFare'] ??
                              eventData['fare'] ?? 
                              eventData['Fare'] ??
+                             eventData['estimatedAmount'] ??
+                             eventData['finalAmount'] ??
                              eventData['estimated_fare']);
 
       // Extract status

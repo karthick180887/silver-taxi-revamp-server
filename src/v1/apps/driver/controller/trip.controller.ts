@@ -109,6 +109,16 @@ export const getTripSummary = async (req: Request, res: Response) => {
             adminContact: booking.adminContact ?? null,
         }
 
+        // Parse location JSON if stored as string
+        try {
+            if (tripDetails.pickup && tripDetails.pickup.startsWith('{')) {
+                tripDetails.pickup = JSON.parse(tripDetails.pickup);
+            }
+            if (tripDetails.drop && tripDetails.drop.startsWith('{')) {
+                tripDetails.drop = JSON.parse(tripDetails.drop);
+            }
+        } catch (e) { }
+
         const customerDetails = {
             name: booking.name,
             email: booking.email,
@@ -342,35 +352,23 @@ export const tripOtpSend = async (req: Request, res: Response) => {
                 return;
             }
 
-            const msgResponse = await sms.sendTemplateMessage({
+            // Use separate trip start OTP function (for future customization)
+            const msgResponse = await sms.sendTripStartOtp({
                 mobile: phoneNumber,
-                template: "customer_trip_otp",
-                data: {
-                    startOtp: booking.startOtp,
-                    endOtp: booking.endOtp
-                }
-            })
+                bookingId: booking.bookingId
+            });
 
-            // send trip otp via whatsapp
-            const waCustomerPayload = {
-                phone: phoneNumber,
-                variables: [
-                    { type: "text", text: booking.startOtp },
-                    { type: "text", text: booking.endOtp },
-                ],
-                templateName: "tripOtp"
-            }
+            // If successful, update the booking with the new OTP
+            if (msgResponse.success && msgResponse.newOtp) {
+                booking.startOtp = msgResponse.newOtp;
+                await booking.save();
 
-            publishNotification("notification.whatsapp", waCustomerPayload)
-                .catch((err) => console.log("❌ Failed to publish Whatsapp notification", err));
-
-            // const msgResponse = true;
-            if (msgResponse) {
                 res.status(200).json({
                     success: true,
-                    message: "OTP sent to the customer successfully",
+                    message: "Start OTP sent to the customer successfully",
                     data: {
                         phoneNumber: phoneNumber,
+                        bookingId: booking.bookingId
                     }
                 });
                 return;
@@ -378,8 +376,7 @@ export const tripOtpSend = async (req: Request, res: Response) => {
 
             res.status(500).json({
                 success: false,
-                message: "Failed to send OTP",
-                error: msgResponse,
+                message: "Failed to send Start OTP",
             });
             return;
 
@@ -411,20 +408,23 @@ export const tripOtpSend = async (req: Request, res: Response) => {
                 return;
             }
 
-            const token = await sms.sendOtp({
+            // Use separate trip end OTP function (for future customization)
+            const msgResponse = await sms.sendTripEndOtp({
                 mobile: phoneNumber,
-                isOTPSend: true,
-                websiteName: null,
-                sendOtp: booking.endOtp,
-                id: booking?.customerId
+                bookingId: booking.bookingId
             });
-            //   const token = await sms.sendOtp(Number(phoneNumber), "end_ride",booking.endOtp, customer?.customerId);
-            if (typeof token === "string") {
+
+            // If successful, update the booking with the new OTP
+            if (msgResponse.success && msgResponse.newOtp) {
+                booking.endOtp = msgResponse.newOtp;
+                await booking.save();
+
                 res.status(200).json({
                     success: true,
-                    message: "OTP sent to the customer successfully",
+                    message: "End OTP sent to the customer successfully",
                     data: {
                         phoneNumber: phoneNumber,
+                        bookingId: booking.bookingId
                     }
                 });
                 return;
@@ -432,10 +432,10 @@ export const tripOtpSend = async (req: Request, res: Response) => {
 
             res.status(500).json({
                 success: false,
-                message: "Failed to send OTP",
-                error: token,
+                message: "Failed to send End OTP",
             });
-            return;;
+            return;
+
         }
 
     } catch (error) {
@@ -523,14 +523,44 @@ export const tripStarted = async (req: Request, res: Response) => {
             return;
         }
 
-        const { startOdometerImage, startOdometerValue, startOtp } = validateData.data;
+        const { startOdometerImage, startOdometerValue, startOtp, accessToken } = validateData.data;
 
-        if (booking.startOtp !== startOtp) {
-            res.status(400).json({
-                success: false,
-                message: "Invalid start OTP",
-            });
-            return;
+        // NEW: Widget Verification Flow
+        if (accessToken) {
+            const verifyRes = await sms.verifyWidgetToken(accessToken);
+            if (!verifyRes.success) {
+                res.status(400).json({
+                    success: false,
+                    message: "Invalid or expired Access Token",
+                });
+                return;
+            }
+
+            // Verify Phone Number matches Booking
+            // MSG91 returns phone number in 'message' field on success (e.g. "919944226010")
+            const verifiedPhone = verifyRes.message;
+            const bookingPhone = booking.phone.replace(/\D/g, '');
+            const normalizedVerified = verifiedPhone.replace(/\D/g, '');
+
+            // Check if verified phone contains booking phone (handling 91 prefix)
+            if (!normalizedVerified.includes(bookingPhone)) {
+                res.status(400).json({
+                    success: false,
+                    message: "Phone number mismatch. Verification failed.",
+                });
+                return;
+            }
+
+            // If valid, we proceed (bypass OTP check)
+        } else {
+            // FALLBACK: Legacy OTP Check
+            if (booking.startOtp !== startOtp) {
+                res.status(400).json({
+                    success: false,
+                    message: "Invalid start OTP",
+                });
+                return;
+            }
         }
 
 
@@ -540,6 +570,7 @@ export const tripStarted = async (req: Request, res: Response) => {
             startOdometerValue,
             tripStartedTime: new Date(),
         });
+
 
         await booking.save();
 
@@ -720,7 +751,7 @@ export const tripEnd = async (req: Request, res: Response) => {
             return;
         }
 
-        const { endOdometerImage, endOdometerValue, endOtp, driverCharges } = validateData.data;
+        const { endOdometerImage, endOdometerValue, endOtp, driverCharges, accessToken } = validateData.data;
 
         if (booking.startOdometerValue >= endOdometerValue) {
             res.status(400).json({
@@ -733,12 +764,37 @@ export const tripEnd = async (req: Request, res: Response) => {
 
         console.log("driverCharges >> ", driverCharges)
 
-        if (booking.endOtp !== endOtp) {
-            res.status(400).json({
-                success: false,
-                message: "Invalid end OTP",
-            });
-            return;
+        // NEW: Widget Verification Flow
+        if (accessToken) {
+            const verifyRes = await sms.verifyWidgetToken(accessToken);
+            if (!verifyRes.success) {
+                res.status(400).json({
+                    success: false,
+                    message: "Invalid or expired Access Token",
+                });
+                return;
+            }
+
+            const verifiedPhone = verifyRes.message;
+            const bookingPhone = booking.phone.replace(/\D/g, '');
+            const normalizedVerified = verifiedPhone.replace(/\D/g, '');
+
+            if (!normalizedVerified.includes(bookingPhone)) {
+                res.status(400).json({
+                    success: false,
+                    message: "Phone number mismatch. Verification failed.",
+                });
+                return;
+            }
+        } else {
+            // FALLBACK: Legacy OTP Check
+            if (booking.endOtp !== endOtp) {
+                res.status(400).json({
+                    success: false,
+                    message: "Invalid end OTP",
+                });
+                return;
+            }
         }
 
 

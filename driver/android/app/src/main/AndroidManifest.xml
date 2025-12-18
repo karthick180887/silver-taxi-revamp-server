@@ -58,6 +58,10 @@
             </intent-filter>
         </activity>
         
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyAYjrbg1hQJYC4vOMvQS7C9lJ3TDWQSuFo" />
+
         <!-- Overlay Service for floating trip notifications -->
         <service
             android:name=".OverlayService"

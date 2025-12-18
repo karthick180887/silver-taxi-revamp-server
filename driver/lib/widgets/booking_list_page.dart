@@ -429,6 +429,279 @@ class _BookingListPageState extends State<BookingListPage> {
     return trip.status;
   }
 
+  void _showBookingDetailsPopup(TripModel trip) {
+    final isBooking = _isBookingId(trip.id);
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scrollController) => SingleChildScrollView(
+          controller: scrollController,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              
+              // Header with status badge
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${trip.serviceType} (${trip.id})',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(trip).withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _statusLabel(trip),
+                      style: TextStyle(
+                        color: _getStatusColor(trip),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 20),
+              const Divider(),
+              
+              // Customer Info
+              _buildDetailSection('Customer', [
+                _buildDetailRow(Icons.person, 'Name', trip.customerName),
+                if (trip.customerPhone.isNotEmpty)
+                  _buildDetailRow(Icons.phone, 'Phone', trip.customerPhone),
+              ]),
+              
+              const Divider(),
+              
+              // Location Info
+              _buildDetailSection('Route', [
+                _buildDetailRow(Icons.trip_origin, 'Pickup', trip.pickup.address, isGreen: true),
+                _buildDetailRow(Icons.location_on, 'Drop', trip.drop.address, isRed: true),
+                if (trip.distance != null && trip.distance! > 0)
+                  _buildDetailRow(Icons.straighten, 'Distance', '${_formatDistance(trip.distance)} km'),
+              ]),
+              
+              const Divider(),
+              
+              // Timing Info
+              _buildDetailSection('Schedule', [
+                _buildDetailRow(Icons.calendar_today, 'Date', _formatDate(trip.pickupDate)),
+                _buildDetailRow(Icons.access_time, 'Time', trip.pickupTime),
+              ]),
+              
+              const Divider(),
+              
+              // Fare Info
+              _buildDetailSection('Fare Details', [
+                _buildDetailRow(Icons.currency_rupee, 'Total Fare', '₹${_formatAmount(trip.fare)}'),
+                if (trip.extraCharges != null && trip.extraCharges! > 0)
+                  _buildDetailRow(Icons.add_circle_outline, 'Extra Charges', '₹${_formatAmount(trip.extraCharges)}'),
+              ]),
+              
+              const SizedBox(height: 20),
+              
+              // Action Buttons
+              if (trip.isNew)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _acceptTrip(trip.id);
+                    },
+                    icon: const Icon(Icons.check_circle),
+                    label: const Text('Accept Trip'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              
+              if (trip.isNotStarted)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: isBooking ? () {
+                      Navigator.pop(ctx);
+                      _showBookingStartUnsupported();
+                    } : () {
+                      Navigator.pop(ctx);
+                      _startTrip(trip.id);
+                    },
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Start Trip'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              
+              if (trip.isStarted)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _navigateToOngoingTrip(trip);
+                    },
+                    icon: const Icon(Icons.directions_car),
+                    label: const Text('View Ongoing Trip'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              
+              if (trip.isCompleted)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _navigateToTripSummary(trip);
+                    },
+                    icon: const Icon(Icons.receipt_long),
+                    label: const Text('View Summary'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              
+              const SizedBox(height: 10),
+              
+              // Close button
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getStatusColor(TripModel trip) {
+    if (trip.isNew) return Colors.blue;
+    if (trip.isNotStarted) return Colors.orange;
+    if (trip.isStarted) return Colors.green;
+    if (trip.isCompleted) return Colors.teal;
+    if (trip.isCancelled) return Colors.red;
+    return Colors.grey;
+  }
+
+  Widget _buildDetailSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...children,
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value, {bool isGreen = false, bool isRed = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: isGreen ? Colors.green : isRed ? Colors.red : Colors.grey.shade600,
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String? date) {
+    if (date == null || date.isEmpty) return 'N/A';
+    try {
+      final parsed = DateTime.parse(date);
+      return '${parsed.day} ${_monthName(parsed.month)} ${parsed.year}';
+    } catch (_) {
+      return date;
+    }
+  }
+
+  String _monthName(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month - 1];
+  }
+
   String _formatAmount(double? amount) {
     if (amount == null) return '0';
     if (amount == amount.roundToDouble()) {
@@ -547,13 +820,7 @@ class _BookingListPageState extends State<BookingListPage> {
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
             child: InkWell(
-              onTap: () {
-                if (item.isStarted) {
-                  _navigateToOngoingTrip(item);
-                } else if (item.isCompleted) {
-                  _navigateToTripSummary(item);
-                }
-              },
+              onTap: () => _showBookingDetailsPopup(item),
               borderRadius: BorderRadius.circular(12),
               child: Column(
                 children: [

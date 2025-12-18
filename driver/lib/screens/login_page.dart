@@ -146,18 +146,37 @@ class _LoginPageState extends State<LoginPage> {
             signupToken: signupToken, // Pass token
           );
 
-          if (signupResult.success) {
+          // Check BOTH HTTP success AND body.success field
+          final bool bodySuccess = signupResult.body['success'] == true;
+          
+          if (signupResult.success && bodySuccess) {
             debugPrint('Signup Success. Body: ${signupResult.body}');
             final dynamic signupData = signupResult.body['data'];
+            debugPrint('Signup Data Type: ${signupData?.runtimeType}, Value: $signupData');
+            
+            // Handle possible nested data structure
+            Map<String, dynamic>? safeData;
             if (signupData != null && signupData is Map) {
-                 final Map<String, dynamic> safeData = Map<String, dynamic>.from(signupData);
-                 await _processSuccess(safeData);
+                 safeData = Map<String, dynamic>.from(signupData);
+            } else if (signupResult.body is Map && signupResult.body['driver'] != null) {
+                 // Alternative: data might be at root level
+                 safeData = Map<String, dynamic>.from(signupResult.body);
+            }
+            
+            if (safeData != null) {
+              await _processSuccess(safeData);
             } else {
-                 _handleError('Signup successful but data is invalid');
-                 debugPrint('Invalid Signup Data Type: ${signupData?.runtimeType}');
+                 _handleError('Signup successful but response format unexpected. Keys: ${signupResult.body.keys}');
+                 debugPrint('Full Body: ${signupResult.body}');
             }
           } else {
-             _handleError(signupResult.body['message'] ?? 'Signup failed');
+             // Check if driver already exists - they should login instead
+             final message = signupResult.body['message'] ?? 'Signup failed';
+             if (message.toString().toLowerCase().contains('already exists')) {
+               _handleError('This number is already registered. Please try logging in.');
+             } else {
+               _handleError(message);
+             }
           }
         } else {
           _handleError(loginResult.body['message'] ?? 'Login failed');

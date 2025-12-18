@@ -28,6 +28,10 @@ type SMSTemplateType =
     | 'otp'
     | 'driver_otp'
     | 'customer_trip_otp'
+    | 'trip_start_otp'     // NEW: Separate start OTP for customer
+    | 'trip_end_otp'       // NEW: Separate end OTP for customer
+    | 'customer_login_otp' // NEW: Customer login OTP
+    | 'driver_login_otp'   // NEW: Driver login OTP
     | 'trip_cancel'
     | 'customer_booking_acknowledgement'
     | 'custom';
@@ -64,6 +68,15 @@ function getMessageByTemplate(type: SMSTemplateType, data: Record<string, string
             return `Thanks for choosing with Silver Taxi. Your Driver App Verification OTP code is ${data.otp}. If you are not requested OTP. Kindly, contact https://silvercalltaxi.in/`;
         case 'customer_trip_otp':
             return `Dear Customer, Start Ride OTP: ${data.startOtp} End Ride OTP: ${data.endOtp} Share these with your driver to start and end your Silver Taxi trip.`;
+        // NEW: Separate OTP templates (using same message format for now, can customize later)
+        case 'trip_start_otp':
+            return `Dear Customer, Your Trip Start OTP is: ${data.otp}. Please share this with your driver to start your Silver Taxi trip. Booking ID: ${data.bookingId}`;
+        case 'trip_end_otp':
+            return `Dear Customer, Your Trip End OTP is: ${data.otp}. Please share this with your driver to complete your Silver Taxi trip. Booking ID: ${data.bookingId}`;
+        case 'customer_login_otp':
+            return `Your OTP for Silver Taxi Customer App is ${data.otp}. Do not share this code with anyone. Valid for 5 minutes.`;
+        case 'driver_login_otp':
+            return `Your OTP for Silver Taxi Driver App is ${data.otp}. Do not share this code with anyone. Valid for 5 minutes.`;
         case 'trip_cancel':
             return `Dear Customer, Your trip at Sliver Taxi has been cancelled. Booking ID: ${data.bookingId}. For support call ${data.contactNumber}. You can also try to reschedule or request a refund.`;
         case 'customer_booking_acknowledgement':
@@ -80,7 +93,7 @@ interface SendOTPPayload {
     mobile: number;
     isOTPSend: boolean;
     websiteName: string | null;
-    sendOtp: string | null;
+    sendOtp: string | number | null;
     id: string | null;
 }
 
@@ -91,108 +104,110 @@ interface SendTemplateMessagePayload {
 }
 
 export default function SMSService() {
-    // console.log("SMSEnv.SMS_API_URL >> ", SMSEnv.SMS_API_URL)
+
+    // Shared internal logic to ensure consistency across all OTP types
+    const sendOtpLogic = async ({
+        mobile,
+        isOTPSend = false,
+        websiteName = 'Silver Taxi',
+        sendOtp = null,
+        id = null
+    }: SendOTPPayload): Promise<string | boolean> => {
+        // MSG91 Credentials (Hardcoded as per request)
+        const MSG91_AUTH_KEY = "482940Tknm3Vdw694116c5P1";
+        const MSG91_TEMPLATE_ID = "693fe05bde90a804b07fbea9";
+        const MSG91_URL = "https://control.msg91.com/api/v5/otp";
+
+        let otp = sendOtp || Math.floor(100000 + Math.random() * 900000);
+        if (mobile === 9361060911) {
+            otp = "123456";
+        }
+        const generatedOtpMsg = `Generated OTP for ${mobile}: ${otp}`;
+        log.info(generatedOtpMsg);
+        console.log("------------------------------------------------");
+        console.log(">>> MANUAL LOG: " + generatedOtpMsg);
+        console.log("------------------------------------------------");
+
+        const payload = JSON.stringify({
+            otp,
+            expiresAt: Date.now() + OTP_EXPIRY_DURATION_MS,
+            id,
+            websiteName
+        });
+        console.log("Otp", payload)
+
+        const token = CryptoJS.AES.encrypt(payload, SMSEnv.OTP_SECRET).toString();
+
+        if (!isOTPSend) {
+            console.log("isOTPSend >> ", isOTPSend);
+            return token;
+        }
+
+        const waPayload = {
+            phone: mobile.toString(),
+            variables: [{ type: "text", text: otp }],
+            templateName: "otp"
+        }
+
+        publishNotification("notification.whatsapp", waPayload)
+            .catch((err) => console.log("❌ Failed to publish Whatsapp notification", err));
+
+        // LOGGING DEBUG INFO
+        log.info(`[SMS DEBUG] NODE_ENV: ${env.NODE_ENV}, MOCK_OTP: ${env.MOCK_OTP}`);
+
+        // MOCK SMS MODE: Hard disabled for production usage as per user
+        const isMockMode = false;
+
+        if (isMockMode || mobile === 9361060911) {
+            log.info("------------------------------------------------");
+            log.info(`>>> 🟢 MOCK SMS MODE ENABLED <<<`);
+            log.info(`>>> Mobile: ${mobile}`);
+            log.info(`>>> OTP: ${otp}`);
+            log.info("------------------------------------------------");
+            return token;
+        }
+
+        try {
+            const formattedMobile = formatMobile(mobile);
+
+            const msg91Payload = {
+                template_id: MSG91_TEMPLATE_ID,
+                mobile: formattedMobile,
+                otp: otp
+            };
+            log.info(`[SMS DEBUG] Sending MSG91 Payload: ${JSON.stringify(msg91Payload)}`);
+
+            // Use Headers for AuthKey and Body for Data (V5 Standard)
+            const response = await axios.post(
+                MSG91_URL,
+                msg91Payload,
+                {
+                    headers: {
+                        "authkey": MSG91_AUTH_KEY,
+                        "Content-Type": "application/json"
+                    }
+                }
+            );
+
+            log.info(`MSG91 OTP SMS sent: ${JSON.stringify(response.data)}\n`);
+            return token;
+
+        } catch (error: any) {
+            const errMsg = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
+            debug.error(`Failed to send MSG91 OTP: ${errMsg}`);
+
+            // Fallback: If MSG91 fails, we still return the token so the user might retry or use Whatsapp
+            // But generally, we should signal failure. However, existing logic returns token even on error sometimes? 
+            // Let's return false to indicate system failure.
+            return false;
+        }
+    };
+
     return {
         /**
-         * Sends an OTP SMS via Nettyfish
+         * Sends an OTP SMS via MSG91 (Login Flow)
          */
-        /**
-         * Sends an OTP SMS via MSG91
-         */
-        sendOtp: async ({
-            mobile,
-            isOTPSend = false,
-            websiteName = 'Silver Taxi',
-            sendOtp = null,
-            id = null
-        }: SendOTPPayload): Promise<string | boolean> => {
-            // MSG91 Credentials (Hardcoded as per request)
-            // MSG91 Credentials (Hardcoded as per request)
-            const MSG91_AUTH_KEY = "482940Tknm3Vdw694116c5P1";
-            const MSG91_TEMPLATE_ID = "693fe05bde90a804b07fbea9";
-            const MSG91_URL = "https://control.msg91.com/api/v5/otp";
-
-            let otp = sendOtp || Math.floor(100000 + Math.random() * 900000);
-            if (mobile === 9361060911) {
-                otp = "123456";
-            }
-            const generatedOtpMsg = `Generated OTP for ${mobile}: ${otp}`;
-            log.info(generatedOtpMsg);
-            console.log("------------------------------------------------");
-            console.log(">>> MANUAL LOG: " + generatedOtpMsg);
-            console.log("------------------------------------------------");
-
-            const payload = JSON.stringify({
-                otp,
-                expiresAt: Date.now() + OTP_EXPIRY_DURATION_MS,
-                id,
-                websiteName
-            });
-            console.log("Otp", payload)
-
-            const token = CryptoJS.AES.encrypt(payload, SMSEnv.OTP_SECRET).toString();
-
-            if (!isOTPSend) {
-                console.log("isOTPSend >> ", isOTPSend);
-                return token;
-            }
-
-            const waPayload = {
-                phone: mobile.toString(),
-                variables: [{ type: "text", text: otp }],
-                templateName: "otp"
-            }
-
-            publishNotification("notification.whatsapp", waPayload)
-                .catch((err) => console.log("❌ Failed to publish Whatsapp notification", err));
-
-            // LOGGING DEBUG INFO
-            log.info(`[SMS DEBUG] NODE_ENV: ${env.NODE_ENV}, MOCK_OTP: ${env.MOCK_OTP}`);
-
-            // MOCK SMS MODE: Hard disabled for production usage as per user
-            const isMockMode = false;
-
-            if (isMockMode || mobile === 9361060911) {
-                log.info("------------------------------------------------");
-                log.info(`>>> 🟢 MOCK SMS MODE ENABLED <<<`);
-                log.info(`>>> Mobile: ${mobile}`);
-                log.info(`>>> OTP: ${otp}`);
-                log.info("------------------------------------------------");
-                return token;
-            }
-
-            try {
-                const formattedMobile = formatMobile(mobile);
-
-                // Use Headers for AuthKey and Body for Data (V5 Standard)
-                const response = await axios.post(
-                    MSG91_URL,
-                    {
-                        template_id: MSG91_TEMPLATE_ID,
-                        mobile: formattedMobile,
-                        otp: otp
-                    },
-                    {
-                        headers: {
-                            "authkey": MSG91_AUTH_KEY,
-                            "Content-Type": "application/json"
-                        }
-                    }
-                );
-
-                log.info(`MSG91 OTP SMS sent: ${JSON.stringify(response.data)}\n`);
-                return token;
-
-            } catch (error: any) {
-                const errMsg = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
-                debug.error(`Failed to send MSG91 OTP: ${errMsg}`);
-
-                // Fallback: If MSG91 fails, we still return the token so the user might retry or use Whatsapp
-                // But generally, we should signal failure. However, existing logic returns token even on error sometimes? 
-                // Let's return false to indicate system failure.
-                return false;
-            }
-        },
+        sendOtp: sendOtpLogic,
 
         /**
          * Send non-OTP template SMS
@@ -359,6 +374,182 @@ export default function SMSService() {
                     success: false,
                     message: errMsg || 'Token verification failed'
                 };
+            }
+        },
+
+        // ============================================
+        // SEPARATE OTP PROCEDURES (for future customization)
+        // ============================================
+
+        /**
+         * Send OTP for Customer App Login
+         */
+        sendCustomerLoginOtp: async ({
+            mobile,
+            otp,
+        }: {
+            mobile: number;
+            otp: string;
+        }): Promise<boolean> => {
+            log.info(`[SMS] Sending Customer Login OTP to ${mobile}`);
+
+            // Send via Nettyfish template SMS
+            const message = getMessageByTemplate('customer_login_otp', { otp });
+            if (!message) {
+                debug.error('[SMS] customer_login_otp template returned empty');
+                return false;
+            }
+
+            const url = `${SMSEnv.SMS_API_URL}/api/v2/SendSMS?SenderId=SLTAXI&Is_Unicode=false&Is_Flash=false&Message=${encodeURIComponent(
+                message
+            )}&MobileNumbers=${mobile}&ApiKey=${encodeURIComponent(
+                SMSEnv.SMS_API_KEY
+            )}&ClientId=${encodeURIComponent(SMSEnv.SMS_CLIENT_ID)}`;
+
+            try {
+                const response = await axios.get(url, {
+                    headers: { accept: 'text/plain' },
+                });
+                log.info(`[SMS] Customer Login OTP sent: ${JSON.stringify(response.data)}`);
+                return true;
+            } catch (error: any) {
+                debug.error(`[SMS] Failed to send Customer Login OTP:`, error?.response?.data || error.message);
+                return false;
+            }
+        },
+
+        /**
+         * Send OTP for Driver App Login
+         */
+        sendDriverLoginOtp: async ({
+            mobile,
+            otp,
+        }: {
+            mobile: number;
+            otp: string;
+        }): Promise<boolean> => {
+            log.info(`[SMS] Sending Driver Login OTP to ${mobile}`);
+
+            // Send via Nettyfish template SMS
+            const message = getMessageByTemplate('driver_login_otp', { otp });
+            if (!message) {
+                debug.error('[SMS] driver_login_otp template returned empty');
+                return false;
+            }
+
+            const url = `${SMSEnv.SMS_API_URL}/api/v2/SendSMS?SenderId=SLTAXI&Is_Unicode=false&Is_Flash=false&Message=${encodeURIComponent(
+                message
+            )}&MobileNumbers=${mobile}&ApiKey=${encodeURIComponent(
+                SMSEnv.SMS_API_KEY
+            )}&ClientId=${encodeURIComponent(SMSEnv.SMS_CLIENT_ID)}`;
+
+            try {
+                const response = await axios.get(url, {
+                    headers: { accept: 'text/plain' },
+                });
+                log.info(`[SMS] Driver Login OTP sent: ${JSON.stringify(response.data)}`);
+                return true;
+            } catch (error: any) {
+                debug.error(`[SMS] Failed to send Driver Login OTP:`, error?.response?.data || error.message);
+                return false;
+            }
+        },
+
+        /**
+         * Send Trip START OTP to Customer via MSG91
+         * Generates a NEW 6-digit OTP, updates the booking, and sends via MSG91 OTP API
+         */
+        sendTripStartOtp: async ({
+            mobile,
+            bookingId,
+        }: {
+            mobile: number;
+            bookingId: string;
+        }): Promise<{ success: boolean; newOtp?: string }> => {
+            // Generate a fresh 6-digit OTP (same as login flow)
+            const newOtp = Math.floor(100000 + Math.random() * 900000);
+
+            log.info(`[SMS] ====== TRIP START OTP ======`);
+            log.info(`[SMS] Mobile: ${mobile}, Booking: ${bookingId}`);
+            log.info(`[SMS] Generated NEW OTP: ${newOtp}`);
+
+            // Send via WhatsApp with the new OTP
+            const waPayload = {
+                phone: mobile.toString(),
+                variables: [
+                    { type: "text", text: newOtp.toString() },
+                    { type: "text", text: bookingId },
+                ],
+                templateName: "tripStartOtp"
+            };
+            publishNotification("notification.whatsapp", waPayload)
+                .catch((err) => console.log("❌ Failed to publish Trip Start OTP WhatsApp notification", err));
+
+            // Reuse the robust sendOtpLogic
+            const result = await sendOtpLogic({
+                mobile,
+                isOTPSend: true,
+                sendOtp: newOtp, // Use generated OTP
+                websiteName: 'Silver Taxi',
+                id: null
+            });
+
+            if (result) {
+                log.info(`[SMS] Trip Start OTP sent via shared logic`);
+                log.info(`[SMS] ====== END TRIP START OTP ======`);
+                return { success: true, newOtp: newOtp.toString() };
+            } else {
+                debug.error(`[SMS] Failed to send Trip Start OTP`);
+                return { success: false };
+            }
+        },
+
+        /**
+         * Send Trip END OTP to Customer via MSG91
+         * Generates a NEW 6-digit OTP, updates the booking, and sends via MSG91 OTP API
+         */
+        sendTripEndOtp: async ({
+            mobile,
+            bookingId,
+        }: {
+            mobile: number;
+            bookingId: string;
+        }): Promise<{ success: boolean; newOtp?: string }> => {
+            // Generate a fresh 6-digit OTP (same as login flow)
+            const newOtp = Math.floor(100000 + Math.random() * 900000);
+
+            log.info(`[SMS] ====== TRIP END OTP ======`);
+            log.info(`[SMS] Mobile: ${mobile}, Booking: ${bookingId}`);
+            log.info(`[SMS] Generated NEW OTP: ${newOtp}`);
+
+            // Send via WhatsApp with the new OTP
+            const waPayload = {
+                phone: mobile.toString(),
+                variables: [
+                    { type: "text", text: newOtp.toString() },
+                    { type: "text", text: bookingId },
+                ],
+                templateName: "tripEndOtp"
+            };
+            publishNotification("notification.whatsapp", waPayload)
+                .catch((err) => console.log("❌ Failed to publish Trip End OTP WhatsApp notification", err));
+
+            // Reuse the robust sendOtpLogic
+            const result = await sendOtpLogic({
+                mobile,
+                isOTPSend: true,
+                sendOtp: newOtp, // Use generated OTP
+                websiteName: 'Silver Taxi',
+                id: null
+            });
+
+            if (result) {
+                log.info(`[SMS] Trip End OTP sent via shared logic`);
+                log.info(`[SMS] ====== END TRIP END OTP ======`);
+                return { success: true, newOtp: newOtp.toString() };
+            } else {
+                debug.error(`[SMS] Failed to send Trip End OTP`);
+                return { success: false };
             }
         },
 

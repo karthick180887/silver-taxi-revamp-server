@@ -488,7 +488,14 @@ export const driverSignup = async (req: Request, res: Response): Promise<void> =
 
                 const checkDriver = await Driver.findOne({
                     where: whereClause,
-                    paranoid: false
+                    paranoid: false,
+                    include: [
+                        {
+                            model: Vehicle,
+                            as: "vehicle",
+                            attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
+                        },
+                    ]
                 });
 
                 if (checkDriver) {
@@ -497,6 +504,31 @@ export const driverSignup = async (req: Request, res: Response): Promise<void> =
                         res.status(200).json({
                             success: false,
                             message: "Driver was previously deleted. Please contact admin.",
+                        });
+                        return;
+                    }
+
+                    // If signupToken is present, this was a login fallback - log them in instead
+                    if (signupToken) {
+                        debug.info(`Driver already exists, logging in instead for phone: ${phone}`);
+
+                        const authToken = await generatedDriverToken(checkDriver.adminId, checkDriver.driverId, checkDriver.name);
+                        const refreshToken = await generatedDriverRefreshToken(checkDriver.adminId, checkDriver.driverId, checkDriver.name);
+
+                        // Update FCM Token if provided
+                        if (fcmToken) {
+                            checkDriver.fcmToken = fcmToken;
+                            await checkDriver.save();
+                        }
+
+                        res.status(200).json({
+                            success: true,
+                            message: "Driver found. Logged in successfully.",
+                            data: {
+                                driver: checkDriver,
+                                token: authToken,
+                                refreshToken: refreshToken
+                            }
                         });
                         return;
                     }

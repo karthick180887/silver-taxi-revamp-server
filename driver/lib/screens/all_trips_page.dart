@@ -3,6 +3,8 @@ import '../api_client.dart';
 import '../services/trip_service.dart';
 import '../models/trip_models.dart';
 import 'estimated_fare_screen.dart';
+import 'start_trip_screen.dart';
+import 'ongoing_trip_screen.dart';
 import '../design_system.dart';
 
 class AllTripsPage extends StatefulWidget {
@@ -86,7 +88,38 @@ class _AllTripsPageState extends State<AllTripsPage> {
   }
 
   void _onViewDetails(TripModel trip) {
-    // Navigate to Estimated Fare screen (Step 2)
+    // Check trip status to navigate to appropriate screen
+    final status = trip.status.toLowerCase();
+    
+    // For Not-Started trips, go directly to Start Trip screen
+    if (status == 'not-started' || status == 'not started' || status == 'accepted') {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => StartTripScreen(
+            trip: trip,
+            token: widget.token,
+            tripService: _tripService,
+          ),
+        ),
+      ).then((_) => _loadAllTrips());
+      return;
+    }
+    
+    // For Started trips, go to Ongoing Trip screen
+    if (status == 'started') {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => OngoingTripScreen(
+            trip: trip,
+            token: widget.token,
+            tripService: _tripService,
+          ),
+        ),
+      ).then((_) => _loadAllTrips());
+      return;
+    }
+    
+    // Default: Navigate to Estimated Fare screen (for new bookings)
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => EstimatedFareScreen(
@@ -391,7 +424,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
                                         ),
                                       ),
                                       const SizedBox(height: 12),
-                                      // View Details button (full width)
+                                      // Action button (full width) - text depends on status
                                       SizedBox(
                                         width: double.infinity,
                                         child: ElevatedButton(
@@ -408,7 +441,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
                                             }
                                           },
                                           style: ElevatedButton.styleFrom(
-                                            backgroundColor: AppColors.primary,
+                                            backgroundColor: _getButtonColor(trip),
                                             foregroundColor: Colors.white,
                                             padding: const EdgeInsets.symmetric(vertical: 14),
                                             shape: RoundedRectangleBorder(
@@ -417,7 +450,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
                                             elevation: 0,
                                           ),
                                           child: Text(
-                                            'View Details',
+                                            _getButtonText(trip),
                                             style: AppTextStyles.button,
                                           ),
                                         ),
@@ -443,5 +476,27 @@ class _AllTripsPageState extends State<AllTripsPage> {
       return double.tryParse(value);
     }
     return null;
+  }
+
+  String _getButtonText(TripModel trip) {
+    final status = trip.status.toLowerCase();
+    if (status == 'not-started' || status == 'not started' || status == 'accepted') {
+      return 'Start Trip';
+    }
+    if (status == 'started') {
+      return 'View Ongoing Trip';
+    }
+    return 'View Details';
+  }
+
+  Color _getButtonColor(TripModel trip) {
+    final status = trip.status.toLowerCase();
+    if (status == 'not-started' || status == 'not started' || status == 'accepted') {
+      return Colors.green;
+    }
+    if (status == 'started') {
+      return Colors.orange;
+    }
+    return AppColors.primary;
   }
 }

@@ -4,6 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import '../api_client.dart';
 import '../models/trip_models.dart';
 import '../services/trip_service.dart';
+import '../services/odometer_ocr_service.dart';
+import 'package:sendotp_flutter_sdk/sendotp_flutter_sdk.dart';
 
 class EndTripScreen extends StatefulWidget {
   const EndTripScreen({
@@ -34,7 +36,9 @@ class _EndTripScreenState extends State<EndTripScreen> {
   File? _odoImage;
   final ImagePicker _picker = ImagePicker();
   final _api = ApiClient(baseUrl: kApiBaseUrl); // Added for OTP fetching
+  final _ocrService = OdometerOcrService();
   bool _loading = false;
+  bool _processingOcr = false;
 
   // Odometer values
   double _startOdo = 0.0;
@@ -62,12 +66,157 @@ class _EndTripScreenState extends State<EndTripScreen> {
   }
 
   Future<void> _takePhoto() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+    final XFile? photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85, // Good quality for OCR
+    );
     if (photo != null) {
+      final file = File(photo.path);
       setState(() {
-        _odoImage = File(photo.path);
+        _odoImage = file;
+        _processingOcr = true;
       });
+      
+      // Process with OCR
+      final result = await _ocrService.extractOdometerReading(file);
+      
+      if (mounted) {
+        setState(() => _processingOcr = false);
+        
+        if (result.success && result.value != null) {
+          // Validate that end odometer is greater than start odometer
+          if (result.value! < _startOdo) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Detected ${result.value!.toStringAsFixed(1)} km is less than start odometer $_startOdo km. Please retake or enter manually.'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          } else {
+            // Show confirmation dialog with detected value
+            _showOcrResultDialog(result);
+          }
+        } else {
+          // Show error and let user enter manually
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.message),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
     }
+  }
+
+  void _showOcrResultDialog(OcrResult result) {
+    final distance = result.value! - _startOdo;
+    
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.document_scanner, color: Colors.blue.shade700),
+            const SizedBox(width: 8),
+            const Text('End Odometer Detected'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.speed, size: 48, color: Colors.blue),
+                  const SizedBox(height: 12),
+                  Text(
+                    '${result.value!.toStringAsFixed(1)} km',
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'Distance: ${distance.toStringAsFixed(1)} km',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green.shade800,
+                      ),
+                    ),
+                  ),
+                  if (result.confidence > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Confidence: ${(result.confidence * 100).toStringAsFixed(0)}%',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Is this reading correct?',
+              style: TextStyle(fontSize: 14),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              // Let user enter manually
+              _showOdometerDialog();
+            },
+            child: const Text('Enter Manually'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              setState(() {
+                _endOdo = result.value!;
+                _totalDistance = (_endOdo - _startOdo).clamp(0.0, double.infinity);
+                _endOdoController.text = result.value!.toStringAsFixed(1);
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('End odometer set to ${result.value!.toStringAsFixed(1)} km (${distance.toStringAsFixed(1)} km traveled)'),
+                  backgroundColor: Colors.blue,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Use This Value'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showOdometerDialog() {
@@ -318,7 +467,7 @@ class _EndTripScreenState extends State<EndTripScreen> {
             ),
             SizedBox(height: 8),
             Text('1. Click "Get End OTP from Backend" button'),
-            Text('2. Enter the 4-digit OTP in the End OTP field'),
+            Text('2. Enter the 6-digit OTP in the End OTP field'),
             Text('3. Then submit the trip'),
           ],
         ),
@@ -344,30 +493,53 @@ class _EndTripScreenState extends State<EndTripScreen> {
     );
   }
 
+  // NEW state variable for Widget SDK
+  String? _reqId;
+
   Future<void> _getEndOTP() async {
     setState(() => _loading = true);
+    
+    // NEW: Widget SDK Flow for End Trip
     try {
-      final res = await _api.sendTripOtp(
-        token: widget.token,
-        tripId: widget.trip.id,
-        type: 'end',
-      );
+      // 1. Get Customer Phone from Trip Data
+      String? customerPhone = widget.trip.raw['phone']?.toString() ?? 
+                             widget.trip.raw['customer']?['phone']?.toString();
+      
+      if (customerPhone == null || customerPhone.isEmpty) {
+        throw Exception("Customer phone number not found in trip data");
+      }
+      
+      // Clean phone number
+      customerPhone = customerPhone.replaceAll(RegExp(r'\D'), '');
+      if (customerPhone.length == 10) {
+        customerPhone = "91$customerPhone";
+      }
+      
+      print('Sending End Trip OTP via Widget to: $customerPhone');
 
-      if (res.success && res.body['data'] != null) {
-        final otp = res.body['data']['otp']?.toString() ?? '';
+      // 2. Trigger Widget Send OTP
+      final result = await OTPWidget.sendOTP({'identifier': customerPhone});
+      
+      if (result != null && result['type'] != 'error') {
         setState(() {
-          _endOtpController.text = otp;
+          _reqId = result['message']; // CORRECT: reqId is in 'message' field
         });
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('End OTP: $otp')),
+            SnackBar(
+              content: Text('End OTP Sent Successfully to $customerPhone'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
+      } else {
+        throw Exception(result?['message'] ?? "Failed to send OTP via Widget");
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to get End OTP: $e')),
+          SnackBar(content: Text('Failed to send OTP: $e')),
         );
       }
     } finally {
@@ -378,7 +550,7 @@ class _EndTripScreenState extends State<EndTripScreen> {
   Future<void> _submitAndEndTripConfirmed(double totalFare) async {
     // Validate End OTP is required - cannot proceed without it
     if (_endOtpController.text.trim().isEmpty) {
-      Navigator.of(context).pop(); // Close fare breakdown dialog
+      Navigator.of(context).pop(); // Close fare breakdown dialog (already closed actually?)
       _showEndOtpRequiredDialog();
       return;
     }
@@ -390,11 +562,35 @@ class _EndTripScreenState extends State<EndTripScreen> {
       );
       return;
     }
+    
+    // Check if reqId/SendOTP was done
+    if (_reqId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text('Please Send End OTP first')),
+      );
+      return;
+    }
 
     setState(() => _loading = true);
 
     try {
-      // 1. Prepare charges map for End Trip (Critical for invoice calculation)
+      // 1. Verify End OTP via Widget SDK
+      print('Verifying End OTP: ${_endOtpController.text} with reqId: $_reqId');
+      final result = await OTPWidget.verifyOTP({
+        'reqId': _reqId, 
+        'otp': _endOtpController.text
+      });
+      
+      if (result != null && result['type'] == 'error') {
+        throw Exception(result['message'] ?? "OTP Verification Failed");
+      } else if (result == null) {
+        throw Exception("Unknown verification error (null result)");
+      }
+      
+      // 2. Get Access Token
+      final String accessToken = result['message']; 
+
+      // 3. Prepare charges map for End Trip (Critical for invoice calculation)
       final driverCharges = {
         'Hill': double.tryParse(_hillChargeController.text) ?? 0.0,
         'Toll': double.tryParse(_tollChargeController.text) ?? 0.0,
@@ -404,7 +600,7 @@ class _EndTripScreenState extends State<EndTripScreen> {
         'Waiting Charge': double.tryParse(_waitingChargeController.text) ?? 0.0,
       };
 
-      // 1. End Trip (Record distance/duration, end odometer, End OTP, and Charges)
+      // 4. End Trip (Record distance/duration, end odometer, End OTP, and Charges, and AccessToken)
       await widget.tripService.endTrip(
         token: widget.token,
         tripId: widget.trip.id,
@@ -413,9 +609,10 @@ class _EndTripScreenState extends State<EndTripScreen> {
         duration: 30, // Mock duration in minutes
         endOdometer: _endOdo,
         driverCharges: driverCharges,
+        accessToken: accessToken, // Pass Widget Token
       );
 
-      // 2. Complete Trip (Record payment/fare)
+      // 5. Complete Trip (Record payment/fare)
       // Get payment method from trip data, default to "Cash"
       final paymentMethod = widget.trip.raw['paymentMethod']?.toString() ?? 
                            widget.trip.raw['payment_method']?.toString() ?? 
@@ -447,8 +644,9 @@ class _EndTripScreenState extends State<EndTripScreen> {
       }
     } catch (e) {
       if (mounted) {
+        String errorMessage = e.toString().replaceAll('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text('Error: $errorMessage')),
         );
       }
     } finally {
@@ -473,9 +671,9 @@ class _EndTripScreenState extends State<EndTripScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Odometer Photo Section
+                  // Odometer Photo Section with OCR
                   GestureDetector(
-                    onTap: _takePhoto,
+                    onTap: _processingOcr ? null : _takePhoto,
                     child: Container(
                       width: double.infinity,
                       height: 180,
@@ -484,42 +682,88 @@ class _EndTripScreenState extends State<EndTripScreen> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.grey.shade300),
                       ),
-                      child: _odoImage != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.file(_odoImage!, fit: BoxFit.cover),
-                            )
-                          : Column(
+                      child: _processingOcr
+                          ? Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(Icons.camera_alt,
-                                      size: 32, color: Colors.blue.shade700),
-                                ),
-                                const SizedBox(height: 12),
-                                const Text(
-                                  'Take End ODO Meter Photo',
+                                const CircularProgressIndicator(color: Colors.blue),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Reading odometer...',
                                   style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+                                    color: Colors.blue.shade700,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Tap to capture final odometer reading\n(Optional)',
-                                  textAlign: TextAlign.center,
+                                  'Processing image with OCR',
                                   style: TextStyle(
-                                    color: Colors.grey.shade600,
+                                    color: Colors.grey.shade500,
                                     fontSize: 12,
                                   ),
                                 ),
                               ],
-                            ),
+                            )
+                          : _odoImage != null
+                              ? Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Image.file(_odoImage!, fit: BoxFit.cover, width: double.infinity, height: 180),
+                                    ),
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black54,
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.camera_alt, color: Colors.white, size: 14),
+                                            SizedBox(width: 4),
+                                            Text('Tap to retake', style: TextStyle(color: Colors.white, fontSize: 11)),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade50,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(Icons.document_scanner,
+                                          size: 32, color: Colors.blue.shade700),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      '📷 Scan End Odometer',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Take a photo - OCR will auto-read the value',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -572,9 +816,9 @@ class _EndTripScreenState extends State<EndTripScreen> {
                   TextField(
                     controller: _endOtpController,
                     keyboardType: TextInputType.number,
-                    maxLength: 4,
+                    maxLength: 6,
                     decoration: const InputDecoration(
-                      hintText: 'Enter 4-digit OTP',
+                      hintText: 'Enter 6-digit OTP',
                       border: OutlineInputBorder(),
                       contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     ),

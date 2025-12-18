@@ -150,7 +150,7 @@ export const bookingCreate = async (req: Request, res: Response): Promise<void> 
         });
 
         const { customAlphabet } = await import("nanoid");
-        const generateOtp = customAlphabet('1234567890', 4);
+        const generateOtp = customAlphabet('1234567890', 6);  // 6 digits for MSG91 compatibility
         const startOtp = generateOtp();
         const endOtp = generateOtp();
 
@@ -689,7 +689,7 @@ export const bookingSave = async (req: Request, res: Response): Promise<void> =>
         }
 
         const { customAlphabet } = await import("nanoid");
-        const generateOtp = customAlphabet('1234567890', 4);
+        const generateOtp = customAlphabet('1234567890', 6);  // 6 digits for MSG91 compatibility
         const startOtp = generateOtp();
         const endOtp = generateOtp();
         // Create booking in Postgres using ORM

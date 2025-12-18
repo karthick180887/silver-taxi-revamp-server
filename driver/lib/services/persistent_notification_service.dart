@@ -196,22 +196,47 @@ class PersistentNotificationService {
       final bookingId = eventData['bookingId']?.toString() ??
           eventData['BookingID']?.toString() ??
           '';
-      final pickupLocation = eventData['PickupLocation'] ?? eventData['pickupLocation'] ?? {};
-      final dropLocation = eventData['DropLocation'] ?? eventData['dropLocation'] ?? {};
-      final estimatedFare = eventData['EstimatedFare'] ?? eventData['estimatedFare'] ?? 0;
+      
+      // Handle both formats:
+      // 1. Simple strings: pickup/drop (from database)
+      // 2. Object format: PickupLocation/DropLocation with address field
+      final pickupLocation = eventData['PickupLocation'] ?? eventData['pickupLocation'];
+      final dropLocation = eventData['DropLocation'] ?? eventData['dropLocation'];
+      
+      // Also check for simple string fields (backend sends 'pickup' and 'drop')
+      final pickupString = eventData['pickup']?.toString();
+      final dropString = eventData['drop']?.toString();
+      
+      final estimatedFare = eventData['EstimatedFare'] ?? 
+          eventData['estimatedFare'] ?? 
+          eventData['estimatedAmount'] ?? 
+          eventData['finalAmount'] ?? 
+          0;
 
       String pickupAddress = 'Unknown location';
-      if (pickupLocation is Map) {
+      if (pickupString != null && pickupString.isNotEmpty) {
+        // Simple string format from backend
+        pickupAddress = pickupString;
+      } else if (pickupLocation is Map) {
+        // Object format with address field
         pickupAddress = pickupLocation['address']?.toString() ??
             pickupLocation['Address']?.toString() ??
             'Unknown location';
+      } else if (pickupLocation is String && pickupLocation.isNotEmpty) {
+        pickupAddress = pickupLocation;
       }
 
       String dropAddress = 'Unknown location';
-      if (dropLocation is Map) {
+      if (dropString != null && dropString.isNotEmpty) {
+        // Simple string format from backend
+        dropAddress = dropString;
+      } else if (dropLocation is Map) {
+        // Object format with address field
         dropAddress = dropLocation['address']?.toString() ??
             dropLocation['Address']?.toString() ??
             'Unknown location';
+      } else if (dropLocation is String && dropLocation.isNotEmpty) {
+        dropAddress = dropLocation;
       }
 
       final fareText = estimatedFare != null && estimatedFare != 0

@@ -910,7 +910,7 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
         }
 
         const { customAlphabet } = await import("nanoid");
-        const generateOtp = customAlphabet('1234567890', 4);
+        const generateOtp = customAlphabet('1234567890', 6);  // Changed from 4 to 6 digits for MSG91 compatibility
         const startOtp = generateOtp();
         const endOtp = generateOtp();
         const bookingData = {
@@ -1362,31 +1362,30 @@ export const assignDriver = async (req: Request, res: Response) => {
 
 
         try {
-            const message = {
-                type: "new-booking",
-                fcmToken: driver.fcmToken,
-                payload: {
+            // Updated to use direct sendToSingleToken instead of RabbitMQ for consistency standard
+            if (driver.fcmToken) {
+                await sendToSingleToken(driver.fcmToken, {
                     title: "New Booking Arrived",
                     message: `Mr ${driver.name}, you have received a new booking.`,
-                    ids: {
-                        adminId: booking.adminId,
-                        bookingId: booking.bookingId,
-                        driverId: driver.driverId,
-                    },
+                    ids: { bookingId: booking.bookingId },
                     data: {
                         title: 'New Booking Arrived',
                         message: `Mr ${driver.name} You have received a new booking`,
                         type: "new-booking",
                         channelKey: "booking_channel",
-                    }
-                }
-            };
-
-            // Publish to the queue
-            publishNotification("notification.fcm.driver", message);
-            debug.info(`FCM Notification sent to driver queue ${driver.driverId}`);
+                        bookingId: String(booking.bookingId),
+                        adminId: String(booking.adminId),
+                        click_action: "FLUTTER_NOTIFICATION_CLICK",
+                        fullScreenIntent: "true",
+                    },
+                    priority: 'high'
+                });
+                debug.info(`FCM Notification directly sent to driver ${driver.driverId}`);
+            } else {
+                debug.info(`Driver ${driver.driverId} has no FCM token`);
+            }
         } catch (err: any) {
-            debug.info(`FCM Notification Error: ${err}`);
+            debug.error(`FCM Notification Error: ${err}`);
         }
 
         log.info(`Assign driver for adminId: ${adminId} and driverId: ${driverId} exit <<$`);
@@ -1434,7 +1433,7 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
         // Fetch all drivers (active and inactive)
         const drivers = await Driver.findAll({
             where: { adminId },
-            attributes: ['driverId', 'name', 'fcmToken'],
+            attributes: ['driverId', 'name', 'fcmToken', 'geoLocation'],
         });
 
         if (!drivers.length) {
@@ -1470,16 +1469,12 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
             .filter(token => token && token.trim() !== "");
 
         if (fcmTokens.length > 0) {
-            const batchMessage = {
-                type: "new-booking",
-                fcmTokens: fcmTokens,
-                payload: {
+            try {
+                // Updated to use direct sendToMultipleTokens instead of RabbitMQ for consistency standard
+                await sendToMultipleTokens(fcmTokens, {
                     title: "New Booking Arrived",
                     message: "New booking available for you.",
-                    ids: {
-                        adminId: booking.adminId,
-                        bookingId: booking.bookingId,
-                    },
+                    ids: { bookingId: booking.bookingId },
                     data: {
                         title: "New Booking Arrived",
                         message: "New booking available for you.",
@@ -1489,13 +1484,13 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
                         adminId: String(booking.adminId),
                         click_action: "FLUTTER_NOTIFICATION_CLICK",
                         fullScreenIntent: "true",
-                    }
-                }
-            };
-
-            // Publish single batch message
-            publishNotification("notification.fcm.batch", batchMessage);
-            debug.info(`Batch FCM Notification queued for ${fcmTokens.length} drivers`);
+                    },
+                    priority: "high"
+                });
+                debug.info(`Batch FCM Notification sent to ${fcmTokens.length} drivers directly`);
+            } catch (err) {
+                debug.error(`Batch FCM Notification Error: ${err}`);
+            }
         } else {
             debug.info("No valid FCM tokens found for active drivers");
         }
