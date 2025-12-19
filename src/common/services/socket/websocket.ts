@@ -53,8 +53,8 @@ function handleConnection(socket: Socket): void {
     }
 
     socket.on('driver_location_update', async (data) => {
+        // Low-level debug log (use with caution in prod)
         // logger.info(`Received location from client ${socket.id}`);
-        // console.log("Payload:", data);
         try {
             if (socket.data.id) {
                 const { lat, lng, heading } = data;
@@ -64,7 +64,7 @@ function handleConnection(socket: Socket): void {
                     // Ideally, use a controller function, but for performance we might do direct update here 
                     // or delegate to a lightweight service.
                     // For now, updating directly to keep it simple as per request.
-                    const { Driver } = require('../../core/models/driver');
+                    const { Driver } = require('../../../v1/core/models/driver');
 
                     await Driver.update({
                         geoLocation: {
@@ -101,6 +101,13 @@ function handleAuthentication(socket: Socket, data: AuthData): void {
         // Store user data in socket
         socket.data.id = decoded.userData.id;
 
+        // Cancel any pending offline timeout for this user (reconnection logic)
+        if (disconnectTimeouts.has(decoded.userData.id)) {
+            clearTimeout(disconnectTimeouts.get(decoded.userData.id)!);
+            disconnectTimeouts.delete(decoded.userData.id);
+            logger.info(`Driver ${decoded.userData.id} reconnected within grace period. Cancelled offline update.`);
+        }
+
         // Join user's room for private notifications
         socket.join(decoded.userData.id);
 
@@ -113,18 +120,57 @@ function handleAuthentication(socket: Socket, data: AuthData): void {
     }
 }
 
-function handleDisconnect(socket: Socket): void {
+// Grace period timeout tracker: driverId -> timeout
+const disconnectTimeouts = new Map<string, NodeJS.Timeout>();
+const GRACE_PERIOD_MS = 30000; // 30 seconds
+
+async function handleDisconnect(socket: Socket): Promise<void> {
     logger.info(`Client disconnected: ${socket.id}`);
+    try {
+        if (socket.data.id) {
+            const driverId = socket.data.id;
+
+            // If there's already a pending timeout (rare race condition), clear it first
+            if (disconnectTimeouts.has(driverId)) {
+                clearTimeout(disconnectTimeouts.get(driverId)!);
+                disconnectTimeouts.delete(driverId);
+            }
+
+            // Schedule offline update
+            const timeout = setTimeout(async () => {
+                try {
+                    // Correct path to v1/core/models/driver
+                    const { Driver } = require('../../../v1/core/models/driver');
+                    await Driver.update({
+                        isOnline: false,
+                        lastInActiveDate: new Date(),
+                        // Keep last known location so they appear immediately when back online
+                    }, {
+                        where: { driverId: driverId }
+                    });
+                    logger.info(`Driver ${driverId} marked as offline after grace period`);
+                    disconnectTimeouts.delete(driverId);
+                } catch (err) {
+                    logger.error(`Error executing offline update for ${driverId}:`, err);
+                }
+            }, GRACE_PERIOD_MS);
+
+            disconnectTimeouts.set(driverId, timeout);
+            logger.info(`Driver ${driverId} disconnected. Scheduled offline in ${GRACE_PERIOD_MS / 1000}s (Grace Period)`);
+        }
+    } catch (error) {
+        logger.error(`Error handling disconnect for ${socket.id}:`, error);
+    }
 }
 
 function handleError(socket: Socket, error: Error): void {
     logger.error(`Socket error from ${socket.id}:`, error);
 }
 
-export function sendNotification(target: string, data: NotificationData): void {
+export function sendNotification(target: string, data: NotificationData): boolean {
     if (!io) {
         logger.error('Socket.IO server not initialized');
-        return;
+        return false;
     }
 
     const socket = io.sockets.sockets.get(target);
@@ -132,10 +178,18 @@ export function sendNotification(target: string, data: NotificationData): void {
     if (socket) {
         socket.emit('notification', data);
         logger.info(`Notification sent to client: ${target}`);
+        return true;
     } else {
-        io.to(target).emit('notification', data);
-        console.log("notification broadcasted to room", `target :${target}`, `\n data :${data}`)
-        logger.info(`Notification broadcasted to room: ${target}`);
+        // Check if target is a room with members
+        const room = io.sockets.adapter.rooms.get(target);
+        if (room && room.size > 0) {
+            io.to(target).emit('notification', data);
+            logger.info(`Notification broadcasted to room: ${target} (size: ${room.size})`);
+            return true;
+        } else {
+            logger.warn(`Notification failed: Target ${target} not connected/empty room`);
+            return false;
+        }
     }
 }
 
@@ -143,10 +197,10 @@ export function sendNotification(target: string, data: NotificationData): void {
  * Emit NEW_TRIP_OFFER event to a specific driver via Socket.IO
  * This is used by the Flutter app's overlay notification service
  */
-export function emitNewTripOfferToDriver(driverId: string, bookingData: any): void {
+export function emitNewTripOfferToDriver(driverId: string, bookingData: any): boolean {
     if (!io) {
         logger.error('Socket.IO server not initialized');
-        return;
+        return false;
     }
 
     try {
@@ -165,12 +219,15 @@ export function emitNewTripOfferToDriver(driverId: string, bookingData: any): vo
 
         if (socketCount === 0) {
             logger.warn(`⚠️ No sockets found in room "${driverId}" - driver may not be connected`);
+            return false; // Driver offline
         }
 
         io.to(driverId).emit('notification', eventData);
         logger.info(`✅ NEW_TRIP_OFFER event sent to driver: ${driverId}, bookingId: ${bookingData.bookingId || 'unknown'}`);
+        return true; // Sent successfully
     } catch (error) {
         logger.error(`Error emitting NEW_TRIP_OFFER to driver ${driverId}:`, error);
+        return false;
     }
 }
 

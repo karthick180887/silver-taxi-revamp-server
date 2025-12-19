@@ -87,7 +87,16 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
     const fetchDriversList = async () => {
         setLoading(true);
         try {
-            const res = await driversApi.getAll({ search, limit: 50, status: 'active' });
+            // Updated to fetch only Active AND Online drivers
+            // Cast to any to bypass strict typing in api.ts if needed, or rely on JS behavior
+            const res = await driversApi.getAll({
+                search,
+                limit: 50,
+                // status: 'active', // 'status' might not be handled by backend as explicit 'isActive', so we use our new params
+                isActive: 'true',
+                isOnline: 'true'
+            } as any);
+
             if (res.data && (res.data.success || res.data.data)) {
                 const driversList = res.data.data?.drivers || res.data.data || [];
                 setDrivers(driversList);
@@ -185,106 +194,141 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
         : [];
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            {/* ... */}
-            {/* Content */}
-            <div className="flex-1 flex relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-[95vw] h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
 
-                {/* Map View */}
-                <div className={`flex-1 relative transition-all duration-300 ${view === 'list' ? 'w-1/3 border-r' : 'w-full'}`}>
-                    <MapComponent
-                        pickupLocation={pickupLocation}
-                        drivers={processedDrivers.map((d: any) => ({
-                            id: d.id || d.driverId,
-                            location: d.formattedLocation,
-                            name: d.name,
-                            phone: d.phone,
-                            color: d.color
-                        }))}
-                        className="w-full h-full"
-                    />
+                {/* Header */}
+                <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-white z-20">
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-800">Assign Driver</h2>
+                        <p className="text-sm text-slate-500">
+                            Booking #{booking.bookingId} • {booking.pickupAddress}
+                        </p>
+                    </div>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onClose}
+                        className="rounded-full hover:bg-slate-100"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                    </Button>
+                </div>
 
-                    {/* Overlay Controls for Map View */}
-                    {view === 'map' && (
-                        <div className="absolute top-4 right-4 flex flex-col gap-2 w-64 bg-white/90 backdrop-blur p-4 rounded-lg shadow-lg border border-slate-100">
-                            <Button
-                                onClick={handleAssignAll}
-                                disabled={isAssigning}
-                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all hover:scale-[1.02]"
-                            >
-                                {isAssigning ? 'Sending...' : 'Assign All Drivers'}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => setView('list')}
-                                className="w-full border-slate-200 hover:bg-slate-50 text-slate-700"
-                            >
-                                Select Single Driver
-                            </Button>
+                {/* Content */}
+                <div className="flex-1 flex relative overflow-hidden">
+
+                    {/* Map View */}
+                    <div className={`flex-1 relative transition-all duration-300 ${view === 'list' ? 'w-2/3 border-r' : 'w-full'}`}>
+                        <MapComponent
+                            pickupLocation={pickupLocation}
+                            drivers={processedDrivers.map((d: any) => ({
+                                id: d.id || d.driverId,
+                                location: d.formattedLocation,
+                                name: d.name,
+                                phone: d.phone,
+                                color: d.color
+                            }))}
+                            className="w-full h-full"
+                        />
+
+                        {/* Overlay Controls for Map View */}
+                        {view === 'map' && (
+                            <div className="absolute top-4 right-4 flex flex-col gap-2 w-72 bg-white/95 backdrop-blur shadow-xl rounded-xl border border-slate-100 p-4">
+                                <Button
+                                    onClick={handleAssignAll}
+                                    disabled={isAssigning}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md py-6 text-lg"
+                                >
+                                    {isAssigning ? 'Sending...' : 'Assign All Live Drivers'}
+                                </Button>
+                                <p className="text-xs text-center text-slate-500 mb-2">
+                                    Broadcasts to all online & approved drivers
+                                </p>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setView('list')}
+                                    className="w-full border-slate-200 hover:bg-slate-50 text-slate-700"
+                                >
+                                    Select Single Driver manually
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* List View Overlay/Sidebar */}
+                    {view === 'list' && (
+                        <div className="w-[450px] bg-white flex flex-col border-l border-slate-200 h-full shadow-2xl z-10 animate-in slide-in-from-right duration-300">
+                            <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50/50">
+                                <Input
+                                    placeholder="Search by name or phone..."
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    className="bg-white"
+                                    autoFocus
+                                />
+                                <div className="text-xs text-slate-500 px-1">
+                                    Showing only Active & Online drivers
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                                {loading ? (
+                                    <div className="flex flex-col items-center justify-center h-40 text-slate-400">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-2"></div>
+                                        Loading drivers...
+                                    </div>
+                                ) : filteredDrivers.length === 0 ? (
+                                    <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-lg m-2 border border-slate-100 border-dashed">
+                                        No online drivers found matching your search.
+                                    </div>
+                                ) : (
+                                    filteredDrivers.map(driver => (
+                                        <div
+                                            key={driver.id || driver.driverId}
+                                            onClick={() => setSelectedDriver(driver.id || driver.driverId)}
+                                            className={`p-4 rounded-xl border cursor-pointer transition-all hover:shadow-md ${selectedDriver === (driver.id || driver.driverId)
+                                                ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500 shadow-sm'
+                                                : 'border-slate-100 hover:border-indigo-200 hover:bg-slate-50'
+                                                }`}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <div className="font-semibold text-slate-800 text-lg">{driver.name}</div>
+                                                    <div className="text-sm text-slate-500">{driver.phone}</div>
+                                                </div>
+                                                {driver.isOnline && (
+                                                    <span className="px-2 py-1 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                        Live
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            <div className="p-4 border-t border-slate-100 flex gap-3 bg-slate-50/50 safe-area-bottom">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setView('map')}
+                                    className="flex-1 h-12"
+                                >
+                                    Back to Map
+                                </Button>
+                                <Button
+                                    onClick={handleAssignSingle}
+                                    disabled={!selectedDriver || isAssigning}
+                                    className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white h-12 text-lg shadow-lg shadow-indigo-200"
+                                >
+                                    {isAssigning ? 'Assigning...' : 'Confirm Assignment'}
+                                </Button>
+                            </div>
                         </div>
                     )}
                 </div>
-
-                {/* List View Overlay/Sidebar */}
-                {view === 'list' && (
-                    <div className="w-[400px] bg-white flex flex-col border-l border-slate-200 absolute right-0 top-0 bottom-0 shadow-2xl z-10 animate-in slide-in-from-right duration-300">
-                        <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50/50">
-                            <Input
-                                placeholder="Search by name or phone..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                className="bg-white"
-                                autoFocus
-                            />
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                            {loading ? (
-                                <div className="p-4 text-center text-slate-400">Loading drivers...</div>
-                            ) : filteredDrivers.length === 0 ? (
-                                <div className="p-4 text-center text-slate-400">No drivers found</div>
-                            ) : (
-                                filteredDrivers.map(driver => (
-                                    <div
-                                        key={driver.id || driver.driverId}
-                                        onClick={() => setSelectedDriver(driver.id || driver.driverId)}
-                                        className={`p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md ${selectedDriver === (driver.id || driver.driverId)
-                                            ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
-                                            : 'border-slate-100 hover:border-slate-300'
-                                            }`}
-                                    >
-                                        <div className="font-medium text-slate-800">{driver.name}</div>
-                                        <div className="text-sm text-slate-500">{driver.phone}</div>
-                                        <div className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                                            Available
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
-                        <div className="p-4 border-t border-slate-100 flex gap-3 bg-slate-50/50">
-                            <Button
-                                variant="outline"
-                                onClick={() => setView('map')}
-                                className="flex-1"
-                            >
-                                Back
-                            </Button>
-                            <Button
-                                onClick={handleAssignSingle}
-                                disabled={!selectedDriver || isAssigning}
-                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
-                            >
-                                {isAssigning ? 'Assigning...' : 'Confirm'}
-                            </Button>
-                        </div>
-                    </div>
-                )}
-
             </div>
         </div>
-
     );
 }

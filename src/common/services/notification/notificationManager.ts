@@ -38,7 +38,7 @@ const generateNotificationKey = (data: NotificationData): string => {
 const isNotificationRecentlySent = (key: string): boolean => {
   const lastSent = sentNotifications.get(key);
   if (!lastSent) return false;
-  
+
   const timeSinceLastSent = Date.now() - lastSent;
   return timeSinceLastSent < NOTIFICATION_COOLDOWN;
 };
@@ -59,7 +59,7 @@ export class NotificationManager {
    */
   static async sendAdminNotification(data: NotificationData): Promise<NotificationResult> {
     const notificationKey = generateNotificationKey(data);
-    
+
     // Check for duplicate notifications
     if (isNotificationRecentlySent(notificationKey)) {
       debug.info(`Skipping duplicate admin notification: ${notificationKey}`);
@@ -95,7 +95,7 @@ export class NotificationManager {
 
       // Create notification in database
       const notificationResponse = await createNotification(notificationPayload as any);
-      
+
       if (!notificationResponse.success) {
         debug.error('Failed to create admin notification in database');
         return {
@@ -106,26 +106,26 @@ export class NotificationManager {
         };
       }
 
-             // Send websocket notification
-       const targetId = data.vendorId || data.adminId;
-       sendNotification(targetId, {
-         notificationId: notificationResponse.notificationId || undefined,
-         title: data.title,
-         description: data.message,
-         type: data.type || 'general',
-         read: false,
-         date: new Date(),
-         time: time,
-       });
+      // Send websocket notification
+      const targetId = data.vendorId || data.adminId;
+      sendNotification(targetId, {
+        notificationId: notificationResponse.notificationId || undefined,
+        title: data.title,
+        description: data.message,
+        type: data.type || 'general',
+        read: false,
+        date: new Date(),
+        time: time,
+      });
 
       log.info(`Admin notification sent successfully: ${notificationKey}`);
-      
-             return {
-         success: true,
-         websocketSent: true,
-         fcmSent: false,
-         notificationId: notificationResponse.notificationId || undefined
-       };
+
+      return {
+        success: true,
+        websocketSent: true,
+        fcmSent: false,
+        notificationId: notificationResponse.notificationId || undefined
+      };
 
     } catch (error) {
       debug.error(`Error sending admin notification: ${error}`);
@@ -152,7 +152,7 @@ export class NotificationManager {
     }
 
     const notificationKey = generateNotificationKey(data);
-    
+
     // Check for duplicate notifications
     if (isNotificationRecentlySent(notificationKey)) {
       debug.info(`Skipping duplicate driver notification: ${notificationKey}`);
@@ -189,16 +189,54 @@ export class NotificationManager {
         };
       }
 
-      // FCM notification will be handled by the calling function
-      // since we need the driver's FCM token
-      
-      log.info(`Driver notification created successfully: ${notificationKey}`);
-      
+      // 1. Try sending via Socket (Real-time)
+      const time = new Intl.DateTimeFormat('en-IN', {
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: true,
+        timeZone: 'Asia/Kolkata'
+      }).format(new Date());
+
+      const socketSent = sendNotification(data.driverId, {
+        notificationId: data.notificationId,
+        title: data.title,
+        description: data.message,
+        type: data.type || 'general',
+        read: false,
+        date: new Date(),
+        time: time,
+      });
+
+      let fcmSent = false;
+
+      // 2. If Socket failed (Driver Offline), Fallback to FCM
+      if (!socketSent) {
+        log.info(`Socket delivery failed for driver ${data.driverId}. Attempting FCM fallback...`);
+
+        // Fetch driver to get FCM token
+        const { Driver } = require('../../../v1/core/models/driver');
+        const driver = await Driver.findOne({ where: { driverId: data.driverId } });
+
+        if (driver && driver.fcmToken) {
+          const fcmResult = await this.sendDriverFCMNotification(driver.fcmToken, {
+            ...data,
+            notificationId: data.notificationId // Pass original ID
+          });
+          fcmSent = fcmResult.success;
+        } else {
+          log.warn(`FCM Fallback failed: Driver ${data.driverId} has no FCM token.`);
+        }
+      } else {
+        log.info(`Socket delivery successful for driver ${data.driverId}. Skipping FCM.`);
+      }
+
+      log.info(`Driver notification processed: ${notificationKey} (Socket: ${socketSent}, FCM: ${fcmSent})`);
+
       return {
         success: true,
-        websocketSent: false,
-        fcmSent: false,
-        notificationId: `driver_${data.driverId}_${Date.now()}`
+        websocketSent: socketSent,
+        fcmSent: fcmSent,
+        notificationId: data.notificationId || `driver_${data.driverId}_${Date.now()}`
       };
 
     } catch (error) {
@@ -216,7 +254,7 @@ export class NotificationManager {
    * Send FCM notification to driver
    */
   static async sendDriverFCMNotification(
-    fcmToken: string, 
+    fcmToken: string,
     data: NotificationData
   ): Promise<NotificationResult> {
     if (!fcmToken || fcmToken.trim() === '') {
@@ -229,23 +267,49 @@ export class NotificationManager {
     }
 
     try {
+      // Flatten data for FCM (must be Map<String, String>)
+      const flattenedData: any = {
+        title: data.title,
+        message: data.message,
+        type: data.type || 'new-booking',
+        channelKey: data.channelKey || 'booking_channel',
+        notificationId: data.notificationId || `driver_fcm_${data.driverId}_${Date.now()}`,
+      };
+
+      // Add other properties from data to flattenedData
+      // Be careful not to overwrite specific keys, and stringify objects
+      const excludeKeys = ['title', 'message', 'type', 'channelKey', 'notificationId', 'adminId', 'vendorId', 'customerId', 'driverId', 'bookingId'];
+
+      Object.keys(data).forEach(key => {
+        if (!excludeKeys.includes(key)) {
+          const value = (data as any)[key];
+          if (typeof value === 'object') {
+            flattenedData[key] = JSON.stringify(value);
+          } else {
+            flattenedData[key] = String(value);
+          }
+        }
+      });
+
+      // Specifically ensure 'data' or 'booking' objects are included if present in input
+      if ((data as any).data) {
+        flattenedData['data'] = typeof (data as any).data === 'object' ? JSON.stringify((data as any).data) : String((data as any).data);
+      }
+      if ((data as any).booking) {
+        flattenedData['booking'] = typeof (data as any).booking === 'object' ? JSON.stringify((data as any).booking) : String((data as any).booking);
+      }
+
       const fcmPayload = {
         ids: {
           adminId: data.adminId,
           bookingId: data.bookingId,
           driverId: data.driverId,
         },
-        data: {
-          title: data.title,
-          message: data.message,
-          type: data.type || 'new-booking',
-          channelKey: data.channelKey || 'booking_channel',
-          notificationId: data.notificationId || `driver_fcm_${data.driverId}_${Date.now()}`,
-        },
+        data: flattenedData,
       };
 
       const result = await sendToSingleToken(fcmToken, fcmPayload);
-      
+
       if (result) {
         log.info(`FCM notification sent to driver ${data.driverId}`);
         return {
@@ -278,7 +342,7 @@ export class NotificationManager {
    * Send FCM notifications to multiple drivers
    */
   static async sendMultipleDriverFCMNotifications(
-    fcmTokens: string[], 
+    fcmTokens: string[],
     data: NotificationData
   ): Promise<NotificationResult> {
     if (!fcmTokens || fcmTokens.length === 0) {
@@ -306,23 +370,23 @@ export class NotificationManager {
       };
 
       const result = await sendToMultipleTokens(fcmTokens, fcmPayload);
-      
-             if (result && result.successCount > 0) {
-         log.info(`FCM notifications sent to ${result.successCount} drivers`);
-         return {
-           success: true,
-           websocketSent: false,
-           fcmSent: true,
-           notificationId: fcmPayload.data.notificationId
-         };
-       } else {
-         return {
-           success: false,
-           websocketSent: false,
-           fcmSent: false,
-           error: `FCM notifications failed: ${result?.failureCount || 0} failures`
-         };
-       }
+
+      if (result && result.successCount > 0) {
+        log.info(`FCM notifications sent to ${result.successCount} drivers`);
+        return {
+          success: true,
+          websocketSent: false,
+          fcmSent: true,
+          notificationId: fcmPayload.data.notificationId
+        };
+      } else {
+        return {
+          success: false,
+          websocketSent: false,
+          fcmSent: false,
+          error: `FCM notifications failed: ${result?.failureCount || 0} failures`
+        };
+      }
 
     } catch (error) {
       debug.error(`Error sending FCM notifications to drivers: ${error}`);
@@ -349,7 +413,7 @@ export class NotificationManager {
     }
 
     const notificationKey = generateNotificationKey(data);
-    
+
     // Check for duplicate notifications
     if (isNotificationRecentlySent(notificationKey)) {
       debug.info(`Skipping duplicate customer notification: ${notificationKey}`);
@@ -387,7 +451,7 @@ export class NotificationManager {
       }
 
       log.info(`Customer notification created successfully: ${notificationKey}`);
-      
+
       return {
         success: true,
         websocketSent: false,
@@ -410,7 +474,7 @@ export class NotificationManager {
    * Send FCM notification to customer
    */
   static async sendCustomerFCMNotification(
-    fcmToken: string, 
+    fcmToken: string,
     data: NotificationData
   ): Promise<NotificationResult> {
     if (!fcmToken || fcmToken.trim() === '') {
@@ -439,7 +503,7 @@ export class NotificationManager {
       };
 
       const result = await sendToSingleToken(fcmToken, fcmPayload);
-      
+
       if (result) {
         log.info(`FCM notification sent to customer ${data.customerId}`);
         return {

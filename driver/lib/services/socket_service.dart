@@ -125,65 +125,11 @@ class SocketService {
       debugPrint('========================================');
       
       if (data is Map<String, dynamic>) {
-        final type = data['type']?.toString() ?? '';
-        final eventData = data['data'];
-        
-        debugPrint('📋 Parsed notification:');
-        debugPrint('   Type: $type');
-        debugPrint('   EventData type: ${eventData.runtimeType}');
-        debugPrint('   EventData: $eventData');
-        
-        // Broadcast to general notification stream
-        _notificationController.add(data);
-        debugPrint('✅ Added to notificationStream');
-        
-        // Route to specific streams based on type
-        switch (type) {
-          case 'WALLET_UPDATE':
-          case 'WALLET_CREDIT':
-            debugPrint('💰 Routing to walletUpdateStream');
-            if (eventData is Map<String, dynamic>) {
-              _walletUpdateController.add(eventData);
-            }
-            break;
-          case 'NEW_TRIP_OFFER':
-          case 'TRIP_CANCELLED':
-          case 'TRIP_ACCEPTED':
-            debugPrint('========================================');
-            debugPrint('🚗🚗🚗 ROUTING TO bookingUpdateStream 🚗🚗🚗');
-            debugPrint('   Type: $type');
-            debugPrint('   EventData type: ${eventData.runtimeType}');
-            debugPrint('   EventData: $eventData');
-            debugPrint('========================================');
-            
-            // Ensure eventData is a Map
-            Map<String, dynamic> bookingData;
-            if (eventData is Map<String, dynamic>) {
-              bookingData = eventData;
-            } else {
-              debugPrint('⚠️ EventData is not a Map, converting...');
-              bookingData = {'raw': eventData};
-            }
-            
-            // Signal booking/trip lists should be refreshed. Pass type for routing.
-            final bookingUpdate = {
-              'type': type,
-              'data': bookingData,
-            };
-            debugPrint('📤 Adding to bookingUpdateStream: $bookingUpdate');
-            _bookingUpdateController.add(bookingUpdate);
-            debugPrint('✅✅✅ Added to bookingUpdateStream ✅✅✅');
-            debugPrint('   Stream has ${_bookingUpdateController.hasListener ? "listeners" : "NO listeners"}');
-            break;
-          default:
-            debugPrint('⚠️ Unknown notification type: $type');
-        }
+        handleNotification(data);
       } else {
-        debugPrint('❌ Notification data is not a Map: ${data.runtimeType}');
       }
     });
 
-    
     _socket!.onError((error) {
       debugPrint('========================================');
       debugPrint('❌❌❌ SOCKET ERROR! ❌❌❌');
@@ -253,6 +199,63 @@ class SocketService {
     });
     
     debugPrint('Waiting for connection to complete...');
+  } // End of init
+
+  // Public method to handle notifications (from Socket or FCM)
+  void handleNotification(Map<String, dynamic> data) {
+    final type = data['type']?.toString() ?? '';
+    final eventData = data['data'];
+    
+    debugPrint('📋 Processing notification (Socket/FCM):');
+    debugPrint('   Type: $type');
+    debugPrint('   EventData type: ${eventData.runtimeType}');
+    debugPrint('   EventData: $eventData');
+    
+    // Broadcast to general notification stream
+    _notificationController.add(data);
+    debugPrint('✅ Added to notificationStream');
+    
+    // Route to specific streams based on type
+    switch (type) {
+      case 'WALLET_UPDATE':
+      case 'WALLET_CREDIT':
+        debugPrint('💰 Routing to walletUpdateStream');
+        if (eventData is Map<String, dynamic>) {
+          _walletUpdateController.add(eventData);
+        }
+        break;
+      case 'NEW_TRIP_OFFER':
+      case 'TRIP_CANCELLED':
+      case 'TRIP_ACCEPTED':
+        debugPrint('========================================');
+        debugPrint('🚗🚗🚗 ROUTING TO bookingUpdateStream 🚗🚗🚗');
+        debugPrint('   Type: $type');
+        debugPrint('   EventData type: ${eventData.runtimeType}');
+        debugPrint('   EventData: $eventData');
+        debugPrint('========================================');
+        
+        // Ensure eventData is a Map
+        Map<String, dynamic> bookingData;
+        if (eventData is Map<String, dynamic>) {
+          bookingData = eventData;
+        } else {
+          debugPrint('⚠️ EventData is not a Map, converting...');
+          bookingData = {'raw': eventData};
+        }
+        
+        // Signal booking/trip lists should be refreshed. Pass type for routing.
+        final bookingUpdate = {
+          'type': type,
+          'data': bookingData,
+        };
+        debugPrint('📤 Adding to bookingUpdateStream: $bookingUpdate');
+        _bookingUpdateController.add(bookingUpdate);
+        debugPrint('✅✅✅ Added to bookingUpdateStream ✅✅✅');
+        debugPrint('   Stream has ${_bookingUpdateController.hasListener ? "listeners" : "NO listeners"}');
+        break;
+      default:
+        debugPrint('⚠️ Unknown notification type: $type');
+    }
   }
 
   void sendLocationUpdate(double lat, double lng, double heading) {

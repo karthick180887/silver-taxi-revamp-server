@@ -11,7 +11,8 @@ import {
     getAllDriverWalletRequests,
     getDriverWalletRequestById,
     walletBulkRequest,
-    getDriverLocations
+    getDriverLocations,
+    resetAllDriversOffline
 } from '../controller/driverController';
 import upload from '../../../utils/multer.fileUpload';
 
@@ -30,6 +31,7 @@ router.get('/wallet/:id', getDriverWallet);
 router.post('/wallet/add/:id', addDriverWallet);
 router.post('/wallet/minus/:id', minusDriverWallet);
 router.post('/wallet/bulk-request', walletBulkRequest);
+router.post('/reset-offline', resetAllDriversOffline); // Maintenance route
 router.put('/verification/:id', verificationStatus);
 
 // Wallet Requests

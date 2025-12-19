@@ -1430,16 +1430,63 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
             if (previousDriver) await previousDriver.update({ assigned: false });
         }
 
-        // Fetch all drivers (active and inactive)
-        const drivers = await Driver.findAll({
-            where: { adminId },
-            attributes: ['driverId', 'name', 'fcmToken', 'geoLocation'],
+        // DEBUG: Targeted check for Karthick Selvam
+        const targetDriver = await Driver.findOne({ where: { driverId: 'SLTD260105672' } });
+        if (targetDriver) {
+            debug.info(`>>> TARGET CHECK: Found Karthick Selvam (SLTD260105672)`);
+            debug.info(`    adminId match? ${targetDriver.adminId} === ${adminId} => ${targetDriver.adminId === adminId} (types: ${typeof targetDriver.adminId} vs ${typeof adminId})`);
+            debug.info(`    isActive match? ${targetDriver.isActive} === true => ${targetDriver.isActive === true} (type: ${typeof targetDriver.isActive})`);
+            debug.info(`    isOnline match? ${targetDriver.isOnline} === true => ${targetDriver.isOnline === true} (type: ${typeof targetDriver.isOnline})`);
+            debug.info(`    Raw Values: adminId='${targetDriver.adminId}', isActive=${targetDriver.isActive}, isOnline=${targetDriver.isOnline}`);
+        } else {
+            debug.warn(`>>> TARGET CHECK: Could not find Karthick Selvam explicitly?`);
+        }
+
+        // Fetch potentially valid drivers (Relaxed Query)
+        // We filter isOnline MANUALLY to handle potential boolean/string mismatches
+        const candidates = await Driver.findAll({
+            where: {
+                adminId,
+                isActive: true,
+                // isOnline: true  <-- Removed to debug/fix strict type issue
+            },
+            attributes: ['driverId', 'name', 'fcmToken', 'geoLocation', 'isOnline'],
         });
 
+        // Manual Filter with loose check
+        const drivers = candidates.filter(d => {
+            // Check true, "true", or 1
+            const isOnlineBool = d.isOnline === true || String(d.isOnline) === 'true';
+
+            // Log as YES/NO to avoid 'true'/'false' redaction if they are secrets
+            const onlineStatusStr = isOnlineBool ? "YES" : "NO";
+            const rawStatusStr = d.isOnline ? "TRUTHY" : "FALSY";
+
+            if (!isOnlineBool) {
+                // debug.info(`Skipping driver ${d.name} (${d.driverId}) because isOnline=${onlineStatusStr} (Raw: ${d.isOnline})`);
+                // Use a safer log format
+                debug.info(`Skipping driver ${d.name} (Online: ${onlineStatusStr})`);
+            }
+            return isOnlineBool;
+        });
+
+        debug.info(`Assign All: Found ${drivers.length} active & online drivers (from ${candidates.length} candidates) for adminId=${adminId}`);
+
         if (!drivers.length) {
+            debug.warn(`Assign All Failed: No active & online drivers found.`);
             return res.status(404).json({
                 success: false,
-                message: "No drivers found",
+                message: "No active and online drivers found",
+            });
+        }
+
+        debug.info(`Assign All: Found ${drivers.length} active & online drivers for adminId=${adminId}`);
+
+        if (!drivers.length) {
+            debug.warn(`Assign All Failed: No active & online drivers found.`);
+            return res.status(404).json({
+                success: false,
+                message: "No active and online drivers found",
             });
         }
 

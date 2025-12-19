@@ -131,6 +131,8 @@ export const onlineStatusUpdate = async (req: Request, res: Response) => {
     const driverId = req.body.driverId ?? req.query.driverId;
     const { isOnline } = req.body;
 
+    console.log(`[DriverStatus] Request to update status for driverId=${driverId} to isOnline=${isOnline}`);
+
     if (!driverId) {
         res.status(401).json({
             success: false,

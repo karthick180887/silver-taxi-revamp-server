@@ -40,6 +40,23 @@ export const getAllDrivers = async (req: Request, res: Response): Promise<void> 
         const whereCondition: any = { adminId };
         const offset = (page - 1) * limit;
 
+        const isActive = req.query.isActive;
+        const isOnline = req.query.isOnline;
+
+        // Determine isActive boolean if provided
+        if (isActive === 'true') {
+            whereCondition.isActive = true;
+        } else if (isActive === 'false') {
+            whereCondition.isActive = false;
+        }
+
+        // Determine isOnline boolean if provided
+        if (isOnline === 'true') {
+            whereCondition.isOnline = true;
+        } else if (isOnline === 'false') {
+            whereCondition.isOnline = false;
+        }
+
         if (search) {
             whereCondition[Op.or] = [
                 { name: { [Op.iLike]: `%${search}%` } },
@@ -119,10 +136,19 @@ export const getDriverLocations = async (req: Request, res: Response): Promise<v
             return;
         }
 
+        const whereCondition: any = { adminId };
+        const total = await Driver.count({ where: whereCondition });
+        const active = await Driver.count({ where: { ...whereCondition, isActive: true } });
+        const online = await Driver.count({ where: { ...whereCondition, isActive: true, isOnline: true } });
+        const withLoc = await Driver.count({ where: { ...whereCondition, isActive: true, isOnline: true, geoLocation: { [Op.ne]: null } } });
+
+        console.log(`[DriverLocations] Debug: AdminId=${adminId} | Total=${total} | Active=${active} | Online=${online} | WithLoc=${withLoc}`);
+
         const drivers = await Driver.findAll({
             where: {
                 adminId,
                 isActive: true,
+                isOnline: true, // Only fetch drivers who are currently online
                 geoLocation: { [Op.ne]: null } // Ensure location exists
             },
             attributes: ['id', 'driverId', 'name', 'phone', 'geoLocation', 'isOnline'],
@@ -138,6 +164,25 @@ export const getDriverLocations = async (req: Request, res: Response): Promise<v
     } catch (error) {
         console.error("Error fetching driver locations:", error);
         res.status(500).json({ success: false, message: "Error fetching driver locations" });
+    }
+};
+
+// Reset all drivers online status (Maintenance/Fix)
+export const resetAllDriversOffline = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const adminId = req.body.adminId ?? req.query.adminId;
+        // Optional: Require adminId check if needed, but this is a global maintenance script often.
+
+        await Driver.update({ isOnline: false }, { where: {} }); // Update ALL drivers
+
+        console.log(`[Maintenance] All drivers marked as offline.`);
+        res.status(200).json({
+            success: true,
+            message: "All drivers have been marked as offline. They will reappear when they reconnect.",
+        });
+    } catch (error) {
+        console.error("Error resetting driver status:", error);
+        res.status(500).json({ success: false, message: "Error resetting driver status" });
     }
 };
 
