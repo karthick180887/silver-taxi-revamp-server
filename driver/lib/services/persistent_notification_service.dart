@@ -160,8 +160,8 @@ class PersistentNotificationService {
       android: androidDetails,
     );
 
-    final title = tripCount == 1 ? '1 Trip Available' : '$tripCount Trips Available';
-    final body = tripCount == 1 ? 'Tap to view trip request' : 'Tap to view trip requests';
+    final title = tripCount == 1 ? '🚗 1 Trip Available' : '🚗 $tripCount Trips Available';
+    final body = 'Tap to view trip details and accept';
 
     await _notifications.show(
       1001,

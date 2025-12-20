@@ -23,6 +23,8 @@ spec:
   - hosts:
     - api.cabigo.in
     - admin.cabigo.in
+    - cabigo.in
+    - www.cabigo.in
     secretName: cabigo-tls
   rules:
   - host: api.cabigo.in
@@ -43,5 +45,25 @@ spec:
         backend:
           service:
             name: admin-dashboard
+            port:
+              number: 3000
+  - host: cabigo.in
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: cabigo-website
+            port:
+              number: 3000
+  - host: www.cabigo.in
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: cabigo-website
             port:
               number: 3000

@@ -71,11 +71,14 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
         try {
             // Fetch only active drivers with locations
             const res = await driversApi.getLocations();
+            console.log('[DEBUG] Driver locations API response:', res.data);
             if (res.data && res.data.success) {
                 // Transform API response to match Map component needs
                 // Assuming API returns array of drivers with current location
                 // You might need to adjust this based on actual API response
-                setDrivers(res.data.data || []);
+                const driverData = res.data.data || [];
+                console.log('[DEBUG] Setting drivers:', driverData);
+                setDrivers(driverData);
             }
         } catch (error) {
             console.error("Failed to fetch driver locations", error);
@@ -138,8 +141,8 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
             else if (distance < 50) color = '#EAB308'; // Yellow
             else color = '#F97316'; // Orange
 
-            // Filter out > 100km
-            if (distance > 100) return null;
+            // Filter out > 500km (increased from 100km for long-distance service)
+            if (distance > 500) return null;
 
             return {
                 ...d,
@@ -152,6 +155,12 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
 
     const processedDrivers = view === 'map' && pickupLocation ? getProcessedDrivers() : [];
 
+    // Debug logging
+    console.log('[DEBUG] View:', view, 'PickupLocation:', pickupLocation, 'Drivers count:', drivers.length, 'Processed count:', processedDrivers.length);
+    if (processedDrivers.length > 0) {
+        console.log('[DEBUG] First processed driver:', processedDrivers[0]);
+    }
+
 
     const handleAssignAll = async () => {
         setIsAssigning(true);
@@ -162,9 +171,13 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
             alert(`Broadcast sent to all active drivers.`);
             onClose();
             onAssign(); // Refresh parent list to show updated status
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to assign all", error);
-            alert('Failed to send notifications.');
+            // Show specific error message from backend if available
+            const errorMessage = error?.response?.data?.message
+                || error?.message
+                || 'Failed to send notifications.';
+            alert(`Failed to broadcast: ${errorMessage}`);
         } finally {
             setIsAssigning(false);
         }
@@ -177,9 +190,12 @@ export default function AssignDriverModal({ booking, onClose, onAssign }: Assign
             await bookingsApi.assignDriver(booking.id || booking.bookingId, selectedDriver);
             onAssign(); // Refresh parent
             onClose();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to assign driver", error);
-            alert('Failed to assign driver.');
+            const errorMessage = error?.response?.data?.message
+                || error?.message
+                || 'Failed to assign driver.';
+            alert(`Assignment failed: ${errorMessage}`);
         } finally {
             setIsAssigning(false);
         }

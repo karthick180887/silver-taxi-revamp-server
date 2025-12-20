@@ -101,12 +101,12 @@ function handleAuthentication(socket: Socket, data: AuthData): void {
         // Store user data in socket
         socket.data.id = decoded.userData.id;
 
-        // Cancel any pending offline timeout for this user (reconnection logic)
-        if (disconnectTimeouts.has(decoded.userData.id)) {
-            clearTimeout(disconnectTimeouts.get(decoded.userData.id)!);
-            disconnectTimeouts.delete(decoded.userData.id);
-            logger.info(`Driver ${decoded.userData.id} reconnected within grace period. Cancelled offline update.`);
-        }
+        // Cancel any pending offline timeout for this user (DISABLED - online status is now API-only)
+        // if (disconnectTimeouts.has(decoded.userData.id)) {
+        //     clearTimeout(disconnectTimeouts.get(decoded.userData.id)!);
+        //     disconnectTimeouts.delete(decoded.userData.id);
+        //     logger.info(`Driver ${decoded.userData.id} reconnected within grace period. Cancelled offline update.`);
+        // }
 
         // Join user's room for private notifications
         socket.join(decoded.userData.id);
@@ -120,9 +120,9 @@ function handleAuthentication(socket: Socket, data: AuthData): void {
     }
 }
 
-// Grace period timeout tracker: driverId -> timeout
-const disconnectTimeouts = new Map<string, NodeJS.Timeout>();
-const GRACE_PERIOD_MS = 30000; // 30 seconds
+// Grace period timeout tracker: driverId -> timeout (DISABLED - online status is now API-only)
+// const disconnectTimeouts = new Map<string, NodeJS.Timeout>();
+// const GRACE_PERIOD_MS = 30000; // 30 seconds
 
 async function handleDisconnect(socket: Socket): Promise<void> {
     logger.info(`Client disconnected: ${socket.id}`);
@@ -130,6 +130,18 @@ async function handleDisconnect(socket: Socket): Promise<void> {
         if (socket.data.id) {
             const driverId = socket.data.id;
 
+            // IMPORTANT: We no longer mark drivers as offline on socket disconnect.
+            // Online/offline status is now controlled ONLY via the API toggle.
+            // This allows drivers to:
+            // 1. Stay online even when app is closed (receive FCM notifications)
+            // 2. Manually control their availability
+            // 3. Avoid accidental offline status due to network issues
+
+            logger.info(`Driver ${driverId} socket disconnected. Online status unchanged (API-controlled).`);
+
+            // Note: If you want to re-enable automatic offline after socket disconnect,
+            // uncomment the grace period logic below:
+            /*
             // If there's already a pending timeout (rare race condition), clear it first
             if (disconnectTimeouts.has(driverId)) {
                 clearTimeout(disconnectTimeouts.get(driverId)!);
@@ -139,12 +151,10 @@ async function handleDisconnect(socket: Socket): Promise<void> {
             // Schedule offline update
             const timeout = setTimeout(async () => {
                 try {
-                    // Correct path to v1/core/models/driver
                     const { Driver } = require('../../../v1/core/models/driver');
                     await Driver.update({
                         isOnline: false,
                         lastInActiveDate: new Date(),
-                        // Keep last known location so they appear immediately when back online
                     }, {
                         where: { driverId: driverId }
                     });
@@ -157,6 +167,7 @@ async function handleDisconnect(socket: Socket): Promise<void> {
 
             disconnectTimeouts.set(driverId, timeout);
             logger.info(`Driver ${driverId} disconnected. Scheduled offline in ${GRACE_PERIOD_MS / 1000}s (Grace Period)`);
+            */
         }
     } catch (error) {
         logger.error(`Error handling disconnect for ${socket.id}:`, error);

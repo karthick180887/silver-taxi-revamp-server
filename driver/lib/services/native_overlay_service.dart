@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 /// Service to show native Android floating overlay (like Uber Driver).
 /// Uses WindowManager and TYPE_APPLICATION_OVERLAY.
 class NativeOverlayService {
-  static const MethodChannel _channel = MethodChannel('com.example.driver_app/overlay');
+  static const MethodChannel _channel = MethodChannel('cabigo.driver/overlay');
   static final NativeOverlayService _instance = NativeOverlayService._internal();
   factory NativeOverlayService() => _instance;
 

@@ -14,6 +14,7 @@
     <!-- Foreground service permission (required for Android 14+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     
     <!-- Wake lock permission (to keep service running when screen is locked) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -31,7 +32,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <application
-        android:label="Silver Taxi Driver"
+        android:label="Cabigo Driver"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true">
@@ -72,6 +73,16 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="overlay" />
+        </service>
+        
+        <!-- Firebase Cloud Messaging Service for background notifications -->
+        <service
+            android:name=".DriverFCMService"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
         </service>
         
         <!-- Don't delete the meta-data below.

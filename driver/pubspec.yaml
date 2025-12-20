@@ -1,5 +1,6 @@
 name: driver_app
-description: Minimal driver sample to test OTP flow against backend-go.
+description: Cabigo Driver App - Accept and manage taxi bookings.
+version: 1.0.0+1
 publish_to: "none"
 
 environment:
@@ -26,6 +27,11 @@ dependencies:
   google_maps_flutter: ^2.5.0
   flutter_polyline_points: ^2.1.0
   geolocator: ^14.0.2
+  # DISABLED: Background service has Android 14+ foreground service type issues
+  # TODO: Fix foreground service type declaration for flutter_background_service  
+  # flutter_background_service: ^5.0.5
+  # flutter_background_service_android: ^6.2.2
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:

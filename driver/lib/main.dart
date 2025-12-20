@@ -5,6 +5,7 @@ import 'services/storage_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'services/fcm_service.dart';
+import 'services/background_service_manager.dart';
 import 'design_system.dart';
 
 import 'package:sendotp_flutter_sdk/sendotp_flutter_sdk.dart';
@@ -16,8 +17,13 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     await FcmService().init();
+    
+    // DISABLED: Background service has Android 14+ foreground service type issues
+    // TODO: Fix foreground service type declaration for flutter_background_service
+    // await BackgroundServiceManager().initialize();
+    // debugPrint('BackgroundServiceManager initialized');
   } catch (e) {
-    debugPrint('Error initializing Firebase: $e');
+    debugPrint('Error initializing Firebase/Services: $e');
   }
   
   // Initialize MSG91 OTP Widget

@@ -1,4 +1,4 @@
-package com.example.driver_app
+package cabigo.driver
 
 import android.app.*
 import android.content.BroadcastReceiver
@@ -15,6 +15,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import cabigo.driver.R
 
 class OverlayService : Service() {
     private var windowManager: WindowManager? = null
@@ -275,6 +276,99 @@ class OverlayService : Service() {
             android.util.Log.e("OverlayService", "❌ Error showing floating button: ${e.message}", e)
         }
     }
+    
+    /**
+     * Wake the screen and unlock the device when a new trip arrives.
+     * This allows showing overlay on lock screen similar to Uber/Ola.
+     */
+    @Suppress("DEPRECATION")
+    private fun wakeScreen() {
+        try {
+            android.util.Log.d("OverlayService", "📱 Waking screen and unlocking...")
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+            
+            // Check if screen is already on
+            val isScreenOn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+                powerManager.isInteractive
+            } else {
+                @Suppress("DEPRECATION")
+                powerManager.isScreenOn
+            }
+            
+            // Check if device is locked
+            val isLocked = keyguardManager.isKeyguardLocked
+            
+            android.util.Log.d("OverlayService", "📱 Screen ON: $isScreenOn, Locked: $isLocked")
+            
+            // Step 1: Turn on the screen with wake lock
+            if (!isScreenOn) {
+                android.util.Log.d("OverlayService", "📱 Screen is OFF, waking it up...")
+                
+                val wakeLockScreen = powerManager.newWakeLock(
+                    PowerManager.FULL_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
+                    "OverlayService::ScreenWakeLock"
+                )
+                
+                // Acquire for 30 seconds - enough time for driver to interact
+                wakeLockScreen.acquire(30 * 1000L)
+                android.util.Log.d("OverlayService", "✅ Screen wake lock acquired")
+                
+                // Release after delay
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try {
+                        if (wakeLockScreen.isHeld) {
+                            wakeLockScreen.release()
+                            android.util.Log.d("OverlayService", "🔓 Screen wake lock released")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("OverlayService", "Error releasing wake lock: ${e.message}")
+                    }
+                }, 30000)
+            }
+            
+            // Step 2: Dismiss keyguard (unlock the phone)
+            if (isLocked) {
+                android.util.Log.d("OverlayService", "🔓 Device is LOCKED, attempting to unlock...")
+                
+                // Method 1: For Android 8.0+ use requestDismissKeyguard
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        // Launch MainActivity with unlock flags
+                        val unlockIntent = Intent(this, MainActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            putExtra("fromOverlay", true)
+                            putExtra("unlock", true)
+                        }
+                        startActivity(unlockIntent)
+                        android.util.Log.d("OverlayService", "✅ MainActivity launched for unlock")
+                    } catch (e: Exception) {
+                        android.util.Log.e("OverlayService", "Error launching unlock activity: ${e.message}")
+                    }
+                } else {
+                    // Method 2: For older Android versions, use deprecated KeyguardLock
+                    try {
+                        @Suppress("DEPRECATION")
+                        val keyguardLock = keyguardManager.newKeyguardLock("OverlayService")
+                        @Suppress("DEPRECATION")
+                        keyguardLock.disableKeyguard()
+                        android.util.Log.d("OverlayService", "✅ Keyguard disabled (legacy method)")
+                    } catch (e: Exception) {
+                        android.util.Log.e("OverlayService", "Error disabling keyguard: ${e.message}")
+                    }
+                }
+            } else {
+                android.util.Log.d("OverlayService", "📱 Device already UNLOCKED")
+            }
+            
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "❌ Error in wakeScreen: ${e.message}", e)
+        }
+    }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -320,7 +414,12 @@ class OverlayService : Service() {
         android.util.Log.d("OverlayService", "   fare: $fare")
         android.util.Log.d("OverlayService", "   pickup: $pickup")
         android.util.Log.d("OverlayService", "   drop: $drop")
+        android.util.Log.d("OverlayService", "   Current overlayView: ${overlayView}")
+        android.util.Log.d("OverlayService", "   windowManager: ${windowManager}")
         android.util.Log.d("OverlayService", "========================================")
+        
+        // WAKE THE SCREEN when new trip arrives
+        wakeScreen()
         
         // Store trip data for restoration after screen unlock
         currentTripId = tripId
@@ -329,13 +428,23 @@ class OverlayService : Service() {
         currentDrop = drop
         currentCustomerName = customerName
         
-        if (overlayView != null) {
-            android.util.Log.w("OverlayService", "⚠️ Overlay already showing, removing old one first")
-            try {
-                windowManager?.removeView(overlayView)
-            } catch (e: Exception) {
-                android.util.Log.e("OverlayService", "Error removing old overlay: ${e.message}")
+        // ALWAYS remove any existing overlay first - be extra careful about cleanup
+        try {
+            if (overlayView != null) {
+                android.util.Log.w("OverlayService", "⚠️ Removing existing overlay view...")
+                try {
+                    windowManager?.removeView(overlayView)
+                    android.util.Log.d("OverlayService", "✅ Old overlay removed from WindowManager")
+                } catch (e: IllegalArgumentException) {
+                    // View might not be attached - that's fine
+                    android.util.Log.d("OverlayService", "ℹ️ Old overlay was not attached: ${e.message}")
+                } catch (e: Exception) {
+                    android.util.Log.e("OverlayService", "⚠️ Error removing old overlay: ${e.message}")
+                }
+                overlayView = null
             }
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "⚠️ Error in cleanup: ${e.message}")
             overlayView = null
         }
 
@@ -368,7 +477,7 @@ class OverlayService : Service() {
             android.util.Log.d("OverlayService", "========================================")
             
             // Create intent to notify MainActivity
-            val acceptIntent = Intent("com.example.driver_app.OVERLAY_ACCEPT").apply {
+            val acceptIntent = Intent("cabigo.driver.OVERLAY_ACCEPT").apply {
                 putExtra("tripId", tripId)
                 putExtra("action", "accept")
                 setPackage(packageName)
@@ -426,7 +535,9 @@ class OverlayService : Service() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD,
+            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
@@ -437,32 +548,10 @@ class OverlayService : Service() {
         
         this.params = params
 
-        // Make draggable
-        overlayView?.setOnTouchListener(object : View.OnTouchListener {
-            private var initialX = 0
-            private var initialY = 0
-            private var initialTouchX = 0f
-            private var initialTouchY = 0f
-
-            override fun onTouch(v: View?, event: MotionEvent?): Boolean {
-                when (event?.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        initialX = params.x
-                        initialY = params.y
-                        initialTouchX = event.rawX
-                        initialTouchY = event.rawY
-                        return true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        params.x = initialX + (event.rawX - initialTouchX).toInt()
-                        params.y = initialY + (event.rawY - initialTouchY).toInt()
-                        windowManager?.updateViewLayout(overlayView, params)
-                        return true
-                    }
-                }
-                return false
-            }
-        })
+        // NOTE: Removed draggable touch listener to allow button clicks to work
+        // The touch listener was consuming ACTION_DOWN events, preventing buttons from receiving clicks
+        // If dragging is needed later, use a drag handle instead of entire view
+        android.util.Log.d("OverlayService", "✅ Overlay configured (dragging disabled for button clicks)")
 
         try {
             android.util.Log.d("OverlayService", "🔔 Step 2: Ensuring foreground service...")

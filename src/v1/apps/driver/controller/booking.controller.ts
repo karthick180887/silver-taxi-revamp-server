@@ -447,7 +447,16 @@ export const acceptOrRejectBooking = async (req: Request, res: Response) => {
     const { id } = req.params; // bookingId
     const acceptTime = dayjs().toDate();
 
+    console.log("========================================");
+    console.log("[ACCEPT] 🎯 Accept/Reject Booking Request");
+    console.log("[ACCEPT] bookingId:", id);
+    console.log("[ACCEPT] driverId:", driverId);
+    console.log("[ACCEPT] adminId:", adminId);
+    console.log("[ACCEPT] action:", req.body.action);
+    console.log("========================================");
+
     if (!driverId) {
+        console.log("[ACCEPT] ❌ Driver ID is missing!");
         res.status(401).json({
             success: false,
             message: "Driver ID is required",
@@ -474,6 +483,20 @@ export const acceptOrRejectBooking = async (req: Request, res: Response) => {
         // const { action } = validData.data;
         const { action } = req.body;
 
+        // First, check if booking exists at all
+        const anyBooking = await Booking.findOne({
+            where: { bookingId: id, adminId },
+        });
+
+        console.log("[ACCEPT] 📋 Booking lookup (any status):");
+        console.log("[ACCEPT]   - Found:", !!anyBooking);
+        if (anyBooking) {
+            console.log("[ACCEPT]   - Current status:", anyBooking.status);
+            console.log("[ACCEPT]   - driverAccepted:", anyBooking.driverAccepted);
+            console.log("[ACCEPT]   - driverId on booking:", anyBooking.driverId);
+            console.log("[ACCEPT]   - assignAllDriver:", anyBooking.assignAllDriver);
+        }
+
         const booking = await Booking.findOne({
             where: {
                 bookingId: id,
@@ -485,12 +508,15 @@ export const acceptOrRejectBooking = async (req: Request, res: Response) => {
 
 
         if (!booking) {
+            console.log("[ACCEPT] ❌ Booking not found with status='Booking Confirmed' AND driverAccepted='pending'");
             res.status(404).json({
                 success: false,
                 message: "Booking not found or already processed",
             });
             return;
         }
+
+        console.log("[ACCEPT] ✅ Booking found with correct status");
 
 
         const driver = await Driver.findOne({

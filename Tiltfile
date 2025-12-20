@@ -93,3 +93,17 @@ if mode == "admin" or mode == "all":
     ])
 else:
     print("Skipping Admin Dashboard (Mode: {})".format(mode))
+
+# Cabigo Website - Public marketing website
+if mode == "admin" or mode == "all":
+    print("Loading Cabigo Website...")
+    docker_build(
+        "registry.digitalocean.com/cabigo/cabigo-website:latest",
+        "cabigo",
+        dockerfile="cabigo/Dockerfile",
+        ignore=["node_modules/", ".next/", ".git/"],
+    )
+    k8s_yaml("k8s/cabigo-website.yaml")
+    k8s_resource("cabigo-website", labels=["frontend"])
+else:
+    print("Skipping Cabigo Website (Mode: {})".format(mode))

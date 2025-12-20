@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'overlay_notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'socket_service.dart';
 
@@ -12,11 +13,35 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('[FCM] Handling a background message: ${message.messageId}');
   debugPrint('[FCM] Message data: ${message.data}');
   
-  // If it's a new trip offer, we might want to show the overlay even in background
-  if (message.data['type'] == 'NEW_TRIP_OFFER') {
-    // We can't easily show the full overlay from background isolate without more setup,
-    // but the system notification will be shown automatically if notification payload is present.
-    // Or we can use local notifications.
+  // If it's a new trip offer, trigger the native overlay even in background
+  if (message.data['type'] == 'NEW_TRIP_OFFER' || message.data['type'] == 'new-booking') {
+    debugPrint('[FCM] Background: New trip offer received, triggering native overlay');
+    
+    try {
+      // Use method channel to call native Android overlay service
+      const channel = MethodChannel('cabigo.driver/overlay');
+      
+      final tripId = message.data['bookingId'] ?? '';
+      final fare = message.data['estimatedPrice'] ?? message.data['fare'] ?? '0';
+      final pickup = message.data['pickup'] ?? 'Pickup Location';
+      final drop = message.data['drop'] ?? 'Drop Location';
+      final customerName = message.data['customerName'] ?? 'Customer';
+      
+      debugPrint('[FCM] Background: Showing overlay for trip $tripId');
+      
+      await channel.invokeMethod('showOverlay', {
+        'tripId': tripId,
+        'fare': fare,
+        'pickup': pickup,
+        'drop': drop,
+        'customerName': customerName,
+      });
+      
+      debugPrint('[FCM] Background: Native overlay triggered successfully');
+    } catch (e) {
+      debugPrint('[FCM] Background: Error triggering native overlay: $e');
+      // The system notification will still be shown automatically
+    }
   }
 }
 

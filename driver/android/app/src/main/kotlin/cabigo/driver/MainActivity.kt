@@ -1,4 +1,4 @@
-package com.example.driver_app
+package cabigo.driver
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -13,7 +13,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.example.driver_app/overlay"
+    private val CHANNEL = "cabigo.driver/overlay"
     private val OVERLAY_PERMISSION_REQUEST_CODE = 1001
     private var currentTripId: String? = null
     private var methodChannel: MethodChannel? = null
@@ -22,13 +22,61 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Handle unlock request - show activity on lock screen
+        handleUnlockRequest(intent)
+        
         // Handle accept intent if app was started from overlay
         handleAcceptIntent(intent)
+    }
+    
+    /**
+     * Configure activity to show on lock screen and auto-unlock
+     */
+    @Suppress("DEPRECATION")
+    private fun handleUnlockRequest(intent: Intent?) {
+        val shouldUnlock = intent?.getBooleanExtra("unlock", false) ?: false
+        val fromOverlay = intent?.getBooleanExtra("fromOverlay", false) ?: false
+        
+        if (shouldUnlock || fromOverlay) {
+            Log.d("MainActivity", "🔓 Handling unlock request - showing on lock screen")
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                // Android 8.1+
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+                
+                // Request to dismiss keyguard
+                val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+                keyguardManager.requestDismissKeyguard(this, object : android.app.KeyguardManager.KeyguardDismissCallback() {
+                    override fun onDismissSucceeded() {
+                        Log.d("MainActivity", "✅ Keyguard dismissed successfully")
+                    }
+                    
+                    override fun onDismissCancelled() {
+                        Log.d("MainActivity", "⚠️ Keyguard dismiss cancelled by user")
+                    }
+                    
+                    override fun onDismissError() {
+                        Log.d("MainActivity", "❌ Keyguard dismiss error")
+                    }
+                })
+            } else {
+                // Pre-Android 8.1, use deprecated flags
+                window.addFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                    android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                    android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                )
+                Log.d("MainActivity", "✅ Window flags set for lock screen (legacy)")
+            }
+        }
     }
     
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleUnlockRequest(intent)
         handleAcceptIntent(intent)
     }
     
@@ -82,7 +130,7 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
-            val filter = IntentFilter("com.example.driver_app.OVERLAY_ACCEPT")
+            val filter = IntentFilter("cabigo.driver.OVERLAY_ACCEPT")
             registerReceiver(acceptReceiver, filter)
             Log.d("MainActivity", "✅ Broadcast receiver registered successfully")
         } catch (e: Exception) {

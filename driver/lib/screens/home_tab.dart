@@ -9,11 +9,12 @@ import '../services/overlay_notification_service.dart';
 import '../services/razorpay_service.dart';
 import '../services/socket_service.dart';
 import '../services/trip_service.dart';
+import '../services/background_service_manager.dart';
 import 'payment_details_page.dart';
 import 'payment_processing_page.dart';
 import 'wallet_page.dart';
 import 'all_trips_page.dart';
-import 'package:geolocator/geolocator.dart'; // NEW: Import geolocator
+import 'package:geolocator/geolocator.dart';
 import '../design_system.dart';
 
 class HomeTab extends StatefulWidget {
@@ -215,9 +216,16 @@ class _HomeTabState extends State<HomeTab> {
         // Add 100ms delay to ensure context is valid if needed (optional safety)
         
         _startLocationStreaming();
+        
+        // DISABLED: Background service has Android 14+ foreground service type issues
+        // TODO: Fix foreground service type declaration for flutter_background_service
+        // BackgroundServiceManager().startService(widget.token);
+        // debugPrint('HomeTab: Started background service for socket keep-alive');
       } else {
-        // If going OFFLINE, stop tracking
+        // If going OFFLINE, stop tracking and background service
         _stopLocationStreaming();
+        // BackgroundServiceManager().stopService();
+        // debugPrint('HomeTab: Stopped background service');
       }
 
       // 2. Call API to update status

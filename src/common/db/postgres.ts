@@ -12,7 +12,7 @@ const sequelizeDev: any = new Sequelize({
         port: Number(env.POSTGRES_PORT),
         username: env.POSTGRES_USER,
         password: env.POSTGRES_PASSWORD,
-        database: 'replica',
+        database: env.POSTGRES_DB, // Changed from 'replica' - use primary until replica sync is fixed
       },
     ],
     write: {

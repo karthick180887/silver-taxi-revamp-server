@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:523948970696:android:4bac8db8133e55c7e80bfd",
         "android_client_info": {
-          "package_name": "com.example.driver_app"
+          "package_name": "cabigo.driver"
         }
       },
       "oauth_client": [],

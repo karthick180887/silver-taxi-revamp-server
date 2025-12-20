@@ -110,6 +110,42 @@ class TripModel {
 
   bool get isCancelled => _matchesStatus(['cancelled']);
 
+  // Additional getters for booking details popup
+  String get serviceType => (raw['serviceType'] ?? raw['service_type'] ?? raw['vehicleType'] ?? 'N/A').toString();
+  
+  String get customerPhone => (raw['customer']?['phone'] ?? raw['customerPhone'] ?? raw['phone'] ?? '').toString();
+  
+  String? get pickupDate => (raw['pickupDateTime'] ?? raw['pickupDate'] ?? raw['pickup_date'])?.toString();
+  
+  String get pickupTime {
+    final dateTime = raw['pickupDateTime'] ?? raw['pickupDate'];
+    if (dateTime == null) return 'N/A';
+    try {
+      final parsed = DateTime.parse(dateTime.toString());
+      final hour = parsed.hour;
+      final minute = parsed.minute.toString().padLeft(2, '0');
+      final amPm = hour >= 12 ? 'PM' : 'AM';
+      final hour12 = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+      return '$hour12:$minute $amPm';
+    } catch (_) {
+      return raw['pickupTime']?.toString() ?? 'N/A';
+    }
+  }
+  
+  double? get extraCharges {
+    // Sum of all extra charges
+    final charges = [hillCharge, tollCharge, petCharge, permitCharge, parkingCharge, waitingCharge];
+    double total = 0;
+    bool hasAny = false;
+    for (final c in charges) {
+      if (c != null && c > 0) {
+        total += c;
+        hasAny = true;
+      }
+    }
+    return hasAny ? total : null;
+  }
+
   factory TripModel.fromJson(Map<String, dynamic> json) {
     final data = Map<String, dynamic>.from(json);
     final pickup = TripLocation.fromJson(

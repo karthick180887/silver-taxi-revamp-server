@@ -175,8 +175,9 @@ class OverlayNotificationService {
               _shownTripIds.add(tripId);
               debugPrint('[OverlayNotification] ✅ Trip ID added to shown list: $tripId');
               
-              // Remove from shown list after 5 minutes to allow re-showing if needed
-              Timer(const Duration(minutes: 5), () {
+              // Remove from shown list after 30 seconds (was 5 minutes)
+              // This allows re-showing same trip if user dismisses and backend resends
+              Timer(const Duration(seconds: 30), () {
                 _shownTripIds.remove(tripId);
                 debugPrint('[OverlayNotification] ⏰ Removed trip $tripId from shown list (5 min timeout)');
               });
@@ -630,14 +631,18 @@ class OverlayNotificationService {
     debugPrint('[OverlayNotification] ========================================');
     debugPrint('[OverlayNotification] 📨 RECEIVED FCM MESSAGE');
     debugPrint('[OverlayNotification] Data keys: ${data.keys.toList()}');
+    debugPrint('[OverlayNotification] Type: ${data['type']}');
     debugPrint('[OverlayNotification] click_action: ${data['click_action']}');
+    debugPrint('[OverlayNotification] Full data: $data');
     debugPrint('[OverlayNotification] ========================================');
 
-    // Check if this is a booking notification
-    if (data['type'] == 'new-booking' || 
+    // Check if this is a booking notification - handle both type formats
+    final messageType = data['type']?.toString() ?? '';
+    if (messageType == 'NEW_TRIP_OFFER' || 
+        messageType == 'new-booking' || 
         data['click_action'] == 'FLUTTER_NOTIFICATION_CLICK') {
       
-      debugPrint('[OverlayNotification] ✅ Accepted FCM overlay trigger');
+      debugPrint('[OverlayNotification] ✅ Accepted FCM overlay trigger (type: $messageType)');
       
       if (_currentToken == null || _tripService == null) {
         debugPrint('[OverlayNotification] ⚠️ Service not initialized yet, cannot show overlay');
@@ -662,16 +667,26 @@ class OverlayNotificationService {
         return;
       }
 
+      // Extract fare from multiple possible fields
+      final fare = data['estimatedPrice']?.toString() ?? 
+                   data['fare']?.toString() ?? 
+                   data['estimatedFare']?.toString() ?? 
+                   '0';
+
       // Construct event data formatted like socket event for reuse
       final eventData = <String, dynamic>{
         'bookingId': tripId,
         'pickup': data['pickup'] ?? data['pickupLocation'] ?? 'Pickup Location',
         'drop': data['drop'] ?? data['dropLocation'] ?? 'Drop Location',
-        'estimatedFare': data['fare'] ?? data['estimatedFare'] ?? '0',
+        'estimatedFare': fare,
         'customerName': data['customerName'] ?? 'Customer',
         'status': 'Booking Confirmed',
+        'pickupDateTime': data['pickupDateTime'] ?? '',
+        'customerPhone': data['customerPhone'] ?? '',
         // Add other fields as needed
       };
+      
+      debugPrint('[OverlayNotification] 📋 Constructed event data: $eventData');
       
       final trip = _createTripModelFromEvent(eventData);
       
@@ -680,10 +695,14 @@ class OverlayNotificationService {
         _showOverlayNotification(trip);
         _shownTripIds.add(tripId);
         
-        Timer(const Duration(minutes: 5), () {
+        // Remove from dedup set after 30 seconds (was 5 minutes)
+        // This allows re-showing same trip if user dismisses and backend resends
+        Timer(const Duration(seconds: 30), () {
           _shownTripIds.remove(tripId);
         });
       }
+    } else {
+      debugPrint('[OverlayNotification] ⚠️ Unknown FCM type: $messageType, not showing overlay');
     }
   }
 }

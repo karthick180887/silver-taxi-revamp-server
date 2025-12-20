@@ -1473,22 +1473,14 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
         debug.info(`Assign All: Found ${drivers.length} active & online drivers (from ${candidates.length} candidates) for adminId=${adminId}`);
 
         if (!drivers.length) {
-            debug.warn(`Assign All Failed: No active & online drivers found.`);
+            debug.warn(`Assign All Failed: No active & online drivers found. (${candidates.length} active drivers, 0 online)`);
             return res.status(404).json({
                 success: false,
-                message: "No active and online drivers found",
+                message: `No online drivers available. ${candidates.length} active driver(s) found but none are currently online. Please ensure drivers have the app open and are set to online status.`,
             });
         }
 
-        debug.info(`Assign All: Found ${drivers.length} active & online drivers for adminId=${adminId}`);
-
-        if (!drivers.length) {
-            debug.warn(`Assign All Failed: No active & online drivers found.`);
-            return res.status(404).json({
-                success: false,
-                message: "No active and online drivers found",
-            });
-        }
+        debug.info(`Assign All: Proceeding with ${drivers.length} active & online drivers for adminId=${adminId}`);
 
         // Update booking to indicate broadcast
         await booking.update({
@@ -1517,18 +1509,32 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
 
         if (fcmTokens.length > 0) {
             try {
+                // Build notification message with booking details
+                const pickupShort = booking.pickup?.substring(0, 30) || 'Pickup';
+                const dropShort = booking.drop?.substring(0, 30) || 'Drop';
+                const amount = booking.estimatedAmount || booking.finalAmount || 0;
+
+                const notificationTitle = "🚗 New Trip Available";
+                const notificationMessage = `${pickupShort} → ${dropShort}\n₹${amount}`;
+
                 // Updated to use direct sendToMultipleTokens instead of RabbitMQ for consistency standard
                 await sendToMultipleTokens(fcmTokens, {
-                    title: "New Booking Arrived",
-                    message: "New booking available for you.",
+                    title: notificationTitle,
+                    message: notificationMessage,
                     ids: { bookingId: booking.bookingId },
                     data: {
-                        title: "New Booking Arrived",
-                        message: "New booking available for you.",
-                        type: "new-booking",
+                        title: notificationTitle,
+                        message: notificationMessage,
+                        type: "NEW_TRIP_OFFER",
                         channelKey: "booking_channel",
                         bookingId: String(booking.bookingId),
                         adminId: String(booking.adminId),
+                        pickup: String(booking.pickup || ''),
+                        drop: String(booking.drop || ''),
+                        estimatedPrice: String(amount),
+                        pickupDateTime: String(booking.pickupDateTime || ''),
+                        customerName: String(booking.name || ''),
+                        customerPhone: String(booking.phone || ''),
                         click_action: "FLUTTER_NOTIFICATION_CLICK",
                         fullScreenIntent: "true",
                     },
