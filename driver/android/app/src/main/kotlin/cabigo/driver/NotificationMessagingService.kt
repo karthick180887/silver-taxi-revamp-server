@@ -6,9 +6,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Process
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import org.json.JSONObject
 
 class NotificationMessagingService : FirebaseMessagingService() {
 
@@ -27,9 +29,9 @@ class NotificationMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(remoteMessage)
 
         try {
-            val title = remoteMessage.notification?.title ?: "New Notification"
-            val message = remoteMessage.notification?.body ?: ""
             val data = remoteMessage.data
+            val title = remoteMessage.notification?.title ?: data["title"] ?: "New Notification"
+            val message = remoteMessage.notification?.body ?: data["message"] ?: ""
 
             android.util.Log.d("NotificationMessagingService", "FCM message received: $title - $message")
             android.util.Log.d("NotificationMessagingService", "Data: $data")
@@ -95,11 +97,23 @@ class NotificationMessagingService : FirebaseMessagingService() {
     private fun showOverlayViaService(title: String, message: String, data: Map<String, String>) {
         try {
             // Extract trip details from FCM data
-            val tripId = data["bookingId"] ?: data["tripId"] ?: ""
-            val fare = data["fare"] ?: data["estimatedFare"] ?: "0"
-            val pickup = data["pickup"] ?: data["pickupLocation"] ?: title
-            val drop = data["drop"] ?: data["dropLocation"] ?: message
-            val customerName = data["customerName"] ?: "Customer"
+            val tripId =
+                data["ids.bookingId"]
+                    ?: data["bookingId"]
+                    ?: data["ids.tripId"]
+                    ?: data["tripId"]
+                    ?: ""
+
+            val fare =
+                data["estimatedFare"]
+                    ?: data["fare"]
+                    ?: data["estimatedAmount"]
+                    ?: data["finalAmount"]
+                    ?: "0"
+
+            val pickup = extractAddress(data["pickupLocation"] ?: data["pickup"] ?: data["pickup_location"], title)
+            val drop = extractAddress(data["dropLocation"] ?: data["drop"] ?: data["drop_location"], message)
+            val customerName = data["customerName"] ?: data["customer_name"] ?: "Customer"
             
             val intent = Intent(this, OverlayService::class.java).apply {
                 putExtra("action", "show")
@@ -120,6 +134,26 @@ class NotificationMessagingService : FirebaseMessagingService() {
         } catch (e: Exception) {
             android.util.Log.e("NotificationMessagingService", "Error showing overlay via service: ${e.message}", e)
         }
+    }
+
+    private fun extractAddress(raw: String?, fallback: String): String {
+        if (raw.isNullOrBlank()) return fallback
+        val trimmed = raw.trim()
+
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+                val json = JSONObject(trimmed)
+                return json.optString("address")
+                    .ifBlank { json.optString("Address") }
+                    .ifBlank { json.optString("name") }
+                    .ifBlank { json.optString("Name") }
+                    .ifBlank { fallback }
+            } catch (_: Exception) {
+                // fall through
+            }
+        }
+
+        return raw
     }
 
     private fun createNotificationChannel() {
@@ -146,6 +180,12 @@ class NotificationMessagingService : FirebaseMessagingService() {
 
     private fun isAppInForeground(): Boolean {
         val appState = getSharedPreferences("app_state", Context.MODE_PRIVATE)
-        return appState.getBoolean("is_foreground", false)
+        val isForeground = appState.getBoolean("is_foreground", false)
+        if (!isForeground) return false
+
+        // If the app process was killed while the flag was true, we can end up with stale state.
+        // Validate using the stored PID (written by MainActivity) against the current process PID.
+        val lastPid = appState.getInt("pid", -1)
+        return lastPid == Process.myPid()
     }
 }

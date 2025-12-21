@@ -1,11 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
-import 'overlay_notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../core/service_locator.dart';
-import 'socket_service.dart';
 import 'storage_service.dart';
 
 // Background message handler
@@ -40,6 +37,7 @@ class FcmService {
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   
   bool _isInitialized = false;
+  String? _lastKnownFcmToken;
   
   // Store pending FCM message for overlay (when app wasn't ready)
   static Map<String, dynamic>? _pendingFcmData;
@@ -194,7 +192,8 @@ class FcmService {
       // The token might still be useful for backend registration
       try {
         String? token = await _messaging.getToken();
-        if (token != null) {
+        if (token != null && token.isNotEmpty) {
+          _lastKnownFcmToken = token;
           debugPrint('[FCM] Device Token: $token');
           await _syncTokenToBackend(token);
         } else {
@@ -206,6 +205,7 @@ class FcmService {
       
       // Keep backend token updated (refresh can happen anytime)
       _messaging.onTokenRefresh.listen((newToken) async {
+        _lastKnownFcmToken = newToken;
         debugPrint('[FCM] Token refreshed: $newToken');
         await _syncTokenToBackend(newToken);
       });
@@ -218,6 +218,7 @@ class FcmService {
 
   Future<void> _syncTokenToBackend(String fcmToken) async {
     try {
+      _lastKnownFcmToken = fcmToken;
       final authToken = await StorageService.getToken();
       if (authToken == null || authToken.isEmpty) {
         debugPrint('[FCM] No auth token yet; skipping backend FCM token update');
@@ -236,6 +237,18 @@ class FcmService {
       }
     } catch (e) {
       debugPrint('[FCM] Error syncing token to backend: $e');
+    }
+  }
+
+  Future<void> syncTokenToBackendNow() async {
+    try {
+      final token = _lastKnownFcmToken ?? await _messaging.getToken();
+      if (token == null || token.isEmpty) return;
+
+      _lastKnownFcmToken = token;
+      await _syncTokenToBackend(token);
+    } catch (e) {
+      debugPrint('[FCM] Error forcing backend token sync: $e');
     }
   }
 
@@ -274,7 +287,9 @@ class FcmService {
   
   Future<String?> getToken() async {
     try {
-      return await _messaging.getToken();
+      final token = await _messaging.getToken();
+      if (token != null && token.isNotEmpty) _lastKnownFcmToken = token;
+      return token;
     } catch (e) {
       debugPrint('[FCM] ❌ Error getting FCM token: $e');
       return null;

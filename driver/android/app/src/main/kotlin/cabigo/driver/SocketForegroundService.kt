@@ -1,6 +1,7 @@
 package cabigo.driver
 
 import android.app.Notification
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -9,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -376,6 +378,11 @@ class SocketForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        scheduleSelfRestart()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         try {
@@ -384,6 +391,35 @@ class SocketForegroundService : Service() {
             android.util.Log.d("SocketForegroundService", "Service destroyed")
         } catch (e: Exception) {
             android.util.Log.e("SocketForegroundService", "Error in onDestroy: ${e.message}", e)
+        }
+
+        scheduleSelfRestart()
+    }
+
+    private fun scheduleSelfRestart() {
+        try {
+            // Don't restart if the driver isn't logged in (prevents restart loops on logout)
+            if (getDriverAuthToken().isBlank()) return
+
+            val restartIntent = Intent(applicationContext, SocketForegroundService::class.java)
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            val pendingIntent =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    PendingIntent.getForegroundService(applicationContext, 1001, restartIntent, flags)
+                } else {
+                    PendingIntent.getService(applicationContext, 1001, restartIntent, flags)
+                }
+
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val triggerAt = SystemClock.elapsedRealtime() + 1500L
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("SocketForegroundService", "Error scheduling restart: ${e.message}", e)
         }
     }
 }

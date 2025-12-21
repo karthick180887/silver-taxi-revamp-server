@@ -1,5 +1,6 @@
 package cabigo.driver
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,6 +11,7 @@ import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -491,6 +493,11 @@ class OverlayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        scheduleSelfRestart()
+    }
+
     private fun showFloatingButton() {
         try {
             if (isFloatingButtonShowing) {
@@ -636,8 +643,40 @@ class OverlayService : Service() {
         try {
             hideOverlay()
             hideFloatingButton()
+            scheduleSelfRestart()
         } catch (e: Exception) {
             android.util.Log.e("OverlayService", "Error in onDestroy: ${e.message}", e)
+        }
+    }
+
+    private fun scheduleSelfRestart() {
+        try {
+            // Only restart when logged in and overlay permission exists.
+            if (getDriverAuthToken().isBlank()) return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(this)) return
+
+            val restartIntent = Intent(applicationContext, OverlayService::class.java).apply {
+                putExtra("action", "start")
+            }
+
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            val pendingIntent =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    PendingIntent.getForegroundService(applicationContext, 1002, restartIntent, flags)
+                } else {
+                    PendingIntent.getService(applicationContext, 1002, restartIntent, flags)
+                }
+
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val triggerAt = SystemClock.elapsedRealtime() + 1500L
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pendingIntent)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "Error scheduling restart: ${e.message}", e)
         }
     }
 }

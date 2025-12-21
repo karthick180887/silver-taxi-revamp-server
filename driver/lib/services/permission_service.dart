@@ -14,6 +14,8 @@ class PermissionService {
       Permission.location,
       Permission.locationWhenInUse,
       Permission.systemAlertWindow,
+      // Android 13+ runtime notifications permission
+      Permission.notification,
     ];
 
     final statuses = await permissions.request();
@@ -82,6 +84,8 @@ class PermissionService {
             Text('📍 Location: To show your location on maps and track trips'),
             SizedBox(height: 8),
             Text('🔔 Overlay: To show trip notifications over other apps'),
+            SizedBox(height: 8),
+            Text('🔔 Notifications: To show trip alerts when the app is closed'),
             SizedBox(height: 16),
             Text(
               'Please grant these permissions to use all app features.',
@@ -116,6 +120,13 @@ class PermissionService {
 
     // Request location permission
     final locationGranted = await requestLocationPermission();
+
+    // Request notification permission (Android 13+)
+    bool notificationGranted = true;
+    try {
+      final status = await Permission.notification.request();
+      notificationGranted = status.isGranted;
+    } catch (_) {}
 
     // Request overlay permission (opens system settings)
     bool overlayGranted = await isOverlayPermissionGranted();
@@ -205,7 +216,7 @@ class PermissionService {
     return {
       'location': locationGranted,
       'overlay': overlayGranted,
+      'notifications': notificationGranted,
     };
   }
 }
-

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sendotp_flutter_sdk/sendotp_flutter_sdk.dart';
 import '../api_client.dart';
 import '../design_system.dart';
@@ -7,8 +6,6 @@ import 'main_screen.dart';
 import '../services/storage_service.dart';
 import '../services/fcm_service.dart';
 import '../services/permission_service.dart'; // Ensure this exists or remove if unused, keeping for safety
-import 'waiting_page.dart';
-import '../kyc_screens.dart'; // For WelcomeScreen if needed
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -158,7 +155,7 @@ class _LoginPageState extends State<LoginPage> {
             Map<String, dynamic>? safeData;
             if (signupData != null && signupData is Map) {
                  safeData = Map<String, dynamic>.from(signupData);
-            } else if (signupResult.body is Map && signupResult.body['driver'] != null) {
+            } else if (signupResult.body['driver'] != null) {
                  // Alternative: data might be at root level
                  safeData = Map<String, dynamic>.from(signupResult.body);
             }
@@ -213,6 +210,9 @@ class _LoginPageState extends State<LoginPage> {
       if (driverId != null) {
         await StorageService.saveDriverId(driverId.toString());
       }
+      try {
+        await FcmService().syncTokenToBackendNow();
+      } catch (_) {}
       // Save other driver data if needed
       
       // Request Permissions if needed

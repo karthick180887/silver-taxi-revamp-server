@@ -76,13 +76,31 @@ const removeInvalidToken = async (token: string) => {
 
 export const sendToSingleToken = async (token: string, payload: NotificationPayload) => {
   try {
+    const payloadType = payload.data?.type;
+    const isTripOffer =
+      payloadType === 'NEW_TRIP_OFFER' ||
+      payloadType === 'new-booking' ||
+      payloadType === 'NEW_BOOKING' ||
+      payloadType === 'TRIP_OFFER';
+
+    const data: Record<string, string> = {
+      ...(payload.data || {}),
+      ...(payload.title && !(payload.data || {}).title ? { title: payload.title } : {}),
+      ...(payload.message && !(payload.data || {}).message ? { message: payload.message } : {}),
+      ...(payload.image && !(payload.data || {}).image ? { image: payload.image } : {}),
+    };
+
     const message = {
-      notification: payload.title ? {
-        title: payload.title,
-        body: payload.message,
-        imageUrl: payload.image || '',
-      } : {},
-      data: payload.data || {},
+      ...(payload.title && !isTripOffer
+        ? {
+            notification: {
+              title: payload.title,
+              body: payload.message,
+              imageUrl: payload.image || '',
+            },
+          }
+        : {}),
+      data,
       token,
       android: {
         priority: payload.priority || 'high',

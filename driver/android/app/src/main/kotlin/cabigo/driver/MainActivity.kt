@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
+import android.os.Process
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -45,16 +46,34 @@ class MainActivity : FlutterActivity() {
     
     override fun onResume() {
         super.onResume()
-        // Mark app as foreground for native notification handling
-        val sharedPref = getSharedPreferences("app_state", Context.MODE_PRIVATE)
-        sharedPref.edit().putBoolean("is_foreground", true).apply()
+        setAppForegroundState(true)
     }
 
     override fun onPause() {
         super.onPause()
-        // Mark app as background for native notification handling
+        setAppForegroundState(false)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Swiping the app away can skip onPause/onResume patterns on some OEMs
+        setAppForegroundState(false)
+    }
+
+    private fun setAppForegroundState(isForeground: Boolean) {
         val sharedPref = getSharedPreferences("app_state", Context.MODE_PRIVATE)
-        sharedPref.edit().putBoolean("is_foreground", false).apply()
+        val editor = sharedPref.edit()
+            .putBoolean("is_foreground", isForeground)
+            // Helps detect stale state across process death
+            .putInt("pid", Process.myPid())
+
+        if (isForeground) {
+            editor.putLong("last_foreground_at", System.currentTimeMillis())
+        } else {
+            editor.putLong("last_background_at", System.currentTimeMillis())
+        }
+
+        editor.apply()
     }
 
     private fun startSocketService() {
@@ -358,6 +377,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        setAppForegroundState(false)
         super.onDestroy()
         acceptReceiver?.let {
             try {
