@@ -22,6 +22,8 @@ class OverlayNotificationService {
   BuildContext? _overlayContext;
   String? _pendingAcceptTripId; // Track trip ID that's being accepted
   Timer? _acceptTimeoutTimer; // Timeout for acceptance confirmation
+  Timer? _connectionCheckTimer; // Socket connection check timer
+  bool _isListenerSetup = false; // Prevent duplicate listener setup
 
   /// Initialize the overlay notification service
   void init(String token, TripService tripService, BuildContext context) {
@@ -35,7 +37,10 @@ class OverlayNotificationService {
     _tripService = tripService;
     _overlayContext = context;
     _listenToSocketEvents();
-    _listenToNativeOverlayAccept();
+    // Set up native accept listener once during init (prevent race condition from duplicate subscriptions)
+    if (_nativeAcceptSubscription == null) {
+      _listenToNativeOverlayAccept();
+    }
     debugPrint('[OverlayNotification] ✅ Initialization complete');
   }
 
@@ -82,16 +87,20 @@ class OverlayNotificationService {
     // If socket is not connected, wait for it to connect
     if (!isConnected) {
       debugPrint('[OverlayNotification] ⚠️ Socket not connected yet, will retry when connected');
+      // Cancel existing timer if any
+      _connectionCheckTimer?.cancel();
       // Set up a one-time listener for when socket connects
-      Timer.periodic(const Duration(seconds: 1), (timer) {
+      _connectionCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
         if (socketService.isConnected) {
           debugPrint('[OverlayNotification] ✅ Socket connected! Setting up listener now...');
           timer.cancel();
+          _connectionCheckTimer = null;
           _listenToSocketEvents(); // Recursively call to set up listener
         } else if (timer.tick > 30) {
-          // Give up after 30 seconds
-          debugPrint('[OverlayNotification] ⚠️ Socket still not connected after 30s, giving up');
+          // Give up after 60 seconds (30 ticks * 2 seconds)
+          debugPrint('[OverlayNotification] ⚠️ Socket still not connected after 60s, giving up');
           timer.cancel();
+          _connectionCheckTimer = null;
         }
       });
       return;
@@ -238,28 +247,8 @@ class OverlayNotificationService {
     
     debugPrint('[OverlayNotification] ✅ Socket listener registered and active');
     debugPrint('[OverlayNotification] Waiting for NEW_TRIP_OFFER events...');
-    
-    // Also listen to socket connection status and re-setup if needed
-    // This ensures we catch events even if socket connects after initialization
-    Timer.periodic(const Duration(seconds: 3), (timer) {
-      final isConnected = SocketService().isConnected;
-      if (!isConnected) {
-        debugPrint('[OverlayNotification] ⚠️ Socket not connected (checking every 3s)...');
-        return;
-      }
-      
-      debugPrint('[OverlayNotification] ✅ Socket is now connected!');
-      
-      // If subscription is null or cancelled, re-setup
-      if (_socketSubscription == null) {
-        debugPrint('[OverlayNotification] 🔄 Socket connected, re-setting up listener...');
-        _listenToSocketEvents();
-        timer.cancel(); // Cancel this periodic check once we've re-setup
-      } else {
-        debugPrint('[OverlayNotification] ✅ Listener already active, socket connected');
-        timer.cancel(); // Socket is connected and listener is active, no need to keep checking
-      }
-    });
+    _isListenerSetup = true;
+    // Removed redundant Timer.periodic - connection checking is handled by the initial setup above
   }
 
   TripModel? _createTripModelFromEvent(Map<String, dynamic> eventData) {
@@ -451,13 +440,7 @@ class OverlayNotificationService {
         // Store reference for later dismissal
         _currentOverlay = null; // Native overlay doesn't use OverlayEntry
         
-        // Listen for accept events from native overlay
-        _nativeAcceptSubscription?.cancel();
-        _nativeAcceptSubscription = nativeOverlay.onAccept.listen((tripId) {
-          debugPrint('[OverlayNotification] 🎯 Native overlay accept received for trip: $tripId');
-          // Accept the trip when button is clicked
-          _acceptTrip(tripId);
-        });
+        // NOTE: Accept listener is now set up once in init() to prevent duplicate subscriptions
         
         // Auto-dismiss after 30 seconds UNLESS trip is pending acceptance
         // If trip is being accepted, keep overlay visible until TRIP_ACCEPTED event
@@ -619,12 +602,14 @@ class OverlayNotificationService {
     _socketSubscription?.cancel();
     _nativeAcceptSubscription?.cancel();
     _acceptTimeoutTimer?.cancel();
+    _connectionCheckTimer?.cancel();
     _hideOverlay();
     _currentToken = null;
     _tripService = null;
     _overlayContext = null;
     _shownTripIds.clear();
     _pendingAcceptTripId = null;
+    _isListenerSetup = false;
   }
   /// Handle FCM message data to show overlay
   void handleFcmMessage(Map<String, dynamic> data) {

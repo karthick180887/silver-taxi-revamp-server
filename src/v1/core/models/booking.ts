@@ -718,6 +718,24 @@ Booking.init(
                 ],
 
             },
+            // Composite indexes for fast COUNT queries
+            {
+                fields: ["adminId", "status"],
+                name: 'idx_bookings_admin_status'
+            },
+            {
+                fields: ["adminId", "isContacted"],
+                name: 'idx_bookings_admin_contacted'
+            },
+            {
+                fields: ["adminId", "vendorId"],
+                name: 'idx_bookings_admin_vendor'
+            },
+            // Index for fast ORDER BY createdAt with admin scope
+            {
+                fields: ["adminId", "createdAt"],
+                name: 'idx_bookings_admin_created'
+            },
             {
                 fields: ["driverCharges"],
                 using: 'GIN',

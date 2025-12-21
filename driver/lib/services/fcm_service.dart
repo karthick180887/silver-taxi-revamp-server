@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../core/service_locator.dart';
 import 'socket_service.dart';
 
 // Background message handler
@@ -13,35 +14,19 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('[FCM] Handling a background message: ${message.messageId}');
   debugPrint('[FCM] Message data: ${message.data}');
   
-  // If it's a new trip offer, trigger the native overlay even in background
+  // Store the message for processing when app opens
+  // Background isolate can't use MethodChannel reliably
+  // The native Android service will handle the overlay via FCM data payload directly
+  
   if (message.data['type'] == 'NEW_TRIP_OFFER' || message.data['type'] == 'new-booking') {
-    debugPrint('[FCM] Background: New trip offer received, triggering native overlay');
+    debugPrint('[FCM] Background: New trip offer received');
+    debugPrint('[FCM] Background: Trip ID: ${message.data['bookingId']}');
+    debugPrint('[FCM] Background: Native overlay should be triggered by Android FCM handler');
     
-    try {
-      // Use method channel to call native Android overlay service
-      const channel = MethodChannel('cabigo.driver/overlay');
-      
-      final tripId = message.data['bookingId'] ?? '';
-      final fare = message.data['estimatedPrice'] ?? message.data['fare'] ?? '0';
-      final pickup = message.data['pickup'] ?? 'Pickup Location';
-      final drop = message.data['drop'] ?? 'Drop Location';
-      final customerName = message.data['customerName'] ?? 'Customer';
-      
-      debugPrint('[FCM] Background: Showing overlay for trip $tripId');
-      
-      await channel.invokeMethod('showOverlay', {
-        'tripId': tripId,
-        'fare': fare,
-        'pickup': pickup,
-        'drop': drop,
-        'customerName': customerName,
-      });
-      
-      debugPrint('[FCM] Background: Native overlay triggered successfully');
-    } catch (e) {
-      debugPrint('[FCM] Background: Error triggering native overlay: $e');
-      // The system notification will still be shown automatically
-    }
+    // Note: MethodChannel doesn't work in background isolate
+    // The overlay should be triggered by:
+    // 1. Native Android FCM data message handler (in MainActivity/OverlayService)
+    // 2. When user opens app, we have pending data via getInitialMessage()
   }
 }
 
@@ -54,9 +39,15 @@ class FcmService {
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   
   bool _isInitialized = false;
+  
+  // Store pending FCM message for overlay (when app wasn't ready)
+  static Map<String, dynamic>? _pendingFcmData;
+  static Map<String, dynamic>? get pendingFcmData => _pendingFcmData;
+  static void clearPendingFcmData() => _pendingFcmData = null;
 
   Future<void> init() async {
     if (_isInitialized) return;
+
 
     try {
       // 1. Request permissions
@@ -112,17 +103,8 @@ class FcmService {
              if (message.data['type'] == 'new-booking') {
                message.data['type'] = 'NEW_TRIP_OFFER';
              }
-
-             // Parse nested JSON strings if present (fixed backend logic)
-             if (message.data['data'] is String) {
-                try {
-                  // data field might be JSON stringified booking object
-                   // Or it might be inside 'booking' key
-                   debugPrint('[FCM] Parsing nested data JSON...');
-                } catch (e) {
-                   debugPrint('[FCM] Error parsing data JSON: $e');
-                }
-             }
+             
+             // Note: FCM data values are always strings. Actual parsing happens in handleFcmMessage.
 
              // Inject into SocketService so the app handles it exactly like a socket event
              // This updates the UI (New Request Screen) immediately
@@ -149,19 +131,57 @@ class FcmService {
                 // but for the In-App UI (SocketStream), we need a Map.
              }
              
-             // SIMPLEST FIX: Just pass the data through. 
-             // SocketService logic might need to be robust to String values if it expects Maps.
-             // But let's try injecting what we have.
+             // Call OverlayNotificationService via ServiceLocator
+             // If not initialized, store pending data
+             try {
+               final overlayService = ServiceLocator().overlayController;
+               overlayService.handleFcmMessage(message.data);
+               debugPrint('[FCM] OverlayNotificationService.handleFcmMessage called');
+             } catch (e) {
+               debugPrint('[FCM] Error calling handleFcmMessage: $e');
+               // Store for later processing
+               _pendingFcmData = message.data;
+             }
              
-             // Actually, calling OverlayNotificationService is good enough for the pop-up.
-             OverlayNotificationService().handleFcmMessage(message.data);
-             
-             // BUT to update the "Home Screen" list or state, we invoke SocketService
-             // Note: SocketService expects Map<String, dynamic>.
-             // FCM provides Map<String, dynamic>.
-             SocketService().handleNotification(message.data);
+             // Also update SocketService for in-app UI via ServiceLocator
+             ServiceLocator().socket.handleNotification(message.data);
           }
         });
+        
+        // Handle notification tap when app was in background
+        FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+          debugPrint('[FCM] ========================================');
+          debugPrint('[FCM] 📲 App opened from notification tap');
+          debugPrint('[FCM] Message data: ${message.data}');
+          debugPrint('[FCM] ========================================');
+          
+          if (message.data['type'] == 'NEW_TRIP_OFFER' || message.data['type'] == 'new-booking') {
+            // Store pending data for OverlayNotificationService to process
+            // when it initializes (after main screen loads)
+            _pendingFcmData = message.data;
+            debugPrint('[FCM] Stored pending FCM data for overlay');
+            
+            // Also inject into socket stream if possible
+            try {
+              ServiceLocator().socket.handleNotification(message.data);
+            } catch (_) {}
+          }
+        });
+        
+        // Handle notification tap when app was terminated
+        RemoteMessage? initialMessage = await _messaging.getInitialMessage();
+        if (initialMessage != null) {
+          debugPrint('[FCM] ========================================');
+          debugPrint('[FCM] 🚀 App launched from notification (was terminated)');
+          debugPrint('[FCM] Initial message data: ${initialMessage.data}');
+          debugPrint('[FCM] ========================================');
+          
+          if (initialMessage.data['type'] == 'NEW_TRIP_OFFER' || 
+              initialMessage.data['type'] == 'new-booking') {
+            _pendingFcmData = initialMessage.data;
+            debugPrint('[FCM] Stored initial message for overlay processing');
+          }
+        }
       } else {
         debugPrint('[FCM] ⚠️ Notification permission denied. Push notifications may not work.');
         debugPrint('[FCM] ⚠️ User can enable notifications in device settings.');

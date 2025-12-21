@@ -72,6 +72,8 @@ class StorageService {
     await prefs.remove(_keyPhone);
   }
 
+  static Future<void> clear() => clearAll();
+
   static Future<bool> hasToken() async {
     final token = await getToken();
     return token != null && token.isNotEmpty;

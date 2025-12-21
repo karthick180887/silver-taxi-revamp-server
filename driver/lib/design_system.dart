@@ -30,7 +30,7 @@ class AppColors {
 }
 
 class AppTextStyles {
-  static TextStyle get _baseFont => GoogleFonts.poppins();
+  static TextStyle get _baseFont => GoogleFonts.poppins(textStyle: const TextStyle(inherit: true));
 
   static TextStyle get h1 => _baseFont.copyWith(
     fontSize: 28,

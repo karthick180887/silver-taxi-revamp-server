@@ -17,6 +17,7 @@ class PersistentNotificationService {
   StreamSubscription? _socketSubscription;
   String? _currentToken;
   int _currentTripCount = 0;
+  String? _lastTripDescription;
   bool _isInitialized = false;
 
   /// Initialize the notification service.
@@ -65,6 +66,15 @@ class PersistentNotificationService {
 
     await androidPlugin?.createNotificationChannel(persistentChannel);
     await androidPlugin?.createNotificationChannel(tripOfferChannel);
+    
+    // START: Fix for missing sound/importance
+    // Delete channels to force update of settings (sound, vibration)
+    // This is safe to call; if channel doesn't exist it does nothing.
+    await androidPlugin?.deleteNotificationChannel('trip_offer_channel');
+    await androidPlugin?.createNotificationChannel(tripOfferChannel);
+    await androidPlugin?.deleteNotificationChannel('trip_availability_channel');
+    await androidPlugin?.createNotificationChannel(persistentChannel);
+    // END: Fix for missing sound/importance
 
     _listenToSocketEvents();
     _startPeriodicUpdates();
@@ -90,6 +100,21 @@ class PersistentNotificationService {
       switch (type) {
         case 'NEW_TRIP_OFFER':
           _showIndividualTripNotification(event);
+          
+          // Update description for summary
+          if (event['data'] != null) {
+             final data = event['data'];
+             final pickup = data['pickup'] ?? data['PickupLocation'] ?? 'Pickup';
+             final drop = data['drop'] ?? data['DropLocation'] ?? 'Drop';
+             final fare = data['estimatedPrice'] ?? data['fare'] ?? data['estimatedFare'] ?? '0';
+             
+             // Check if pickup/drop are maps (older backend format support)
+             final pAddr = pickup is Map ? pickup['address'] : pickup.toString();
+             final dAddr = drop is Map ? drop['address'] : drop.toString();
+             
+             _lastTripDescription = "₹$fare: $pAddr -> $dAddr";
+          }
+          
           _updateTripCount();
           break;
         case 'TRIP_ACCEPTED':
@@ -161,7 +186,14 @@ class PersistentNotificationService {
     );
 
     final title = tripCount == 1 ? '🚗 1 Trip Available' : '🚗 $tripCount Trips Available';
-    final body = 'Tap to view trip details and accept';
+    
+    // Use stored description if available and count is 1, otherwise generic
+    String body = 'Tap to view trip details and accept';
+    if (tripCount == 1 && _lastTripDescription != null) {
+      body = _lastTripDescription!;
+    } else if (tripCount > 1) {
+      body = 'Valueable trips waiting! Tap to open.';
+    }
 
     await _notifications.show(
       1001,

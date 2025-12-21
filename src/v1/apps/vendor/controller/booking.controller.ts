@@ -1551,10 +1551,22 @@ export const assignDriver = async (req: Request, res: Response) => {
       payload: {
         title: "New Booking Arrived",
         message: `Mr ${driver.name}, you have received a new booking.`,
+        driverName: driver.name,
         ids: {
           adminId: booking.adminId,
           bookingId: booking.bookingId,
           driverId: driver.driverId,
+        },
+        // Include booking data for overlay popup
+        booking: {
+          pickup: booking.pickup,
+          drop: booking.drop,
+          estimatedAmount: booking.estimatedAmount,
+          finalAmount: booking.finalAmount,
+          name: booking.name,
+          phone: booking.phone,
+          pickupDateTime: booking.pickupDateTime,
+          serviceType: booking.serviceType,
         },
         data: {
           title: "New Booking Arrived",
@@ -1671,10 +1683,22 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
           payload: {
             title: "New Booking Arrived",
             message: `Mr ${driver.name}, you have received a new booking.`,
+            driverName: driver.name,
             ids: {
               adminId: booking.adminId,
               bookingId: booking.bookingId,
               driverId: driver.driverId,
+            },
+            // Include booking data for overlay popup
+            booking: {
+              pickup: booking.pickup,
+              drop: booking.drop,
+              estimatedAmount: booking.estimatedAmount,
+              finalAmount: booking.finalAmount,
+              name: booking.name,
+              phone: booking.phone,
+              pickupDateTime: booking.pickupDateTime,
+              serviceType: booking.serviceType,
             },
             data: {
               title: "New Booking Arrived",

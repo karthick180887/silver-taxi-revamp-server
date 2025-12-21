@@ -272,8 +272,10 @@ class SocketService {
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
-    _notificationController.close();
-    _walletUpdateController.close();
-    _bookingUpdateController.close();
+    // Do NOT close broadcast controllers as they are final and this is a singleton.
+    // Closing them would prevent reuse if the user logs out and back in.
+    // _notificationController.close();
+    // _walletUpdateController.close();
+    // _bookingUpdateController.close();
   }
 }

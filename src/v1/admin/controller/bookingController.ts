@@ -217,8 +217,8 @@ export const getAllBookings = async (req: Request, res: Response): Promise<void>
 
         const offset = (page - 1) * limit;
 
-        // Parallelize queries
-        const [bookingsData, ...stats] = await Promise.all([
+        // Parallelize queries - use single aggregation for counts
+        const [bookingsData, statsResult] = await Promise.all([
             Booking.findAndCountAll({
                 where: whereCondition,
                 attributes: { exclude: ['id', 'updatedAt', 'deletedAt'] },
@@ -239,38 +239,35 @@ export const getAllBookings = async (req: Request, res: Response): Promise<void>
                 ],
                 distinct: true
             }),
-            // Statistics Counts (Admin Scope Only)
-            Booking.count({ where: { adminId, status: "Booking Confirmed" } }),
-            Booking.count({ where: { adminId, status: "Not-Started" } }),
-            Booking.count({ where: { adminId, status: "Started" } }),
-            Booking.count({ where: { adminId, status: "Completed" } }),
-            Booking.count({ where: { adminId, status: "Cancelled" } }),
-            Booking.count({ where: { adminId, vendorId: { [Op.ne]: null as any } } }),
-            Booking.count({ where: { adminId, isContacted: true } }),
-            Booking.count({ where: { adminId, isContacted: false } })
+            // Single aggregated query for all stats (replaces 8 separate COUNT queries)
+            sequelize.query(`
+                SELECT 
+                    COUNT(*) FILTER (WHERE status = 'Booking Confirmed') as "bookingConfirmed",
+                    COUNT(*) FILTER (WHERE status = 'Not-Started') as "notStarted",
+                    COUNT(*) FILTER (WHERE status = 'Started') as "started",
+                    COUNT(*) FILTER (WHERE status = 'Completed') as "completed",
+                    COUNT(*) FILTER (WHERE status = 'Cancelled') as "cancelled",
+                    COUNT(*) FILTER (WHERE "vendorId" IS NOT NULL) as "vendor",
+                    COUNT(*) FILTER (WHERE "isContacted" = true) as "contacted",
+                    COUNT(*) FILTER (WHERE "isContacted" = false OR "isContacted" IS NULL) as "notContacted"
+                FROM bookings 
+                WHERE "adminId" = :adminId AND "deletedAt" IS NULL
+            `, {
+                replacements: { adminId },
+                type: 'SELECT'
+            })
         ]);
 
-        const [
-            bookingConfirmed,
-            notStarted,
-            started,
-            completed,
-            cancelled,
-            vendor,
-            contacted,
-            notContacted
-        ] = stats;
-
-
+        const stats = (statsResult as any[])[0] || {};
         const bookingsCount = {
-            bookingConfirmed,
-            notStarted,
-            started,
-            completed,
-            cancelled,
-            vendor,
-            contacted,
-            notContacted
+            bookingConfirmed: parseInt(stats.bookingConfirmed) || 0,
+            notStarted: parseInt(stats.notStarted) || 0,
+            started: parseInt(stats.started) || 0,
+            completed: parseInt(stats.completed) || 0,
+            cancelled: parseInt(stats.cancelled) || 0,
+            vendor: parseInt(stats.vendor) || 0,
+            contacted: parseInt(stats.contacted) || 0,
+            notContacted: parseInt(stats.notContacted) || 0
         };
 
         const totalPages = Math.ceil(bookingsData.count / limit);
@@ -1365,16 +1362,25 @@ export const assignDriver = async (req: Request, res: Response) => {
             // Updated to use direct sendToSingleToken instead of RabbitMQ for consistency standard
             if (driver.fcmToken) {
                 await sendToSingleToken(driver.fcmToken, {
-                    title: "New Booking Arrived",
-                    message: `Mr ${driver.name}, you have received a new booking.`,
+                    title: "🚗 1 Trip Available",
+                    message: `₹${booking.estimatedAmount || booking.finalAmount || 0} - ${booking.pickup || 'Pickup'} → ${booking.drop || 'Drop'}`,
                     ids: { bookingId: booking.bookingId },
                     data: {
-                        title: 'New Booking Arrived',
-                        message: `Mr ${driver.name} You have received a new booking`,
+                        title: '🚗 1 Trip Available',
+                        message: `₹${booking.estimatedAmount || booking.finalAmount || 0} - ${booking.pickup || 'Pickup'} → ${booking.drop || 'Drop'}`,
                         type: "new-booking",
                         channelKey: "booking_channel",
                         bookingId: String(booking.bookingId),
                         adminId: String(booking.adminId),
+                        // Trip details for overlay popup
+                        pickup: String(booking.pickup || 'Pickup Location'),
+                        drop: String(booking.drop || 'Drop Location'),
+                        fare: String(booking.estimatedAmount || booking.finalAmount || '0'),
+                        estimatedPrice: String(booking.estimatedAmount || booking.finalAmount || '0'),
+                        customerName: String(booking.name || 'Customer'),
+                        customerPhone: String(booking.phone || ''),
+                        pickupDateTime: String(booking.pickupDateTime || ''),
+                        serviceType: String(booking.serviceType || ''),
                         click_action: "FLUTTER_NOTIFICATION_CLICK",
                         fullScreenIntent: "true",
                     },

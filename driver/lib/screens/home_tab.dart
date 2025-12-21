@@ -90,10 +90,15 @@ class _HomeTabState extends State<HomeTab> {
   Future<void> _loadDetails() async {
     setState(() => _loading = true);
     try {
-      final resp = await _api.fetchDriverDetails(token: widget.token);
-      final wallet = await _api.fetchWallet(token: widget.token);
-      final counts =
-          await TripService(apiClient: _api).getTripCounts(widget.token);
+      final results = await Future.wait([
+        _api.fetchDriverDetails(token: widget.token),
+        _api.fetchWallet(token: widget.token),
+        TripService(apiClient: _api).getTripCounts(widget.token),
+      ]);
+
+      final resp = results[0] as Map<String, dynamic>;
+      final wallet = results[1] as Map<String, dynamic>;
+      final counts = results[2] as Map<String, dynamic>;
 
       if (mounted) {
         // DEBUG: Log what the API returns for isOnline field

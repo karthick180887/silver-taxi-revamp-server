@@ -15,6 +15,10 @@ class NativeOverlayService {
   Stream<String> get onAccept => _acceptController.stream;
 
   bool _handlerInitialized = false;
+  bool _isServiceRunning = false;
+  
+  /// Check if the overlay service is currently running
+  bool get isServiceRunning => _isServiceRunning;
 
   NativeOverlayService._internal() {
     // Initialize method call handler once.
@@ -116,17 +120,28 @@ class NativeOverlayService {
   /// Start the overlay service automatically (call this when app opens).
   /// This keeps the service running in the background even when app is closed.
   Future<bool> startService() async {
+    if (_isServiceRunning) {
+      debugPrint('[NativeOverlay] Service already running, skipping start');
+      return true;
+    }
+    
     try {
       debugPrint('[NativeOverlay] Starting overlay service automatically...');
       final result = await _channel.invokeMethod<bool>('startService');
       if (result == true) {
+        _isServiceRunning = true;
         debugPrint('[NativeOverlay] Overlay service started successfully');
       } else {
         debugPrint('[NativeOverlay] Overlay service start returned false');
       }
       return result ?? false;
+    } on MissingPluginException catch (e) {
+      debugPrint('[NativeOverlay] MissingPluginException - app may have been killed: $e');
+      _isServiceRunning = false;
+      return false;
     } catch (e) {
       debugPrint('[NativeOverlay] Error starting service: $e');
+      _isServiceRunning = false;
       return false;
     }
   }

@@ -4,6 +4,8 @@ import '../services/persistent_notification_service.dart';
 import '../services/overlay_notification_service.dart';
 import '../services/native_overlay_service.dart';
 import '../services/trip_service.dart';
+import '../services/fcm_service.dart';
+import '../core/service_locator.dart'; // Added missing import
 import 'home_tab.dart';
 import 'notification_tab.dart';
 import 'menu_tab.dart';
@@ -20,50 +22,41 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
-
   late final List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
     
-    // Initialize Socket.IO
-    SocketService().init(widget.token);
-    
-    // Initialize persistent notification service (system tray notification)
-    PersistentNotificationService().init(widget.token);
-    
-    // Initialize overlay notification service (overlay on top of apps)
-    final tripService = TripService();
-    // Start the native overlay service automatically (runs in background)
-    _startOverlayService();
+    // We don't init services here anymore - AppController does it.
+    // We just need to link the Context to the OverlayService.
     
     // Initialize after first frame to ensure context is available
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        debugPrint('[MainScreen] Initializing OverlayNotificationService...');
-        OverlayNotificationService().init(widget.token, tripService, context);
-        debugPrint('[MainScreen] OverlayNotificationService initialized');
+        debugPrint('[MainScreen] Linking OverlayNotificationService to Context...');
+        // Use ServiceLocator to get the singleton instances
+        final overlayService = ServiceLocator().overlayController;
+        final tripService = ServiceLocator().trip;
+        
+        overlayService.init(widget.token, tripService, context);
         
         // Update context when route changes
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            OverlayNotificationService().updateContext(context);
+            overlayService.updateContext(context);
           }
         });
       }
     });
     
-    // Listen for notifications
-    SocketService().notificationStream.listen((data) {
+    // Listen for UI notifications (SnackBars)
+    ServiceLocator().socket.notificationStream.listen((data) {
       if (mounted) {
         final type = data['type']?.toString() ?? '';
         final eventData = data['data'] as Map<String, dynamic>? ?? {};
         
         switch (type) {
-          // NEW_TRIP_OFFER case removed - overlay notification handles trip offers
-          // No need for snackbar popup as overlay notification is shown instead
-          
           case 'WALLET_UPDATE':
           case 'WALLET_CREDIT':
             final amount = eventData['amount']?.toString() ?? '0';
@@ -115,45 +108,11 @@ class _MainScreenState extends State<MainScreen> {
     ];
   }
 
-  /// Start the native overlay service automatically when app opens
-  /// This service will run in the background and show trip notifications
-  /// even when the phone is locked or app is in background
-  Future<void> _startOverlayService() async {
-    try {
-      debugPrint('[MainScreen] 🚀 Starting native overlay service...');
-      final nativeOverlay = NativeOverlayService();
-      
-      // Check if overlay permission is granted
-      final hasPermission = await nativeOverlay.checkOverlayPermission();
-      if (!hasPermission) {
-        debugPrint('[MainScreen] ⚠️ Overlay permission not granted, requesting...');
-        await nativeOverlay.requestOverlayPermission();
-        // Wait a bit for user to grant permission
-        await Future.delayed(const Duration(seconds: 1));
-      }
-      
-      // Start the service (it will run in foreground and persist)
-      final started = await nativeOverlay.startService();
-      if (started) {
-        debugPrint('[MainScreen] ✅ Native overlay service started successfully');
-        debugPrint('[MainScreen] ✅ Service will run in background and show trip notifications');
-        debugPrint('[MainScreen] ✅ Service will work even when phone is locked');
-      } else {
-        debugPrint('[MainScreen] ⚠️ Failed to start native overlay service');
-      }
-    } catch (e) {
-      debugPrint('[MainScreen] ❌ Error starting overlay service: $e');
-      // Don't block app initialization if service start fails
-    }
-  }
 
   @override
   void dispose() {
-    SocketService().dispose();
-    PersistentNotificationService().dispose();
-    OverlayNotificationService().dispose();
-    // Note: We don't stop the native overlay service here
-    // It should keep running until phone restart or user manually stops it
+    // Services are global singletons managed by ServiceLocator/AppController
+    // We do NOT dispose them here.
     super.dispose();
   }
 

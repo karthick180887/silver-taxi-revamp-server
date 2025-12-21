@@ -8,6 +8,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.ContextCompat
+import com.google.firebase.messaging.FirebaseMessaging
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -27,8 +29,49 @@ class MainActivity : FlutterActivity() {
         
         // Handle accept intent if app was started from overlay
         handleAcceptIntent(intent)
+
+        // Start native socket foreground service
+        startSocketService()
+
+        // Get FCM token and save to prefs for native services
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val token = task.result
+                saveTokenToPreferences(token)
+                Log.d("MainActivity", "✅ FCM Token retrieved and saved for native services")
+            }
+        }
     }
     
+    override fun onResume() {
+        super.onResume()
+        // Mark app as foreground for native notification handling
+        val sharedPref = getSharedPreferences("app_state", Context.MODE_PRIVATE)
+        sharedPref.edit().putBoolean("is_foreground", true).apply()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Mark app as background for native notification handling
+        val sharedPref = getSharedPreferences("app_state", Context.MODE_PRIVATE)
+        sharedPref.edit().putBoolean("is_foreground", false).apply()
+    }
+
+    private fun startSocketService() {
+        try {
+            val intent = Intent(this, SocketForegroundService::class.java)
+            ContextCompat.startForegroundService(this, intent)
+            Log.d("MainActivity", "✅ Native SocketForegroundService started")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Error starting SocketForegroundService: ${e.message}")
+        }
+    }
+
+    private fun saveTokenToPreferences(token: String) {
+        val sharedPref = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        sharedPref.edit().putString("fcm_token", token).apply()
+    }
+
     /**
      * Configure activity to show on lock screen and auto-unlock
      */

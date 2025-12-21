@@ -54,4 +54,17 @@ dependencies {
     
     // Firebase Messaging for native FCM service (background notifications)
     implementation("com.google.firebase:firebase-messaging-ktx")
+
+    // Socket.IO for native background service
+    implementation("io.socket:socket.io-client:2.1.0")
+    
+    // Kotlin Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    
+    // Lifecycle Service
+    implementation("androidx.lifecycle:lifecycle-service:2.6.2")
+    
+    // Gson for JSON parsing in native services
+    implementation("com.google.code.gson:gson:2.10.1")
 }
