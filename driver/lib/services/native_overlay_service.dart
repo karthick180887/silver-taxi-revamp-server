@@ -121,26 +121,40 @@ class NativeOverlayService {
   /// This keeps the service running in the background even when app is closed.
   Future<bool> startService() async {
     if (_isServiceRunning) {
-      debugPrint('[NativeOverlay] Service already running, skipping start');
+      debugPrint('[NativeOverlay] ✅ Service already running, skipping start');
       return true;
     }
     
     try {
-      debugPrint('[NativeOverlay] Starting overlay service automatically...');
+      debugPrint('[NativeOverlay] ========================================');
+      debugPrint('[NativeOverlay] 🚀 Starting overlay service...');
+      debugPrint('[NativeOverlay] ========================================');
+      
+      // First check permission
+      final hasPermission = await checkOverlayPermission();
+      if (!hasPermission) {
+        debugPrint('[NativeOverlay] ⚠️ Permission not granted, cannot start service');
+        return false;
+      }
+      
       final result = await _channel.invokeMethod<bool>('startService');
       if (result == true) {
         _isServiceRunning = true;
-        debugPrint('[NativeOverlay] Overlay service started successfully');
+        debugPrint('[NativeOverlay] ========================================');
+        debugPrint('[NativeOverlay] ✅✅✅ OVERLAY SERVICE STARTED SUCCESSFULLY!');
+        debugPrint('[NativeOverlay] ========================================');
       } else {
-        debugPrint('[NativeOverlay] Overlay service start returned false');
+        debugPrint('[NativeOverlay] ⚠️ Overlay service start returned false');
+        _isServiceRunning = false;
       }
       return result ?? false;
     } on MissingPluginException catch (e) {
-      debugPrint('[NativeOverlay] MissingPluginException - app may have been killed: $e');
+      debugPrint('[NativeOverlay] ❌ MissingPluginException - app may have been killed: $e');
       _isServiceRunning = false;
       return false;
-    } catch (e) {
-      debugPrint('[NativeOverlay] Error starting service: $e');
+    } catch (e, stackTrace) {
+      debugPrint('[NativeOverlay] ❌ Error starting service: $e');
+      debugPrint('[NativeOverlay] Stack trace: $stackTrace');
       _isServiceRunning = false;
       return false;
     }

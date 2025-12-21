@@ -30,48 +30,79 @@ class SocketService {
   bool get isAuthenticated => _isAuthenticated;
 
   void init(String token) {
-    if (_socket != null && _socket!.connected) return;
+    try {
+      if (token.isEmpty) {
+        debugPrint('[SocketService] ❌ Cannot initialize: token is empty');
+        return;
+      }
+      
+      if (_socket != null && _socket!.connected) {
+        debugPrint('[SocketService] Socket already connected, skipping init');
+        return;
+      }
 
-    // Ensure we don't have duplicate listeners if re-initializing
-    _socket?.dispose();
-    _isAuthenticated = false;
+      // Ensure we don't have duplicate listeners if re-initializing
+      try {
+        _socket?.dispose();
+      } catch (e) {
+        debugPrint('[SocketService] Error disposing old socket: $e');
+      }
+      _isAuthenticated = false;
 
-    debugPrint('[SocketService] Initializing socket connection to $kApiBaseUrl');
-    
-    // IMPORTANT: Use WebSocket-only transport
-    // The socket_io_client package has issues with HTTP polling transport
-    // that causes timeout errors even when the endpoint is reachable.
-    // WebSocket-only bypasses this bug.
-    _socket = io.io(
-      kApiBaseUrl,
-      io.OptionBuilder()
-        .setTransports(['websocket'])  // WebSocket ONLY - polling is buggy
-        .enableForceNew()
-        .disableAutoConnect()
-        .setAuth({'token': token})
-        .setQuery({'token': token})
-        .enableReconnection()
-        .setReconnectionAttempts(5)
-        .setReconnectionDelay(2000)
-        .build()
-    );
-    
-    debugPrint('[SocketService] Socket instance created, setting up listeners...');
+      debugPrint('[SocketService] Initializing socket connection to $kApiBaseUrl');
+      
+      // IMPORTANT: Use WebSocket-only transport
+      // The socket_io_client package has issues with HTTP polling transport
+      // that causes timeout errors even when the endpoint is reachable.
+      // WebSocket-only bypasses this bug.
+      _socket = io.io(
+        kApiBaseUrl,
+        io.OptionBuilder()
+          .setTransports(['websocket'])  // WebSocket ONLY - polling is buggy
+          .enableForceNew()
+          .disableAutoConnect()
+          .setAuth({'token': token})
+          .setQuery({'token': token})
+          .enableReconnection()
+          .setReconnectionAttempts(5)
+          .setReconnectionDelay(2000)
+          .build()
+      );
+      
+      debugPrint('[SocketService] Socket instance created, setting up listeners...');
+    } catch (e, stackTrace) {
+      debugPrint('[SocketService] ❌ Error in init: $e');
+      debugPrint('[SocketService] Stack trace: $stackTrace');
+      _socket = null;
+      return;
+    }
 
     // Set up all listeners BEFORE connecting
     _socket!.onConnect((_) {
-      debugPrint('========================================');
-      debugPrint('✅✅✅ SOCKET CONNECTED! ✅✅✅');
-      debugPrint('Socket ID: ${_socket!.id}');
-      debugPrint('Socket connected: ${_socket!.connected}');
-      debugPrint('========================================');
-      
-      // Wait a bit for connection to stabilize, then test if we can receive events
-      Future.delayed(const Duration(milliseconds: 500), () {
-        debugPrint('[SocketService] Testing event reception - sending test emit...');
-        // Try to emit a test event to verify bidirectional communication
-        _socket!.emit('test', {'message': 'client_test'});
-      });
+      try {
+        debugPrint('========================================');
+        debugPrint('✅✅✅ SOCKET CONNECTED! ✅✅✅');
+        if (_socket != null) {
+          debugPrint('Socket ID: ${_socket!.id}');
+          debugPrint('Socket connected: ${_socket!.connected}');
+        }
+        debugPrint('========================================');
+        
+        // Wait a bit for connection to stabilize, then test if we can receive events
+        Future.delayed(const Duration(milliseconds: 500), () {
+          try {
+            if (_socket != null && _socket!.connected) {
+              debugPrint('[SocketService] Testing event reception - sending test emit...');
+              // Try to emit a test event to verify bidirectional communication
+              _socket!.emit('test', {'message': 'client_test'});
+            }
+          } catch (e) {
+            debugPrint('[SocketService] Error in test emit: $e');
+          }
+        });
+      } catch (e) {
+        debugPrint('[SocketService] ❌ Error in onConnect handler: $e');
+      }
     });
 
     _socket!.on('auth_success', (data) {
@@ -118,15 +149,29 @@ class SocketService {
     });
 
     _socket!.on('notification', (data) {
-      debugPrint('========================================');
-      debugPrint('🔔 Socket notification received!');
-      debugPrint('Raw data type: ${data.runtimeType}');
-      debugPrint('Raw data: $data');
-      debugPrint('========================================');
-      
-      if (data is Map<String, dynamic>) {
-        handleNotification(data);
-      } else {
+      try {
+        debugPrint('========================================');
+        debugPrint('🔔 Socket notification received!');
+        debugPrint('Raw data type: ${data.runtimeType}');
+        debugPrint('Raw data: $data');
+        debugPrint('========================================');
+        
+        if (data is Map<String, dynamic>) {
+          handleNotification(data);
+        } else if (data != null) {
+          debugPrint('[SocketService] ⚠️ Notification data is not a Map, attempting conversion...');
+          try {
+            final dataMap = Map<String, dynamic>.from(data as Map);
+            handleNotification(dataMap);
+          } catch (e) {
+            debugPrint('[SocketService] ❌ Error converting notification data: $e');
+          }
+        } else {
+          debugPrint('[SocketService] ⚠️ Notification data is null');
+        }
+      } catch (e, stackTrace) {
+        debugPrint('[SocketService] ❌ Error processing notification: $e');
+        debugPrint('[SocketService] Stack trace: $stackTrace');
       }
     });
 
@@ -203,79 +248,118 @@ class SocketService {
 
   // Public method to handle notifications (from Socket or FCM)
   void handleNotification(Map<String, dynamic> data) {
-    final type = data['type']?.toString() ?? '';
-    final eventData = data['data'];
-    
-    debugPrint('📋 Processing notification (Socket/FCM):');
-    debugPrint('   Type: $type');
-    debugPrint('   EventData type: ${eventData.runtimeType}');
-    debugPrint('   EventData: $eventData');
-    
-    // Broadcast to general notification stream
-    _notificationController.add(data);
-    debugPrint('✅ Added to notificationStream');
-    
-    // Route to specific streams based on type
-    switch (type) {
-      case 'WALLET_UPDATE':
-      case 'WALLET_CREDIT':
-        debugPrint('💰 Routing to walletUpdateStream');
-        if (eventData is Map<String, dynamic>) {
-          _walletUpdateController.add(eventData);
-        }
-        break;
-      case 'NEW_TRIP_OFFER':
-      case 'TRIP_CANCELLED':
-      case 'TRIP_ACCEPTED':
-        debugPrint('========================================');
-        debugPrint('🚗🚗🚗 ROUTING TO bookingUpdateStream 🚗🚗🚗');
-        debugPrint('   Type: $type');
-        debugPrint('   EventData type: ${eventData.runtimeType}');
-        debugPrint('   EventData: $eventData');
-        debugPrint('========================================');
-        
-        // Ensure eventData is a Map
-        Map<String, dynamic> bookingData;
-        if (eventData is Map<String, dynamic>) {
-          bookingData = eventData;
-        } else {
-          debugPrint('⚠️ EventData is not a Map, converting...');
-          bookingData = {'raw': eventData};
-        }
-        
-        // Signal booking/trip lists should be refreshed. Pass type for routing.
-        final bookingUpdate = {
-          'type': type,
-          'data': bookingData,
-        };
-        debugPrint('📤 Adding to bookingUpdateStream: $bookingUpdate');
-        _bookingUpdateController.add(bookingUpdate);
-        debugPrint('✅✅✅ Added to bookingUpdateStream ✅✅✅');
-        debugPrint('   Stream has ${_bookingUpdateController.hasListener ? "listeners" : "NO listeners"}');
-        break;
-      default:
-        debugPrint('⚠️ Unknown notification type: $type');
+    try {
+      if (data.isEmpty) {
+        debugPrint('[SocketService] ⚠️ Empty notification data received');
+        return;
+      }
+      
+      final type = data['type']?.toString() ?? '';
+      final eventData = data['data'];
+      
+      debugPrint('📋 Processing notification (Socket/FCM):');
+      debugPrint('   Type: $type');
+      debugPrint('   EventData type: ${eventData.runtimeType}');
+      debugPrint('   EventData: $eventData');
+      
+      // Broadcast to general notification stream
+      if (!_notificationController.isClosed) {
+        _notificationController.add(data);
+        debugPrint('✅ Added to notificationStream');
+      } else {
+        debugPrint('[SocketService] ⚠️ Notification stream is closed');
+      }
+      
+      // Route to specific streams based on type
+      switch (type) {
+        case 'WALLET_UPDATE':
+        case 'WALLET_CREDIT':
+          debugPrint('💰 Routing to walletUpdateStream');
+          if (eventData is Map<String, dynamic>) {
+            if (!_walletUpdateController.isClosed) {
+              _walletUpdateController.add(eventData);
+            }
+          }
+          break;
+        case 'NEW_TRIP_OFFER':
+        case 'TRIP_CANCELLED':
+        case 'TRIP_ACCEPTED':
+          debugPrint('========================================');
+          debugPrint('🚗🚗🚗 ROUTING TO bookingUpdateStream 🚗🚗🚗');
+          debugPrint('   Type: $type');
+          debugPrint('   EventData type: ${eventData.runtimeType}');
+          debugPrint('   EventData: $eventData');
+          debugPrint('========================================');
+          
+          // Ensure eventData is a Map
+          Map<String, dynamic> bookingData;
+          if (eventData is Map<String, dynamic>) {
+            bookingData = eventData;
+          } else if (eventData != null) {
+            debugPrint('⚠️ EventData is not a Map, converting...');
+            try {
+              bookingData = Map<String, dynamic>.from(eventData as Map);
+            } catch (e) {
+              debugPrint('[SocketService] ❌ Error converting eventData: $e');
+              bookingData = {'raw': eventData};
+            }
+          } else {
+            debugPrint('⚠️ EventData is null, using empty map');
+            bookingData = {};
+          }
+          
+          // Signal booking/trip lists should be refreshed. Pass type for routing.
+          final bookingUpdate = {
+            'type': type,
+            'data': bookingData,
+          };
+          debugPrint('📤 Adding to bookingUpdateStream: $bookingUpdate');
+          if (!_bookingUpdateController.isClosed) {
+            _bookingUpdateController.add(bookingUpdate);
+            debugPrint('✅✅✅ Added to bookingUpdateStream ✅✅✅');
+            debugPrint('   Stream has ${_bookingUpdateController.hasListener ? "listeners" : "NO listeners"}');
+          } else {
+            debugPrint('[SocketService] ⚠️ Booking update stream is closed');
+          }
+          break;
+        default:
+          debugPrint('⚠️ Unknown notification type: $type');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[SocketService] ❌ Error handling notification: $e');
+      debugPrint('[SocketService] Stack trace: $stackTrace');
     }
   }
 
   void sendLocationUpdate(double lat, double lng, double heading) {
-    if (_socket != null && _socket!.connected) {
-      _socket!.emit('driver_location_update', {
-        'lat': lat,
-        'lng': lng,
-        'heading': heading,
-      });
+    try {
+      if (_socket != null && _socket!.connected) {
+        _socket!.emit('driver_location_update', {
+          'lat': lat,
+          'lng': lng,
+          'heading': heading,
+        });
+      } else {
+        debugPrint('[SocketService] ⚠️ Cannot send location update: socket not connected');
+      }
+    } catch (e) {
+      debugPrint('[SocketService] ❌ Error sending location update: $e');
     }
   }
 
   void dispose() {
-    _socket?.disconnect();
-    _socket?.dispose();
-    _socket = null;
-    // Do NOT close broadcast controllers as they are final and this is a singleton.
-    // Closing them would prevent reuse if the user logs out and back in.
-    // _notificationController.close();
-    // _walletUpdateController.close();
-    // _bookingUpdateController.close();
+    try {
+      _socket?.disconnect();
+      _socket?.dispose();
+      _socket = null;
+      _isAuthenticated = false;
+      // Do NOT close broadcast controllers as they are final and this is a singleton.
+      // Closing them would prevent reuse if the user logs out and back in.
+      // _notificationController.close();
+      // _walletUpdateController.close();
+      // _bookingUpdateController.close();
+    } catch (e) {
+      debugPrint('[SocketService] ❌ Error disposing socket: $e');
+    }
   }
 }

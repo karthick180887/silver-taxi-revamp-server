@@ -83,89 +83,91 @@ class FcmService {
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
         FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-        // Set up foreground handler
+        // Set up foreground handler with error handling
         FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-          debugPrint('[FCM] Got a message whilst in the foreground!');
-          debugPrint('[FCM] Message data: ${message.data}');
+          try {
+            debugPrint('[FCM] Got a message whilst in the foreground!');
+            debugPrint('[FCM] Message data: ${message.data}');
 
-          if (message.notification != null) {
-            debugPrint('[FCM] Message also contained a notification: ${message.notification}');
+            if (message.notification != null) {
+              debugPrint('[FCM] Message also contained a notification: ${message.notification}');
+              
+              // Show local notification with error handling
+              try {
+                _showLocalNotification(message);
+              } catch (e) {
+                debugPrint('[FCM] Error showing local notification: $e');
+              }
+            }
             
-            // Show local notification
-            _showLocalNotification(message);
+            // Check for trip offers to trigger overlay
+            final messageType = message.data['type']?.toString() ?? '';
+            if (messageType == 'NEW_TRIP_OFFER' || messageType == 'new-booking') {
+              debugPrint('[FCM] New Trip Offer received via FCM!');
+              
+              // Create a copy of data to avoid modifying the original
+              final processedData = Map<String, dynamic>.from(message.data);
+              
+              // Normalize the type to what the app expects
+              if (messageType == 'new-booking') {
+                processedData['type'] = 'NEW_TRIP_OFFER';
+              }
+              
+              // Call OverlayNotificationService via ServiceLocator
+              // If not initialized, store pending data
+              try {
+                final overlayService = ServiceLocator().overlayController;
+                overlayService.handleFcmMessage(processedData);
+                debugPrint('[FCM] OverlayNotificationService.handleFcmMessage called');
+              } catch (e) {
+                debugPrint('[FCM] Error calling handleFcmMessage: $e');
+                // Store for later processing
+                _pendingFcmData = processedData;
+              }
+              
+              // Also update SocketService for in-app UI via ServiceLocator
+              try {
+                ServiceLocator().socket.handleNotification(processedData);
+              } catch (e) {
+                debugPrint('[FCM] Error updating SocketService: $e');
+              }
+            }
+          } catch (e, stackTrace) {
+            debugPrint('[FCM] ❌ Error processing foreground message: $e');
+            debugPrint('[FCM] Stack trace: $stackTrace');
           }
-          
-          // Check for trip offers to trigger overlay
-          if (message.data['type'] == 'NEW_TRIP_OFFER' || message.data['type'] == 'new-booking') {
-             debugPrint('[FCM] New Trip Offer received via FCM!');
-             
-             // Normalize the type to what the app expects
-             if (message.data['type'] == 'new-booking') {
-               message.data['type'] = 'NEW_TRIP_OFFER';
-             }
-             
-             // Note: FCM data values are always strings. Actual parsing happens in handleFcmMessage.
-
-             // Inject into SocketService so the app handles it exactly like a socket event
-             // This updates the UI (New Request Screen) immediately
-             debugPrint('[FCM] Injecting into SocketService stream...');
-             
-             // Ensure we pass the map with 'type' and 'data' keys as expected by SocketService
-             // If the backend sends flattened data, we might need to restructure it
-             // Backend (New) sends: { ids:..., data: { title:..., type:..., booking: "{...}" } }
-             // SocketService expects: { type: 'NEW_TRIP_OFFER', data: { ...booking... } }
-             
-             Map<String, dynamic> socketEvent = {};
-             socketEvent['type'] = 'NEW_TRIP_OFFER';
-             
-             // Extract booking data
-             if (message.data.containsKey('booking')) {
-                // If it's a JSON string, decode it?
-                // Actually SocketService doesn't decode, it expects a Map.
-                // But FCM data values are ALWAYS Strings.
-                // So checking if we need to parse.
-                // Since I updated backend to JSON.stringify objects, we DO need to parse here?
-                // Dart's Message.data values are strings.
-                
-                // Let's rely on OverlayNotificationService for the overlay part, 
-                // but for the In-App UI (SocketStream), we need a Map.
-             }
-             
-             // Call OverlayNotificationService via ServiceLocator
-             // If not initialized, store pending data
-             try {
-               final overlayService = ServiceLocator().overlayController;
-               overlayService.handleFcmMessage(message.data);
-               debugPrint('[FCM] OverlayNotificationService.handleFcmMessage called');
-             } catch (e) {
-               debugPrint('[FCM] Error calling handleFcmMessage: $e');
-               // Store for later processing
-               _pendingFcmData = message.data;
-             }
-             
-             // Also update SocketService for in-app UI via ServiceLocator
-             ServiceLocator().socket.handleNotification(message.data);
-          }
+        }, onError: (error) {
+          debugPrint('[FCM] ❌ Error in onMessage stream: $error');
         });
         
         // Handle notification tap when app was in background
         FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-          debugPrint('[FCM] ========================================');
-          debugPrint('[FCM] 📲 App opened from notification tap');
-          debugPrint('[FCM] Message data: ${message.data}');
-          debugPrint('[FCM] ========================================');
-          
-          if (message.data['type'] == 'NEW_TRIP_OFFER' || message.data['type'] == 'new-booking') {
-            // Store pending data for OverlayNotificationService to process
-            // when it initializes (after main screen loads)
-            _pendingFcmData = message.data;
-            debugPrint('[FCM] Stored pending FCM data for overlay');
+          try {
+            debugPrint('[FCM] ========================================');
+            debugPrint('[FCM] 📲 App opened from notification tap');
+            debugPrint('[FCM] Message data: ${message.data}');
+            debugPrint('[FCM] ========================================');
             
-            // Also inject into socket stream if possible
-            try {
-              ServiceLocator().socket.handleNotification(message.data);
-            } catch (_) {}
+            final messageType = message.data['type']?.toString() ?? '';
+            if (messageType == 'NEW_TRIP_OFFER' || messageType == 'new-booking') {
+              // Store pending data for OverlayNotificationService to process
+              // when it initializes (after main screen loads)
+              _pendingFcmData = Map<String, dynamic>.from(message.data);
+              debugPrint('[FCM] Stored pending FCM data for overlay');
+              
+              // Also inject into socket stream if possible
+              try {
+                ServiceLocator().socket.handleNotification(message.data);
+              } catch (e) {
+                debugPrint('[FCM] Error updating SocketService from notification tap: $e');
+              }
+            }
+          } catch (e, stackTrace) {
+            debugPrint('[FCM] ❌ Error processing notification tap: $e');
+            debugPrint('[FCM] Stack trace: $stackTrace');
           }
+        }, onError: (error) {
+          debugPrint('[FCM] ❌ Error in onMessageOpenedApp stream: $error');
         });
         
         // Handle notification tap when app was terminated
@@ -207,30 +209,44 @@ class FcmService {
   }
 
   Future<void> _showLocalNotification(RemoteMessage message) async {
-    RemoteNotification? notification = message.notification;
-    AndroidNotification? android = message.notification?.android;
+    try {
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
 
-    if (notification != null && android != null) {
-      await _localNotifications.show(
-        notification.hashCode,
-        notification.title,
-        notification.body,
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'high_importance_channel', // id
-            'High Importance Notifications', // title
-            channelDescription: 'This channel is used for important notifications.',
-            importance: Importance.max,
-            priority: Priority.high,
-            icon: '@mipmap/ic_launcher',
-          ),
-        ),
-        payload: message.data.toString(),
-      );
+      if (notification != null && android != null) {
+        final title = notification.title ?? 'New Notification';
+        final body = notification.body ?? '';
+        
+        if (title.isNotEmpty || body.isNotEmpty) {
+          await _localNotifications.show(
+            notification.hashCode,
+            title,
+            body,
+            const NotificationDetails(
+              android: AndroidNotificationDetails(
+                'high_importance_channel', // id
+                'High Importance Notifications', // title
+                channelDescription: 'This channel is used for important notifications.',
+                importance: Importance.max,
+                priority: Priority.high,
+                icon: '@mipmap/ic_launcher',
+              ),
+            ),
+            payload: message.data.toString(),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[FCM] ❌ Error showing local notification: $e');
     }
   }
   
   Future<String?> getToken() async {
-    return await _messaging.getToken();
+    try {
+      return await _messaging.getToken();
+    } catch (e) {
+      debugPrint('[FCM] ❌ Error getting FCM token: $e');
+      return null;
+    }
   }
 }

@@ -9,7 +9,7 @@ import {
 } from "../../core/models"; // Ensure the import path is correct
 import fs from 'fs/promises';
 import { uploadFileToMiniIOS3 } from "../../../utils/minio.image";
-import { sequelize } from "../../../common/db/postgres";
+import { sequelize, retryDbOperation } from "../../../common/db/postgres";
 import { Op } from "sequelize";
 import { sendToSingleToken } from "../../../common/services/firebase/appNotify";
 import { createDriverNotification } from "../../core/function/notificationCreate";
@@ -137,21 +137,31 @@ export const getDriverLocations = async (req: Request, res: Response): Promise<v
         }
 
         const whereCondition: any = { adminId };
-        const total = await Driver.count({ where: whereCondition });
-        const active = await Driver.count({ where: { ...whereCondition, isActive: true } });
-        const online = await Driver.count({ where: { ...whereCondition, isActive: true, isOnline: true } });
-        const withLoc = await Driver.count({ where: { ...whereCondition, isActive: true, isOnline: true, geoLocation: { [Op.ne]: null } } });
+        const total = await retryDbOperation(async () => {
+            return await Driver.count({ where: whereCondition });
+        });
+        const active = await retryDbOperation(async () => {
+            return await Driver.count({ where: { ...whereCondition, isActive: true } });
+        });
+        const online = await retryDbOperation(async () => {
+            return await Driver.count({ where: { ...whereCondition, isActive: true, isOnline: true } });
+        });
+        const withLoc = await retryDbOperation(async () => {
+            return await Driver.count({ where: { ...whereCondition, isActive: true, isOnline: true, geoLocation: { [Op.ne]: null } } });
+        });
 
         console.log(`[DriverLocations] Debug: AdminId=${adminId} | Total=${total} | Active=${active} | Online=${online} | WithLoc=${withLoc}`);
 
-        const drivers = await Driver.findAll({
-            where: {
-                adminId,
-                isActive: true,
-                isOnline: true, // Only fetch drivers who are currently online
-                geoLocation: { [Op.ne]: null } // Ensure location exists
-            },
-            attributes: ['id', 'driverId', 'name', 'phone', 'geoLocation', 'isOnline'],
+        const drivers = await retryDbOperation(async () => {
+            return await Driver.findAll({
+                where: {
+                    adminId,
+                    isActive: true,
+                    isOnline: true, // Only fetch drivers who are currently online
+                    geoLocation: { [Op.ne]: null } // Ensure location exists
+                },
+                attributes: ['id', 'driverId', 'name', 'phone', 'geoLocation', 'isOnline'],
+            });
         });
 
         console.log(`[DriverLocations] AdminId: ${adminId}, Found: ${drivers.length} drivers with location`);
@@ -161,8 +171,25 @@ export const getDriverLocations = async (req: Request, res: Response): Promise<v
             message: "Driver locations retrieved",
             data: drivers
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error fetching driver locations:", error);
+        
+        // Check if it's a connection error
+        const isConnectionError = 
+            error.name === 'SequelizeConnectionError' ||
+            error.message?.includes('connect failed') ||
+            error.message?.includes('server_login_retry') ||
+            error.code === '08P01';
+        
+        if (isConnectionError) {
+            res.status(503).json({ 
+                success: false, 
+                message: "Database connection error. Please try again in a moment.",
+                error: "SERVICE_UNAVAILABLE"
+            });
+            return;
+        }
+        
         res.status(500).json({ success: false, message: "Error fetching driver locations" });
     }
 };

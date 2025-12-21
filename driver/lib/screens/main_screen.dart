@@ -34,12 +34,18 @@ class _MainScreenState extends State<MainScreen> {
     // Initialize after first frame to ensure context is available
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        debugPrint('[MainScreen] Linking OverlayNotificationService to Context...');
+        debugPrint('[MainScreen] ========================================');
+        debugPrint('[MainScreen] 🔗 Linking OverlayNotificationService to Context...');
+        debugPrint('[MainScreen] ========================================');
+        
         // Use ServiceLocator to get the singleton instances
         final overlayService = ServiceLocator().overlayController;
         final tripService = ServiceLocator().trip;
         
         overlayService.init(widget.token, tripService, context);
+        
+        // Ensure overlay service is running (backup check)
+        _ensureOverlayServiceRunning();
         
         // Update context when route changes
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -119,6 +125,33 @@ class _MainScreenState extends State<MainScreen> {
   void _navigate(int index, {int? subTabIndex}) {
     setState(() => _selectedIndex = index);
     // Sub-tab navigation removed as Trips tab is gone
+  }
+
+  Future<void> _ensureOverlayServiceRunning() async {
+    try {
+      debugPrint('[MainScreen] 🔍 Checking overlay service status...');
+      final nativeOverlay = ServiceLocator().nativeOverlay;
+      
+      if (!nativeOverlay.isServiceRunning) {
+        debugPrint('[MainScreen] ⚠️ Overlay service not running, attempting to start...');
+        final hasPermission = await nativeOverlay.checkOverlayPermission();
+        
+        if (hasPermission) {
+          final started = await nativeOverlay.startService();
+          if (started) {
+            debugPrint('[MainScreen] ✅ Overlay service started successfully from MainScreen');
+          } else {
+            debugPrint('[MainScreen] ⚠️ Failed to start overlay service from MainScreen');
+          }
+        } else {
+          debugPrint('[MainScreen] ⚠️ Overlay permission not granted');
+        }
+      } else {
+        debugPrint('[MainScreen] ✅ Overlay service is already running');
+      }
+    } catch (e) {
+      debugPrint('[MainScreen] ❌ Error ensuring overlay service: $e');
+    }
   }
 
   @override

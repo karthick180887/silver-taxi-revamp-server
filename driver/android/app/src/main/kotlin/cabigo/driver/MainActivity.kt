@@ -240,23 +240,51 @@ class MainActivity : FlutterActivity() {
                     // Start the overlay service in foreground mode
                     // This keeps it running even when app is closed or phone is locked
                     try {
-                        if (checkOverlayPermission()) {
+                        Log.d("MainActivity", "========================================")
+                        Log.d("MainActivity", "🚀 STARTING OVERLAY SERVICE")
+                        Log.d("MainActivity", "========================================")
+                        
+                        val hasPermission = checkOverlayPermission()
+                        Log.d("MainActivity", "Overlay permission: $hasPermission")
+                        
+                        if (hasPermission) {
                             val serviceIntent = Intent(this, OverlayService::class.java).apply {
                                 putExtra("action", "start")
                             }
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                startForegroundService(serviceIntent)
-                            } else {
-                                startService(serviceIntent)
+                            
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    Log.d("MainActivity", "Starting foreground service (Android O+)...")
+                                    startForegroundService(serviceIntent)
+                                } else {
+                                    Log.d("MainActivity", "Starting service (Android < O)...")
+                                    startService(serviceIntent)
+                                }
+                                
+                                Log.d("MainActivity", "========================================")
+                                Log.d("MainActivity", "✅✅✅ OVERLAY SERVICE STARTED SUCCESSFULLY!")
+                                Log.d("MainActivity", "========================================")
+                                result.success(true)
+                            } catch (e: Exception) {
+                                Log.e("MainActivity", "❌ Error starting foreground service: ${e.message}", e)
+                                // Try regular service as fallback
+                                try {
+                                    startService(serviceIntent)
+                                    Log.d("MainActivity", "✅ Service started via fallback method")
+                                    result.success(true)
+                                } catch (e2: Exception) {
+                                    Log.e("MainActivity", "❌ Fallback service start also failed: ${e2.message}", e2)
+                                    result.error("SERVICE_START_ERROR", e2.message, null)
+                                }
                             }
-                            Log.d("MainActivity", "✅ Overlay service started via Flutter call")
-                            result.success(true)
                         } else {
                             Log.w("MainActivity", "⚠️ Overlay permission not granted, cannot start service")
+                            Log.w("MainActivity", "💡 User needs to grant 'Display over other apps' permission")
                             result.success(false)
                         }
                     } catch (e: Exception) {
-                        Log.e("MainActivity", "❌ Error starting service: ${e.message}", e)
+                        Log.e("MainActivity", "❌❌❌ ERROR STARTING SERVICE ❌❌❌")
+                        Log.e("MainActivity", "Error: ${e.message}", e)
                         result.error("SERVICE_START_ERROR", e.message, null)
                     }
                 }

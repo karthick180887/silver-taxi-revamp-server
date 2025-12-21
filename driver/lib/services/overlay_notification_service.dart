@@ -547,6 +547,11 @@ class OverlayNotificationService {
       return;
     }
 
+    if (_pendingAcceptTripId == tripId) {
+      debugPrint('[OverlayNotification] Trip $tripId is already pending acceptance, ignoring duplicate accept');
+      return;
+    }
+
     try {
       debugPrint('[OverlayNotification] ========================================');
       debugPrint('[OverlayNotification] 🎯 ACCEPTING TRIP: $tripId');
@@ -613,82 +618,88 @@ class OverlayNotificationService {
   }
   /// Handle FCM message data to show overlay
   void handleFcmMessage(Map<String, dynamic> data) {
-    debugPrint('[OverlayNotification] ========================================');
-    debugPrint('[OverlayNotification] 📨 RECEIVED FCM MESSAGE');
-    debugPrint('[OverlayNotification] Data keys: ${data.keys.toList()}');
-    debugPrint('[OverlayNotification] Type: ${data['type']}');
-    debugPrint('[OverlayNotification] click_action: ${data['click_action']}');
-    debugPrint('[OverlayNotification] Full data: $data');
-    debugPrint('[OverlayNotification] ========================================');
+    try {
+      debugPrint('[OverlayNotification] ========================================');
+      debugPrint('[OverlayNotification] 📨 RECEIVED FCM MESSAGE');
+      debugPrint('[OverlayNotification] Data keys: ${data.keys.toList()}');
+      debugPrint('[OverlayNotification] Type: ${data['type']}');
+      debugPrint('[OverlayNotification] click_action: ${data['click_action']}');
+      debugPrint('[OverlayNotification] Full data: $data');
+      debugPrint('[OverlayNotification] ========================================');
 
-    // Check if this is a booking notification - handle both type formats
-    final messageType = data['type']?.toString() ?? '';
-    if (messageType == 'NEW_TRIP_OFFER' || 
-        messageType == 'new-booking' || 
-        data['click_action'] == 'FLUTTER_NOTIFICATION_CLICK') {
-      
-      debugPrint('[OverlayNotification] ✅ Accepted FCM overlay trigger (type: $messageType)');
-      
-      if (_currentToken == null || _tripService == null) {
-        debugPrint('[OverlayNotification] ⚠️ Service not initialized yet, cannot show overlay');
-        return;
-      }
-
-      // Convert FCM data to TripModel
-      // FCM data comes as strings (key: value), while socket data has types
-      // We need to parse accordingly
-      
-      final tripId = data['ids.bookingId']?.toString() ?? 
-                     data['bookingId']?.toString() ?? 
-                     data['tripId']?.toString() ?? '';
-                     
-      if (tripId.isEmpty) {
-        debugPrint('[OverlayNotification] ❌ No trip ID in FCM data');
-        return;
-      }
-      
-      if (_shownTripIds.contains(tripId)) {
-        debugPrint('[OverlayNotification] ⚠️ Trip $tripId already shown, skipping');
-        return;
-      }
-
-      // Extract fare from multiple possible fields
-      final fare = data['estimatedPrice']?.toString() ?? 
-                   data['fare']?.toString() ?? 
-                   data['estimatedFare']?.toString() ?? 
-                   '0';
-
-      // Construct event data formatted like socket event for reuse
-      final eventData = <String, dynamic>{
-        'bookingId': tripId,
-        'pickup': data['pickup'] ?? data['pickupLocation'] ?? 'Pickup Location',
-        'drop': data['drop'] ?? data['dropLocation'] ?? 'Drop Location',
-        'estimatedFare': fare,
-        'customerName': data['customerName'] ?? 'Customer',
-        'status': 'Booking Confirmed',
-        'pickupDateTime': data['pickupDateTime'] ?? '',
-        'customerPhone': data['customerPhone'] ?? '',
-        // Add other fields as needed
-      };
-      
-      debugPrint('[OverlayNotification] 📋 Constructed event data: $eventData');
-      
-      final trip = _createTripModelFromEvent(eventData);
-      
-      if (trip != null) {
-        debugPrint('[OverlayNotification] 🚀 Showing overlay from FCM trigger');
-        _showOverlayNotification(trip);
-        _shownTripIds.add(tripId);
+      // Check if this is a booking notification - handle both type formats
+      final messageType = data['type']?.toString() ?? '';
+      if (messageType == 'NEW_TRIP_OFFER' || 
+          messageType == 'new-booking' || 
+          data['click_action'] == 'FLUTTER_NOTIFICATION_CLICK') {
         
-        // Remove from dedup set after 30 seconds (was 5 minutes)
-        // This allows re-showing same trip if user dismisses and backend resends
-        Timer(const Duration(seconds: 30), () {
-          _shownTripIds.remove(tripId);
-        });
+        debugPrint('[OverlayNotification] ✅ Accepted FCM overlay trigger (type: $messageType)');
+        
+        if (_currentToken == null || _tripService == null) {
+          debugPrint('[OverlayNotification] ⚠️ Service not initialized yet, cannot show overlay');
+          return;
+        }
+
+        // Convert FCM data to TripModel
+        // FCM data comes as strings (key: value), while socket data has types
+        // We need to parse accordingly
+        
+        final tripId = data['ids.bookingId']?.toString() ?? 
+                       data['bookingId']?.toString() ?? 
+                       data['tripId']?.toString() ?? '';
+                       
+        if (tripId.isEmpty) {
+          debugPrint('[OverlayNotification] ❌ No trip ID in FCM data');
+          return;
+        }
+        
+        if (_shownTripIds.contains(tripId)) {
+          debugPrint('[OverlayNotification] ⚠️ Trip $tripId already shown, skipping');
+          return;
+        }
+
+        // Extract fare from multiple possible fields
+        final fare = data['estimatedPrice']?.toString() ?? 
+                     data['fare']?.toString() ?? 
+                     data['estimatedFare']?.toString() ?? 
+                     '0';
+
+        // Construct event data formatted like socket event for reuse
+        final eventData = <String, dynamic>{
+          'bookingId': tripId,
+          'pickup': data['pickup'] ?? data['pickupLocation'] ?? 'Pickup Location',
+          'drop': data['drop'] ?? data['dropLocation'] ?? 'Drop Location',
+          'estimatedFare': fare,
+          'customerName': data['customerName'] ?? 'Customer',
+          'status': 'Booking Confirmed',
+          'pickupDateTime': data['pickupDateTime'] ?? '',
+          'customerPhone': data['customerPhone'] ?? '',
+          // Add other fields as needed
+        };
+        
+        debugPrint('[OverlayNotification] 📋 Constructed event data: $eventData');
+        
+        final trip = _createTripModelFromEvent(eventData);
+        
+        if (trip != null) {
+          debugPrint('[OverlayNotification] 🚀 Showing overlay from FCM trigger');
+          _showOverlayNotification(trip);
+          _shownTripIds.add(tripId);
+          
+          // Remove from dedup set after 30 seconds (was 5 minutes)
+          // This allows re-showing same trip if user dismisses and backend resends
+          Timer(const Duration(seconds: 30), () {
+            _shownTripIds.remove(tripId);
+          });
+        } else {
+          debugPrint('[OverlayNotification] ❌ Failed to create TripModel from FCM data');
+        }
+      } else {
+        debugPrint('[OverlayNotification] ⚠️ Unknown FCM type: $messageType, not showing overlay');
       }
-    } else {
-      debugPrint('[OverlayNotification] ⚠️ Unknown FCM type: $messageType, not showing overlay');
+    } catch (e, stackTrace) {
+      debugPrint('[OverlayNotification] ❌ Error handling FCM message: $e');
+      debugPrint('[OverlayNotification] Stack trace: $stackTrace');
     }
   }
 }
-

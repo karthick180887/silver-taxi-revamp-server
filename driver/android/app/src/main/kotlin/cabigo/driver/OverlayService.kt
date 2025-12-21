@@ -1,5 +1,9 @@
 package cabigo.driver
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -13,6 +17,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -22,112 +27,458 @@ class OverlayService : Service() {
 
     private var windowManager: WindowManager? = null
     private var overlayView: FrameLayout? = null
+    private var floatingButtonView: View? = null
     private var isShowing = false
+    private var isFloatingButtonShowing = false
+    private val NOTIFICATION_ID = 2
+    private val CHANNEL_ID = "overlay_service_channel"
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
 
-        val title = intent?.getStringExtra("title") ?: "New Notification"
-        val message = intent?.getStringExtra("message") ?: ""
+        try {
+            // Start as foreground service to keep it running
+            val notification = createForegroundNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
 
-        showOverlay(title, message)
-
-        // Auto-hide after 30 seconds (trip offers usually expire)
-        CoroutineScope(Dispatchers.Main).launch {
-            delay(30000)
-            hideOverlay()
+            val action = intent?.getStringExtra("action") ?: "start"
+            
+            when (action) {
+                "show" -> {
+                    val tripId = intent?.getStringExtra("tripId") ?: ""
+                    val fare = intent?.getStringExtra("fare") ?: "0"
+                    val pickup = intent?.getStringExtra("pickup") ?: ""
+                    val drop = intent?.getStringExtra("drop") ?: ""
+                    val customerName = intent?.getStringExtra("customerName") ?: "Customer"
+                    
+                    showOverlay(tripId, fare, pickup, drop, customerName)
+                    
+                    // Auto-hide after 30 seconds (trip offers usually expire)
+                    CoroutineScope(Dispatchers.Main).launch {
+                        delay(30000)
+                        hideOverlay()
+                    }
+                }
+                "hide" -> {
+                    hideOverlay()
+                }
+                "start" -> {
+                    // Service start requested - show persistent floating button
+                    android.util.Log.d("OverlayService", "Service started, showing floating button")
+                    showFloatingButton()
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "Error in onStartCommand: ${e.message}", e)
+            // Don't stop service on error - keep it running
         }
 
-        return START_NOT_STICKY
+        return START_STICKY // Keep service running even if killed
     }
 
-    private fun showOverlay(title: String, message: String) {
-        if (isShowing) {
-            hideOverlay()
+    private fun createForegroundNotification(): Notification {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
-        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        
-        // Create overlay view
-        try {
-            overlayView = LayoutInflater.from(this)
-                .inflate(R.layout.overlay_trip_notification, null) as FrameLayout
-        } catch (e: Exception) {
-             // Fallback if specific layout fails, though we should ensure it exists
-             // user didn't provide layout, assuming existing 'overlay_trip_notification' works
-             // or we need to adapt it. 
-             // Existing code used 'overlay_trip_notification'.
-        }
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Driver Service Active")
+            .setContentText("Tap to open app")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+    }
 
-        if (overlayView == null) return
-
-        // Set content - Adapter for existing layout IDs
-        // Existing layout likely has tvFare, tvPickup, etc. 
-        // User's code used generic 'overlay_title', 'overlay_message'.
-        // I will map message to these strictly for now or use the generic text if IDs don't match.
-        
-        // For now, I will use the user's provided logic structure but I might need to Create 
-        // 'overlay_notification.xml' if I want to strictly follow their guide, 
-        // OR adapt this code to use my existing 'overlay_trip_notification.xml'.
-        
-        // Let's assume we stick to the user's 'overlay_notification' for the "clean" state 
-        // BUT I don't have that layout file. I have 'overlay_trip_notification.xml'.
-        // I will use 'overlay_trip_notification.xml' and try to populate it.
-        
-        // Actually, the user's code requested: "Create overlay_notification.xml layout file".
-        // I should stick to existing layout to avoid creating new files if possible, 
-        // or create the new layout.
-        
-        // Given I cannot easily create XML resources without knowing content, 
-        // I will adapt the Kotlin code to use the EXISTING layout 'overlay_trip_notification'.
-        
-        // User's code:
-        // overlayView?.findViewById<TextView>(R.id.overlay_title)?.text = title
-        // overlayView?.findViewById<TextView>(R.id.overlay_message)?.text = message
-        
-        // My adaptation using 'data' payload likely passed in 'message':
-        // The user's SocketService creates an intent with "title", "message", "data".
-        // I should parse "data" string to fill the trip details.
-        
-        // But for this Step, I will just paste the structure.
-        
-        // Window parameters
-        val params = WindowManager.LayoutParams().apply {
-            type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Overlay Service",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Service for showing overlay notifications"
+                setShowBadge(false)
             }
-            format = PixelFormat.TRANSLUCENT
-            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-            width = WindowManager.LayoutParams.MATCH_PARENT
-            height = WindowManager.LayoutParams.WRAP_CONTENT
-            gravity = Gravity.TOP
-            x = 0
-            y = 0
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            manager?.createNotificationChannel(channel)
         }
+    }
 
-        windowManager?.addView(overlayView, params)
-        isShowing = true
+    private fun showOverlay(tripId: String, fare: String, pickup: String, drop: String, customerName: String) {
+        try {
+            if (isShowing) {
+                hideOverlay()
+            }
+
+            // Check overlay permission
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!android.provider.Settings.canDrawOverlays(this)) {
+                    android.util.Log.e("OverlayService", "Overlay permission not granted")
+                    stopSelf()
+                    return
+                }
+            }
+
+            windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            if (windowManager == null) {
+                android.util.Log.e("OverlayService", "WindowManager is null")
+                stopSelf()
+                return
+            }
+            
+            // Create a simple overlay view programmatically if layout doesn't exist
+            overlayView = try {
+                LayoutInflater.from(this).inflate(
+                    resources.getIdentifier("overlay_trip_notification", "layout", packageName),
+                    null
+                ) as? FrameLayout
+            } catch (e: Exception) {
+                android.util.Log.w("OverlayService", "Layout not found, creating programmatic view: ${e.message}")
+                // Create a simple programmatic view
+                FrameLayout(this).apply {
+                    setBackgroundColor(0xFF2196F3.toInt())
+                    setPadding(32, 32, 32, 32)
+                    
+                    val titleView = TextView(this@OverlayService).apply {
+                        text = "New Trip Offer - ₹$fare"
+                        textSize = 18f
+                        setTextColor(0xFFFFFFFF.toInt())
+                        setTypeface(null, android.graphics.Typeface.BOLD)
+                    }
+                    
+                    val pickupView = TextView(this@OverlayService).apply {
+                        text = "Pickup: $pickup"
+                        textSize = 14f
+                        setTextColor(0xFFFFFFFF.toInt())
+                    }
+                    
+                    val dropView = TextView(this@OverlayService).apply {
+                        text = "Drop: $drop"
+                        textSize = 14f
+                        setTextColor(0xFFFFFFFF.toInt())
+                    }
+                    
+                    val acceptButton = Button(this@OverlayService).apply {
+                        text = "Accept"
+                        setOnClickListener {
+                            // Send broadcast to MainActivity
+                            val acceptIntent = Intent("cabigo.driver.OVERLAY_ACCEPT").apply {
+                                putExtra("tripId", tripId)
+                            }
+                            sendBroadcast(acceptIntent)
+
+                            // Bring app to foreground (handles accept even if app was killed)
+                            try {
+                                val openIntent = Intent(this@OverlayService, MainActivity::class.java).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                    putExtra("overlayAccept", true)
+                                    putExtra("tripId", tripId)
+                                    putExtra("fromOverlay", true)
+                                    putExtra("unlock", true)
+                                }
+                                startActivity(openIntent)
+                            } catch (e: Exception) {
+                                android.util.Log.w("OverlayService", "Error opening app on accept: ${e.message}")
+                            }
+                            hideOverlay()
+                        }
+                    }
+                    
+                    val dismissButton = Button(this@OverlayService).apply {
+                        text = "Dismiss"
+                        setOnClickListener {
+                            hideOverlay()
+                        }
+                    }
+                    
+                    val layout = android.widget.LinearLayout(this@OverlayService).apply {
+                        orientation = android.widget.LinearLayout.VERTICAL
+                        addView(titleView)
+                        addView(pickupView)
+                        addView(dropView)
+                        
+                        val buttonLayout = android.widget.LinearLayout(this@OverlayService).apply {
+                            orientation = android.widget.LinearLayout.HORIZONTAL
+                            addView(acceptButton)
+                            addView(dismissButton)
+                        }
+                        addView(buttonLayout)
+                    }
+                    
+                    addView(layout)
+                }
+            }
+
+            if (overlayView == null) {
+                android.util.Log.e("OverlayService", "Failed to create overlay view")
+                stopSelf()
+                return
+            }
+
+            // Try to populate layout fields if they exist
+            try {
+                val titleId = resources.getIdentifier("tvFare", "id", packageName)
+                if (titleId != 0) {
+                    overlayView?.findViewById<TextView>(titleId)?.text = "₹$fare"
+                }
+                
+                val pickupId = resources.getIdentifier("tvPickup", "id", packageName)
+                if (pickupId != 0) {
+                    overlayView?.findViewById<TextView>(pickupId)?.text = pickup
+                }
+                
+                val dropId = resources.getIdentifier("tvDrop", "id", packageName)
+                if (dropId != 0) {
+                    overlayView?.findViewById<TextView>(dropId)?.text = drop
+                }
+                
+                val acceptButtonId = resources.getIdentifier("btnAccept", "id", packageName)
+                if (acceptButtonId != 0) {
+                    overlayView?.findViewById<View>(acceptButtonId)?.setOnClickListener {
+                        val acceptIntent = Intent("cabigo.driver.OVERLAY_ACCEPT").apply {
+                            putExtra("tripId", tripId)
+                        }
+                        sendBroadcast(acceptIntent)
+
+                        // Bring app to foreground (handles accept even if app was killed)
+                        try {
+                            val openIntent = Intent(this@OverlayService, MainActivity::class.java).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                putExtra("overlayAccept", true)
+                                putExtra("tripId", tripId)
+                                putExtra("fromOverlay", true)
+                                putExtra("unlock", true)
+                            }
+                            startActivity(openIntent)
+                        } catch (e: Exception) {
+                            android.util.Log.w("OverlayService", "Error opening app on accept: ${e.message}")
+                        }
+                        hideOverlay()
+                    }
+                }
+
+                val dismissButtonId = resources.getIdentifier("btnDismiss", "id", packageName)
+                if (dismissButtonId != 0) {
+                    overlayView?.findViewById<View>(dismissButtonId)?.setOnClickListener {
+                        hideOverlay()
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("OverlayService", "Error populating layout fields: ${e.message}")
+            }
+            
+            // Window parameters
+            val params = WindowManager.LayoutParams().apply {
+                type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
+                format = PixelFormat.TRANSLUCENT
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+                width = WindowManager.LayoutParams.MATCH_PARENT
+                height = WindowManager.LayoutParams.WRAP_CONTENT
+                gravity = Gravity.TOP
+                x = 0
+                y = 0
+            }
+
+            windowManager?.addView(overlayView, params)
+            isShowing = true
+            android.util.Log.d("OverlayService", "Overlay shown successfully for trip: $tripId")
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "Error showing overlay: ${e.message}", e)
+            stopSelf()
+        }
     }
 
     private fun hideOverlay() {
-        if (isShowing && overlayView != null) {
-            windowManager?.removeView(overlayView)
+        try {
+            if (isShowing && overlayView != null && windowManager != null) {
+                windowManager?.removeView(overlayView)
+                isShowing = false
+                overlayView = null
+                // Don't stop service - keep floating button visible
+                // stopSelf()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "Error hiding overlay: ${e.message}", e)
+            // Force cleanup
             isShowing = false
-            stopSelf()
+            overlayView = null
+            // Don't stop service on error - keep floating button
         }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private fun showFloatingButton() {
+        try {
+            if (isFloatingButtonShowing) {
+                android.util.Log.d("OverlayService", "Floating button already showing")
+                return
+            }
+
+            // Check overlay permission
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!android.provider.Settings.canDrawOverlays(this)) {
+                    android.util.Log.e("OverlayService", "Overlay permission not granted for floating button")
+                    return
+                }
+            }
+
+            windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            if (windowManager == null) {
+                android.util.Log.e("OverlayService", "WindowManager is null")
+                return
+            }
+            
+            // Try to load floating button layout
+            floatingButtonView = try {
+                LayoutInflater.from(this).inflate(
+                    resources.getIdentifier("overlay_floating_button", "layout", packageName),
+                    null
+                )
+            } catch (e: Exception) {
+                android.util.Log.w("OverlayService", "Floating button layout not found, creating programmatic view: ${e.message}")
+                // Create a simple floating button programmatically
+                FrameLayout(this).apply {
+                    setBackgroundColor(0xFFFF6B35.toInt())
+                    val params = android.view.ViewGroup.LayoutParams(
+                        (80 * resources.displayMetrics.density).toInt(),
+                        (80 * resources.displayMetrics.density).toInt()
+                    )
+                    layoutParams = params
+                    
+                    val textView = TextView(this@OverlayService).apply {
+                        text = "🚗"
+                        textSize = 40f
+                        setTextColor(0xFFFFFFFF.toInt())
+                        gravity = android.view.Gravity.CENTER
+                    }
+                    
+                    addView(textView)
+                    
+                    // Make it clickable to open app
+                    setOnClickListener {
+                        val intent = Intent(this@OverlayService, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        }
+                        startActivity(intent)
+                    }
+                }
+            }
+
+            if (floatingButtonView == null) {
+                android.util.Log.e("OverlayService", "Failed to create floating button view")
+                return
+            }
+            
+            // Window parameters for floating button (bottom right corner)
+            val params = WindowManager.LayoutParams().apply {
+                type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
+                format = PixelFormat.TRANSLUCENT
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                width = (80 * resources.displayMetrics.density).toInt()
+                height = (80 * resources.displayMetrics.density).toInt()
+                gravity = Gravity.BOTTOM or Gravity.END
+                x = (16 * resources.displayMetrics.density).toInt()
+                y = (16 * resources.displayMetrics.density).toInt()
+            }
+            
+            // Make floating button draggable
+            var initialX = 0
+            var initialY = 0
+            var initialTouchX = 0f
+            var initialTouchY = 0f
+            
+            floatingButtonView?.setOnTouchListener { view, event ->
+                when (event.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        params.x = initialX + (event.rawX - initialTouchX).toInt()
+                        params.y = initialY + (event.rawY - initialTouchY).toInt()
+                        windowManager?.updateViewLayout(floatingButtonView, params)
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        // If it was a click (not a drag), open the app
+                        if (kotlin.math.abs(event.rawX - initialTouchX) < 10 && 
+                            kotlin.math.abs(event.rawY - initialTouchY) < 10) {
+                            val intent = Intent(this, MainActivity::class.java).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                            }
+                            startActivity(intent)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+
+            windowManager?.addView(floatingButtonView, params)
+            isFloatingButtonShowing = true
+            android.util.Log.d("OverlayService", "✅ Floating button shown successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "Error showing floating button: ${e.message}", e)
+        }
+    }
+
+    private fun hideFloatingButton() {
+        try {
+            if (isFloatingButtonShowing && floatingButtonView != null && windowManager != null) {
+                windowManager?.removeView(floatingButtonView)
+                isFloatingButtonShowing = false
+                floatingButtonView = null
+                android.util.Log.d("OverlayService", "Floating button hidden")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "Error hiding floating button: ${e.message}", e)
+            isFloatingButtonShowing = false
+            floatingButtonView = null
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        hideOverlay()
+        try {
+            hideOverlay()
+            hideFloatingButton()
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "Error in onDestroy: ${e.message}", e)
+        }
     }
 }
-

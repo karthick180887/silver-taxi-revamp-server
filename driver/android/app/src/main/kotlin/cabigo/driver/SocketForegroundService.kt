@@ -75,37 +75,68 @@ class SocketForegroundService : Service() {
             socket = IO.socket("https://api.cabigo.in", options)
 
             socket?.on(Socket.EVENT_CONNECT) {
-                handleSocketConnected()
+                try {
+                    handleSocketConnected()
+                } catch (e: Exception) {
+                    android.util.Log.e("SocketForegroundService", "Error in connect handler: ${e.message}", e)
+                }
             }
 
             socket?.on(Socket.EVENT_DISCONNECT) {
-                handleSocketDisconnected()
+                try {
+                    handleSocketDisconnected()
+                } catch (e: Exception) {
+                    android.util.Log.e("SocketForegroundService", "Error in disconnect handler: ${e.message}", e)
+                }
             }
 
-            socket?.on(Socket.EVENT_CONNECT_ERROR) {
-                // handleSocketError(it[0] as Exception)
+            socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
+                try {
+                    android.util.Log.e("SocketForegroundService", "Socket connection error: ${args.contentToString()}")
+                } catch (e: Exception) {
+                    android.util.Log.e("SocketForegroundService", "Error handling connection error: ${e.message}", e)
+                }
             }
 
             // Listen for notification events from backend
             socket?.on("notification") { args ->
-                handleNotificationEvent(args)
+                try {
+                    handleNotificationEvent(args)
+                } catch (e: Exception) {
+                    android.util.Log.e("SocketForegroundService", "Error handling notification: ${e.message}", e)
+                }
             }
 
             socket?.connect()
+            android.util.Log.d("SocketForegroundService", "Socket connection initiated")
 
         } catch (e: URISyntaxException) {
-            e.printStackTrace()
+            android.util.Log.e("SocketForegroundService", "URISyntaxException: ${e.message}", e)
+        } catch (e: Exception) {
+            android.util.Log.e("SocketForegroundService", "Error initializing socket: ${e.message}", e)
         }
     }
 
     private fun handleSocketConnected() {
-        // Send device FCM token to backend
-        val fcmToken = getFCMToken()
-        socket?.emit("register_device", mapOf(
-            "fcmToken" to fcmToken,
-            "deviceId" to generateDeviceId(),
-            "timestamp" to System.currentTimeMillis()
-        ))
+        try {
+            android.util.Log.d("SocketForegroundService", "Socket connected successfully")
+            // Send device FCM token to backend
+            val fcmToken = getFCMToken()
+            val deviceId = generateDeviceId()
+            
+            if (fcmToken.isNotEmpty() && socket != null && socket!!.connected()) {
+                socket?.emit("register_device", mapOf(
+                    "fcmToken" to fcmToken,
+                    "deviceId" to deviceId,
+                    "timestamp" to System.currentTimeMillis()
+                ))
+                android.util.Log.d("SocketForegroundService", "Device registration sent")
+            } else {
+                android.util.Log.w("SocketForegroundService", "Cannot register device: token=${fcmToken.isNotEmpty()}, socket=${socket != null && socket!!.connected()}")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("SocketForegroundService", "Error in handleSocketConnected: ${e.message}", e)
+        }
     }
 
     private fun handleSocketDisconnected() {
@@ -114,16 +145,26 @@ class SocketForegroundService : Service() {
 
     private fun handleNotificationEvent(args: Array<Any>) {
         try {
-            val data = args[0] as? Map<*, *> ?: return
+            if (args.isEmpty()) {
+                android.util.Log.w("SocketForegroundService", "Notification event with empty args")
+                return
+            }
+            
+            val data = args[0] as? Map<*, *>
+            if (data == null) {
+                android.util.Log.w("SocketForegroundService", "Notification data is not a Map")
+                return
+            }
+            
+            val title = data["title"] as? String ?: "New Notification"
+            val message = data["message"] as? String ?: ""
+            
+            android.util.Log.d("SocketForegroundService", "Received notification: $title - $message")
             
             // Show overlay popup
-            showOverlayNotification(
-                title = data["title"] as? String ?: "New Notification",
-                message = data["message"] as? String ?: "",
-                data = data
-            )
+            showOverlayNotification(title, message, data)
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("SocketForegroundService", "Error handling notification event: ${e.message}", e)
         }
     }
 
@@ -161,13 +202,33 @@ class SocketForegroundService : Service() {
     }
 
     private fun showOverlayNotification(title: String, message: String, data: Map<*, *>) {
-        val intent = Intent(this, OverlayService::class.java).apply {
-            putExtra("title", title)
-            putExtra("message", message)
-            putExtra("data", data.toString())
-            putExtra("action", "show") // Matches OverlayService "show" action
+        try {
+            // Extract trip details from data if available
+            val tripId = data["bookingId"]?.toString() ?: data["tripId"]?.toString() ?: ""
+            val fare = data["fare"]?.toString() ?: data["estimatedFare"]?.toString() ?: "0"
+            val pickup = data["pickup"]?.toString() ?: data["pickupLocation"]?.toString() ?: title
+            val drop = data["drop"]?.toString() ?: data["dropLocation"]?.toString() ?: message
+            val customerName = data["customerName"]?.toString() ?: "Customer"
+            
+            val intent = Intent(this, OverlayService::class.java).apply {
+                putExtra("action", "show")
+                putExtra("tripId", tripId)
+                putExtra("fare", fare)
+                putExtra("pickup", pickup)
+                putExtra("drop", drop)
+                putExtra("customerName", customerName)
+            }
+            
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            
+            android.util.Log.d("SocketForegroundService", "Overlay service started for trip: $tripId")
+        } catch (e: Exception) {
+            android.util.Log.e("SocketForegroundService", "Error showing overlay notification: ${e.message}", e)
         }
-        startService(intent)
     }
 
     private fun getFCMToken(): String {
@@ -192,6 +253,12 @@ class SocketForegroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        socket?.disconnect()
+        try {
+            socket?.disconnect()
+            socket = null
+            android.util.Log.d("SocketForegroundService", "Service destroyed")
+        } catch (e: Exception) {
+            android.util.Log.e("SocketForegroundService", "Error in onDestroy: ${e.message}", e)
+        }
     }
 }

@@ -24,7 +24,7 @@ import SMSService from "../../../common/services/sms/sms";
 import { driverCommissionCalculation } from "../../core/function/odoCalculation";
 import { publishNotification } from "../../../common/services/rabbitmq/publisher";
 import { Op } from "sequelize";
-import { sequelize } from "../../../common/db/postgres";
+import { sequelize, retryDbOperation } from "../../../common/db/postgres";
 import { toLocalTime } from "../../core/function/dataFn";
 
 const sms = SMSService()
@@ -1417,8 +1417,10 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
     log.info(`Assign all drivers for adminId: ${adminId}, bookingId: ${id} entry >>`);
 
     try {
-        const booking = await Booking.findOne({
-            where: { bookingId: id, adminId },
+        const booking = await retryDbOperation(async () => {
+            return await Booking.findOne({
+                where: { bookingId: id, adminId },
+            });
         });
 
         if (!booking) {
@@ -1429,15 +1431,24 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
         const requestSentTime = dayjs().toDate();
 
         // Unassign current driver if any
-        if (booking.driverId) {
-            const previousDriver = await Driver.findOne({
-                where: { driverId: booking.driverId, adminId },
+        const currentDriverId = booking.driverId;
+        if (currentDriverId) {
+            const previousDriver = await retryDbOperation(async () => {
+                return await Driver.findOne({
+                    where: { driverId: currentDriverId, adminId },
+                });
             });
-            if (previousDriver) await previousDriver.update({ assigned: false });
+            if (previousDriver) {
+                await retryDbOperation(async () => {
+                    await previousDriver.update({ assigned: false });
+                });
+            }
         }
 
         // DEBUG: Targeted check for Karthick Selvam
-        const targetDriver = await Driver.findOne({ where: { driverId: 'SLTD260105672' } });
+        const targetDriver = await retryDbOperation(async () => {
+            return await Driver.findOne({ where: { driverId: 'SLTD260105672' } });
+        });
         if (targetDriver) {
             debug.info(`>>> TARGET CHECK: Found Karthick Selvam (SLTD260105672)`);
             debug.info(`    adminId match? ${targetDriver.adminId} === ${adminId} => ${targetDriver.adminId === adminId} (types: ${typeof targetDriver.adminId} vs ${typeof adminId})`);
@@ -1450,13 +1461,15 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
 
         // Fetch potentially valid drivers (Relaxed Query)
         // We filter isOnline MANUALLY to handle potential boolean/string mismatches
-        const candidates = await Driver.findAll({
-            where: {
-                adminId,
-                isActive: true,
-                // isOnline: true  <-- Removed to debug/fix strict type issue
-            },
-            attributes: ['driverId', 'name', 'fcmToken', 'geoLocation', 'isOnline'],
+        const candidates = await retryDbOperation(async () => {
+            return await Driver.findAll({
+                where: {
+                    adminId,
+                    isActive: true,
+                    // isOnline: true  <-- Removed to debug/fix strict type issue
+                },
+                attributes: ['driverId', 'name', 'fcmToken', 'geoLocation', 'isOnline'],
+            });
         });
 
         // Manual Filter with loose check
@@ -1489,12 +1502,14 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
         debug.info(`Assign All: Proceeding with ${drivers.length} active & online drivers for adminId=${adminId}`);
 
         // Update booking to indicate broadcast
-        await booking.update({
-            driverId: null,
-            driverAccepted: "pending",
-            status: "Booking Confirmed",
-            assignAllDriver: true,
-            requestSentTime,
+        await retryDbOperation(async () => {
+            await booking.update({
+                driverId: null,
+                driverAccepted: "pending",
+                status: "Booking Confirmed",
+                assignAllDriver: true,
+                requestSentTime,
+            });
         });
 
         // 🟢 Emit Socket Event for Real-time Popup (Broadcast)
@@ -1561,8 +1576,25 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
             message: `Notifications sent to ${drivers.length} drivers via RabbitMQ`,
             booking,
         });
-    } catch (error) {
+    } catch (error: any) {
         debug.info(`Assign all drivers | Error: ${error}`);
+        
+        // Check if it's a connection error
+        const isConnectionError = 
+            error.name === 'SequelizeConnectionError' ||
+            error.message?.includes('connect failed') ||
+            error.message?.includes('server_login_retry') ||
+            error.code === '08P01';
+        
+        if (isConnectionError) {
+            debug.error(`Assign all drivers | Database connection error: ${error.message}`);
+            return res.status(503).json({
+                success: false,
+                message: "Database connection error. Please try again in a moment.",
+                error: "SERVICE_UNAVAILABLE",
+            });
+        }
+        
         return res.status(500).json({
             success: false,
             message: error instanceof Error ? error.message : "Internal server error",

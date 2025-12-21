@@ -1,4 +1,4 @@
-import { Sequelize, QueryTypes } from 'sequelize';
+import { Sequelize, QueryTypes, ConnectionError } from 'sequelize';
 import { TableWithSequence } from "../types/config";
 import env from "../../utils/env";
 
@@ -29,12 +29,29 @@ const sequelizeDev: any = new Sequelize({
     min: 5,
     acquire: 30000,
     idle: 10000,
+    evict: 10000, // Remove idle connections after 10 seconds
+  },
+  retry: {
+    max: 3, // Retry failed queries up to 3 times
+    match: [
+      /ConnectionError/,
+      /SequelizeConnectionError/,
+      /SequelizeConnectionRefusedError/,
+      /SequelizeHostNotFoundError/,
+      /SequelizeHostNotReachableError/,
+      /SequelizeInvalidConnectionError/,
+      /SequelizeConnectionTimedOutError/,
+      /08P01/, // Protocol violation
+      /server_login_retry/,
+    ],
   },
   dialectOptions: env.POSTGRES_SSL === 'disable' ? {} : {
     ssl: {
       require: true,
       rejectUnauthorized: false,
     },
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
   },
 });
 
@@ -52,26 +69,126 @@ const sequelizeProd = new Sequelize({
     min: 5,
     acquire: 30000,
     idle: 10000,
+    evict: 10000, // Remove idle connections after 10 seconds
+  },
+  retry: {
+    max: 3, // Retry failed queries up to 3 times
+    match: [
+      /ConnectionError/,
+      /SequelizeConnectionError/,
+      /SequelizeConnectionRefusedError/,
+      /SequelizeHostNotFoundError/,
+      /SequelizeHostNotReachableError/,
+      /SequelizeInvalidConnectionError/,
+      /SequelizeConnectionTimedOutError/,
+      /08P01/, // Protocol violation
+      /server_login_retry/,
+    ],
   },
   dialectOptions: {
     ssl: {
       require: true,
       rejectUnauthorized: false,
     },
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
   },
 });
 
 const sequelize = env.NODE_ENV === 'production' ? sequelizeProd : sequelizeDev;
 
+// Connection health check and retry logic
+async function connectWithRetry(maxRetries = 5, delay = 2000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await sequelize.authenticate();
+      try {
+        const pool: any = (sequelize as any)?.connectionManager?.pool;
+        const attach = (p: any) => {
+          if (p && typeof p.on === 'function') {
+            p.on('error', (err: Error) => {
+              console.error('[db] ❌ Connection pool error:', err.message);
+            });
+          }
+        };
+
+        attach(pool);
+        attach(pool?.write);
+        if (Array.isArray(pool?.read)) {
+          for (const readPool of pool.read) attach(readPool);
+        } else {
+          attach(pool?.read);
+        }
+      } catch {
+      }
+
+      console.warn(`[db] ✅ Connected successfully to ${env.NODE_ENV} database`);
+      return true;
+    } catch (error: any) {
+      console.error(`[db] ❌ Connection attempt ${attempt}/${maxRetries} failed:`, error.message);
+      
+      if (attempt < maxRetries) {
+        console.warn(`[db] ⏳ Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 1.5; // Exponential backoff
+      } else {
+        console.error(`[db] ❌ Unable to connect after ${maxRetries} attempts`);
+        throw error;
+      }
+    }
+  }
+}
+
 async function connect() {
   try {
-    await sequelize.authenticate();
-    // await resetTableSequences();
-    console.warn(`[db] connected  " ${env.NODE_ENV} "`);
+    await connectWithRetry();
   } catch (error) {
-    console.error(`[db] unable to connect: " ${env.NODE_ENV} "`, error);
+    console.error(`[db] ❌ Fatal: unable to connect: " ${env.NODE_ENV} "`, error);
     process.exit(1);
   }
+}
+
+// Helper function to retry database operations
+export async function retryDbOperation<T>(
+  operation: () => Promise<T>,
+  maxRetries = 3,
+  delay = 1000
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Check connection health before operation
+      try {
+        await sequelize.authenticate();
+      } catch (authError) {
+        console.warn(`[db] Connection health check failed, reconnecting...`);
+        await connectWithRetry(3, 1000);
+      }
+      
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a connection error
+      const isConnectionError = 
+        error instanceof ConnectionError ||
+        error.name === 'SequelizeConnectionError' ||
+        error.message?.includes('connect failed') ||
+        error.message?.includes('server_login_retry') ||
+        error.code === '08P01';
+      
+      if (isConnectionError && attempt < maxRetries) {
+        console.warn(`[db] ⚠️ Connection error on attempt ${attempt}/${maxRetries}, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, delay * attempt));
+        continue;
+      }
+      
+      throw error;
+    }
+  }
+  
+  throw lastError || new Error('Database operation failed after retries');
 }
 
 // async function resetTableSequences(): Promise<{ tableWithSequences: TableWithSequence[], tableWithError: string[] }> {
