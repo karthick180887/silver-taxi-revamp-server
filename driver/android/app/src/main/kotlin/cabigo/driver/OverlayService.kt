@@ -12,7 +12,9 @@ import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
@@ -22,16 +24,21 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
 class OverlayService : Service() {
 
     private var windowManager: WindowManager? = null
-    private var overlayView: FrameLayout? = null
+    private var overlayView: View? = null
     private var floatingButtonView: View? = null
     private var isShowing = false
     private var isFloatingButtonShowing = false
     private val NOTIFICATION_ID = 2
     private val CHANNEL_ID = "overlay_service_channel"
+    private val API_BASE_URL = "https://api.cabigo.in"
 
     override fun onCreate() {
         super.onCreate()
@@ -130,7 +137,6 @@ class OverlayService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 if (!android.provider.Settings.canDrawOverlays(this)) {
                     android.util.Log.e("OverlayService", "Overlay permission not granted")
-                    stopSelf()
                     return
                 }
             }
@@ -138,20 +144,25 @@ class OverlayService : Service() {
             windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
             if (windowManager == null) {
                 android.util.Log.e("OverlayService", "WindowManager is null")
-                stopSelf()
                 return
             }
             
-            // Create a simple overlay view programmatically if layout doesn't exist
+            // Create overlay view (wrap with swipe-to-dismiss container)
             overlayView = try {
-                LayoutInflater.from(this).inflate(
-                    resources.getIdentifier("overlay_trip_notification", "layout", packageName),
+                val layoutId = resources.getIdentifier("overlay_trip_notification", "layout", packageName)
+                if (layoutId != 0) {
+                    val content = LayoutInflater.from(this).inflate(layoutId, null)
+                    SwipeDismissLayout(this@OverlayService).apply {
+                        onDismiss = { rejectTripOffer(tripId, "swipe") }
+                        addView(content)
+                    }
+                } else {
                     null
-                ) as? FrameLayout
+                }
             } catch (e: Exception) {
                 android.util.Log.w("OverlayService", "Layout not found, creating programmatic view: ${e.message}")
                 // Create a simple programmatic view
-                FrameLayout(this).apply {
+                val content = FrameLayout(this).apply {
                     setBackgroundColor(0xFF2196F3.toInt())
                     setPadding(32, 32, 32, 32)
                     
@@ -203,7 +214,7 @@ class OverlayService : Service() {
                     val dismissButton = Button(this@OverlayService).apply {
                         text = "Dismiss"
                         setOnClickListener {
-                            hideOverlay()
+                            rejectTripOffer(tripId, "button")
                         }
                     }
                     
@@ -223,11 +234,15 @@ class OverlayService : Service() {
                     
                     addView(layout)
                 }
+
+                SwipeDismissLayout(this@OverlayService).apply {
+                    onDismiss = { rejectTripOffer(tripId, "swipe") }
+                    addView(content)
+                }
             }
 
             if (overlayView == null) {
                 android.util.Log.e("OverlayService", "Failed to create overlay view")
-                stopSelf()
                 return
             }
 
@@ -276,7 +291,7 @@ class OverlayService : Service() {
                 val dismissButtonId = resources.getIdentifier("btnDismiss", "id", packageName)
                 if (dismissButtonId != 0) {
                     overlayView?.findViewById<View>(dismissButtonId)?.setOnClickListener {
-                        hideOverlay()
+                        rejectTripOffer(tripId, "button")
                     }
                 }
             } catch (e: Exception) {
@@ -308,7 +323,89 @@ class OverlayService : Service() {
             android.util.Log.d("OverlayService", "Overlay shown successfully for trip: $tripId")
         } catch (e: Exception) {
             android.util.Log.e("OverlayService", "Error showing overlay: ${e.message}", e)
-            stopSelf()
+        }
+    }
+
+    private class SwipeDismissLayout(context: Context) : FrameLayout(context) {
+        var onDismiss: (() -> Unit)? = null
+
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+        private val dismissThresholdPx: Float = 120f * resources.displayMetrics.density
+
+        private var downX = 0f
+        private var downY = 0f
+        private var swiping = false
+
+        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = ev.rawX
+                    downY = ev.rawY
+                    swiping = false
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = ev.rawX - downX
+                    val dy = ev.rawY - downY
+
+                    // Intercept only when user is clearly swiping horizontally or vertically
+                    if (kotlin.math.abs(dx) > touchSlop && kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+                        swiping = true
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                        return true
+                    }
+
+                    // Allow swipe-up to dismiss as well
+                    if (kotlin.math.abs(dy) > touchSlop && kotlin.math.abs(dy) > kotlin.math.abs(dx) && dy < 0) {
+                        swiping = true
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                        return true
+                    }
+                }
+            }
+            return super.onInterceptTouchEvent(ev)
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (!swiping) return super.onTouchEvent(event)
+
+            when (event.actionMasked) {
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downX
+                    val dy = event.rawY - downY
+                    // Follow the dominant axis
+                    translationX = dx
+                    translationY = if (dy < 0) dy else 0f
+                    alpha = (1f - (kotlin.math.abs(dx) / width.coerceAtLeast(1))).coerceIn(0.2f, 1f)
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val dx = event.rawX - downX
+                    val dy = event.rawY - downY
+                    val shouldDismiss =
+                        kotlin.math.abs(dx) > dismissThresholdPx || (dy < -dismissThresholdPx)
+
+                    if (shouldDismiss) {
+                        animate()
+                            .translationX(if (dx >= 0) width.toFloat() else -width.toFloat())
+                            .translationY(if (dy < 0) -height.toFloat() else 0f)
+                            .alpha(0f)
+                            .setDuration(180)
+                            .withEndAction { onDismiss?.invoke() }
+                            .start()
+                    } else {
+                        animate()
+                            .translationX(0f)
+                            .translationY(0f)
+                            .alpha(1f)
+                            .setDuration(180)
+                            .start()
+                    }
+                    swiping = false
+                    return true
+                }
+            }
+            return true
         }
     }
 
@@ -327,6 +424,68 @@ class OverlayService : Service() {
             isShowing = false
             overlayView = null
             // Don't stop service on error - keep floating button
+        }
+    }
+
+    private fun getDriverAuthToken(): String {
+        val sharedPref = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        return sharedPref.getString("flutter.driver_token", "") ?: ""
+    }
+
+    private fun rejectTripOffer(tripId: String, source: String) {
+        if (tripId.isBlank()) {
+            hideOverlay()
+            return
+        }
+
+        hideOverlay()
+
+        val authToken = getDriverAuthToken()
+        if (authToken.isBlank()) {
+            android.util.Log.w("OverlayService", "No driver auth token available; cannot reject tripId=$tripId")
+            return
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val encodedTripId = URLEncoder.encode(tripId, Charsets.UTF_8.name())
+                val url = URL("$API_BASE_URL/app/booking/accept/$encodedTripId")
+
+                val connection = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    doOutput = true
+                    setRequestProperty("Authorization", "Bearer $authToken")
+                    setRequestProperty("Content-Type", "application/json")
+                }
+
+                val body = JSONObject().apply {
+                    put("action", "reject")
+                    put("reason", "overlay_$source")
+                }.toString()
+
+                connection.outputStream.use { os ->
+                    os.write(body.toByteArray(Charsets.UTF_8))
+                }
+
+                val code = connection.responseCode
+                val responseText = try {
+                    val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                    stream?.bufferedReader()?.use { it.readText() } ?: ""
+                } catch (_: Exception) {
+                    ""
+                } finally {
+                    connection.disconnect()
+                }
+
+                android.util.Log.d(
+                    "OverlayService",
+                    "Reject sent (source=$source, tripId=$tripId) -> HTTP $code ${responseText.take(200)}"
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("OverlayService", "Error rejecting tripId=$tripId from overlay: ${e.message}", e)
+            }
         }
     }
 

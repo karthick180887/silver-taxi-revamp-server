@@ -529,10 +529,8 @@ class OverlayNotificationService {
       _acceptTimeoutTimer?.cancel();
     }
     
-    // Hide native overlay (but keep service running)
-    // Don't call hideOverlay() as it stops the service
-    // The service should stay alive for future notifications
-    // NativeOverlayService().hideOverlay();
+    // Hide native overlay (OverlayService stays running as a foreground service)
+    NativeOverlayService().hideOverlay();
     
     // Hide in-app overlay
     if (_currentOverlay != null) {

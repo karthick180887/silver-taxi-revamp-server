@@ -346,7 +346,15 @@ class MainActivity : FlutterActivity() {
         val intent = Intent(this, OverlayService::class.java).apply {
             putExtra("action", "hide")
         }
-        stopService(intent)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error sending hide command to OverlayService: ${e.message}", e)
+        }
     }
 
     override fun onDestroy() {

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../core/service_locator.dart';
 import 'socket_service.dart';
+import 'storage_service.dart';
 
 // Background message handler
 @pragma('vm:entry-point')
@@ -195,6 +196,7 @@ class FcmService {
         String? token = await _messaging.getToken();
         if (token != null) {
           debugPrint('[FCM] Device Token: $token');
+          await _syncTokenToBackend(token);
         } else {
           debugPrint('[FCM] ⚠️ Could not get FCM token. Permission may be required.');
         }
@@ -202,9 +204,38 @@ class FcmService {
         debugPrint('[FCM] ⚠️ Error getting FCM token: $e');
       }
       
+      // Keep backend token updated (refresh can happen anytime)
+      _messaging.onTokenRefresh.listen((newToken) async {
+        debugPrint('[FCM] Token refreshed: $newToken');
+        await _syncTokenToBackend(newToken);
+      });
+
       _isInitialized = true;
     } catch (e) {
       debugPrint('[FCM] Error initializing FCM: $e');
+    }
+  }
+
+  Future<void> _syncTokenToBackend(String fcmToken) async {
+    try {
+      final authToken = await StorageService.getToken();
+      if (authToken == null || authToken.isEmpty) {
+        debugPrint('[FCM] No auth token yet; skipping backend FCM token update');
+        return;
+      }
+
+      final result = await ServiceLocator().api.updateFCMToken(
+        token: authToken,
+        fcmToken: fcmToken,
+      );
+
+      if (result.success) {
+        debugPrint('[FCM] Backend FCM token updated successfully');
+      } else {
+        debugPrint('[FCM] Backend FCM token update failed: ${result.body['message'] ?? result.body}');
+      }
+    } catch (e) {
+      debugPrint('[FCM] Error syncing token to backend: $e');
     }
   }
 
