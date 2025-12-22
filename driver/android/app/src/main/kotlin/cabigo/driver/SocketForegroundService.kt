@@ -46,12 +46,16 @@ class SocketForegroundService : Service() {
             // Show foreground notification IMMEDIATELY
             val notification = createForegroundNotification()
             
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Explicitly declare type for Android 14+ compliance if possible
-                // Using 1 for DATA_SYNC (value of FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-                // Use hardcoded integer or ServiceInfo constant if import available
-                // android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC = 1
-                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            if (Build.VERSION.SDK_INT >= 34) {
+                 // Explicitly declare type for Android 14+ compliance (API 34)
+                 // FOREGROUND_SERVICE_TYPE_DATA_SYNC = 1
+                try {
+                    startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                } catch (e: Exception) {
+                    android.util.Log.e("SocketForegroundService", "Error starting foreground service (API 34+): ${e.message}")
+                    // Fallback attempt without type if the specific type fails (though likely to crash on strict 14)
+                    startForeground(NOTIFICATION_ID, notification)
+                }
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
@@ -393,7 +397,11 @@ class SocketForegroundService : Service() {
             android.util.Log.e("SocketForegroundService", "Error in onDestroy: ${e.message}", e)
         }
 
-        scheduleSelfRestart()
+        // Persistent Restart: If we still have a token, come back alive.
+        if (getDriverAuthToken().isNotBlank()) {
+             android.util.Log.d("SocketForegroundService", "Scheduling restart from onDestroy")
+             scheduleSelfRestart()
+        }
     }
 
     private fun scheduleSelfRestart() {

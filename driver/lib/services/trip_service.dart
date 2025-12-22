@@ -433,9 +433,9 @@ class TripService {
       _log('[TripService]   - ApiResult.body type: ${res.body.runtimeType}');
       _log('[TripService]   - ApiResult.body: ${res.body}');
       
-      // Check if body is a Map and extract error message
-      if (res.body is Map) {
-        final body = res.body as Map;
+      // Extract error message from body
+      if (res.data is Map) {
+        final body = res.data as Map;
         
         // Handle validation errors array (backend returns message as array for validation errors)
         if (body['message'] != null) {
@@ -473,7 +473,7 @@ class TripService {
         
         // Fallback to other error fields
         if (errorMessage == 'Request failed' || errorMessage.isEmpty) {
-          errorMessage = body['error']?.toString() ?? 
+          errorMessage = body['error']?.toString() ??
                         body['msg']?.toString() ??
                         body['errorMessage']?.toString() ??
                         'Request failed';
@@ -514,39 +514,14 @@ class TripService {
             }
           }
         }
-      } 
-      // Also check res.data directly (might be different from body)
-      else if (res.data is Map) {
-        final data = res.data as Map;
-        if (data['message'] != null) {
-          final messageValue = data['message'];
-          if (messageValue is List) {
-            final errorMessages = <String>[];
-            for (var item in messageValue) {
-              if (item is Map) {
-                final msg = item['message']?.toString() ?? '';
-                if (msg.isNotEmpty) {
-                  errorMessages.add(msg);
-                }
-              } else {
-                errorMessages.add(item.toString());
-              }
-            }
-            if (errorMessages.isNotEmpty) {
-              errorMessage = errorMessages.join('. ');
-            }
-          } else if (messageValue is String) {
-            errorMessage = messageValue;
-          }
-        }
       }
       // Fallback to ApiResult message (but it might be array string representation)
-      else if (res.message != null && res.message!.isNotEmpty) {
+      else if (res.message.isNotEmpty) {
         // Check if message looks like an array string representation
-        if (res.message!.startsWith('[') && res.message!.contains('message')) {
+        if (res.message.startsWith('[') && res.message.contains('message')) {
           // Try to parse it
           try {
-            final parsed = jsonDecode(res.message!);
+            final parsed = jsonDecode(res.message);
             if (parsed is List) {
               final errorMessages = <String>[];
               for (var item in parsed) {
@@ -563,10 +538,22 @@ class TripService {
             }
           } catch (_) {
             // If parsing fails, use as-is
-            errorMessage = res.message!;
+            errorMessage = res.message;
           }
         } else {
-          errorMessage = res.message!;
+          errorMessage = res.message;
+        }
+      }
+
+      if (res.statusCode == 400 && (errorMessage == 'Request failed' || errorMessage.isEmpty)) {
+        if (context.contains('start trip')) {
+          errorMessage = 'Unable to start trip. Please check your OTP and odometer reading.';
+        } else if (context.contains('end trip')) {
+          errorMessage = 'Unable to end trip. Please check your OTP and odometer reading.';
+        } else if (context.contains('accept')) {
+          errorMessage = 'Unable to accept booking. Please try again.';
+        } else {
+          errorMessage = 'Request failed. Please check your input and try again.';
         }
       }
       

@@ -10,6 +10,7 @@ import android.os.Process
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import android.os.PowerManager
 import org.json.JSONObject
 
 class NotificationMessagingService : FirebaseMessagingService() {
@@ -28,6 +29,10 @@ class NotificationMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
 
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CabigoDriver::FCMProcessing")
+        wakeLock.acquire(10 * 1000L) // 10 seconds timeout
+
         try {
             val data = remoteMessage.data
             val title = remoteMessage.notification?.title ?: data["title"] ?: "New Notification"
@@ -40,25 +45,46 @@ class NotificationMessagingService : FirebaseMessagingService() {
             if (isAppInForeground()) {
                 // App is in foreground - show overlay via socket already
                 // But also show FCM notification as backup if needed
-                // showNotification(title, message)
                 android.util.Log.d("NotificationMessagingService", "App in foreground, overlay handled by socket")
             } else {
                 // App is in background/closed - show FCM notification
+                // Always try to show notification in system tray provided it's high priority
                 try {
                     showNotification(title, message)
                 } catch (e: Exception) {
                     android.util.Log.e("NotificationMessagingService", "Error showing notification: ${e.message}", e)
                 }
                 
-                // Also try to show overlay via service
+                // Trigger Overlay Animation (Pulse)
                 try {
-                    showOverlayViaService(title, message, data)
+                    val pulseIntent = Intent(this, OverlayService::class.java).apply {
+                        putExtra("action", "pulse")
+                        putExtra("message", "$title: $message")
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(pulseIntent)
+                    } else {
+                        startService(pulseIntent)
+                    }
                 } catch (e: Exception) {
-                    android.util.Log.e("NotificationMessagingService", "Error showing overlay: ${e.message}", e)
+                    android.util.Log.e("NotificationMessagingService", "Error pulsing overlay: ${e.message}", e)
+                }
+
+                // If it looks like a trip offer, try to show full overlay
+                if (data.containsKey("bookingId") || data.containsKey("tripId") || data.containsKey("ids.bookingId")) {
+                    try {
+                        showOverlayViaService(title, message, data)
+                    } catch (e: Exception) {
+                        android.util.Log.e("NotificationMessagingService", "Error showing overlay: ${e.message}", e)
+                    }
                 }
             }
         } catch (e: Exception) {
             android.util.Log.e("NotificationMessagingService", "Error in onMessageReceived: ${e.message}", e)
+        } finally {
+            if (wakeLock.isHeld) {
+                wakeLock.release()
+            }
         }
     }
 
@@ -80,7 +106,11 @@ class NotificationMessagingService : FirebaseMessagingService() {
                 .setContentTitle(title)
                 .setContentText(message)
                 .setContentIntent(pendingIntent)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setFullScreenIntent(pendingIntent, true)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
                 .build()
 
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
@@ -165,6 +195,9 @@ class NotificationMessagingService : FirebaseMessagingService() {
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = "Firebase Cloud Messaging notifications"
+                    enableLights(true)
+                    enableVibration(true)
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
                 }
                 val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                 if (manager != null) {

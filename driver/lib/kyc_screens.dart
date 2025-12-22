@@ -472,7 +472,7 @@ class _PersonalDocumentsScreenState extends State<PersonalDocumentsScreen> {
         }
         
         // Fallback to res.body
-        if ((imageUrl == null || imageUrl.isEmpty) && res.body is Map) {
+        if (imageUrl == null || imageUrl.isEmpty) {
           imageUrl = res.body['data']?.toString();
           debugPrint('[PersonalDocuments] Extracted URL from res.body: $imageUrl');
         }
@@ -485,7 +485,7 @@ class _PersonalDocumentsScreenState extends State<PersonalDocumentsScreen> {
         debugPrint('[PersonalDocuments] ✅ Final image URL: $imageUrl');
         setState(() => onUrl(imageUrl!));
       } else {
-        final errorMsg = res.body is Map ? (res.body['message'] ?? res.message) : res.message;
+        final errorMsg = res.body['message']?.toString() ?? res.message;
         debugPrint('[PersonalDocuments] ❌ Upload failed: $errorMsg');
         throw Exception(errorMsg);
       }
@@ -547,7 +547,7 @@ class _PersonalDocumentsScreenState extends State<PersonalDocumentsScreen> {
       if (res.success) {
         if (mounted) Navigator.pop(context);
       } else {
-        final errorMsg = res.body is Map ? (res.body['message'] ?? res.message) : res.message;
+        final errorMsg = res.body['message']?.toString() ?? res.message;
         debugPrint('[PersonalDocuments] ❌ Submit failed: $errorMsg');
         throw Exception(errorMsg);
       }
@@ -603,7 +603,7 @@ class _PersonalDocumentsScreenState extends State<PersonalDocumentsScreen> {
                       return Image.network(
                         imageUrl,
                         fit: BoxFit.cover,
-                        headers: {
+                        headers: const {
                           'Accept': 'image/*',
                         },
                         loadingBuilder: (context, child, loadingProgress) {
@@ -866,13 +866,14 @@ class _VehicleDetailsScreenState extends State<VehicleDetailsScreen> {
             TextFormField(controller: _modelCtrl, decoration: const InputDecoration(labelText: 'Vehicle Model'), validator: (v) => v!.isEmpty ? 'Required' : null),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _selectedType,
+              key: ValueKey(_vehicleTypes.isEmpty),
+              initialValue: _vehicleTypes.isEmpty ? null : _selectedType,
               items: _vehicleTypes.isEmpty
                   ? [
                       const DropdownMenuItem<String>(
                         value: null,
-                        child: Text('Loading vehicle types...', style: TextStyle(color: Colors.grey)),
                         enabled: false,
+                        child: Text('Loading vehicle types...', style: TextStyle(color: Colors.grey)),
                       )
                     ]
                   : _vehicleTypes.map((e) {
@@ -1002,7 +1003,7 @@ class _VehicleDocumentsScreenState extends State<VehicleDocumentsScreen> {
         }
         
         // Fallback to res.body
-        if ((imageUrl == null || imageUrl.isEmpty) && res.body is Map) {
+        if (imageUrl == null || imageUrl.isEmpty) {
           imageUrl = res.body['data']?.toString();
           debugPrint('[VehicleDocuments] Extracted URL from res.body: $imageUrl');
         }
@@ -1015,7 +1016,7 @@ class _VehicleDocumentsScreenState extends State<VehicleDocumentsScreen> {
         debugPrint('[VehicleDocuments] ✅ Final image URL: $imageUrl');
         setState(() => onUrl(imageUrl!));
       } else {
-        final errorMsg = res.body is Map ? (res.body['message'] ?? res.message) : res.message;
+        final errorMsg = res.body['message']?.toString() ?? res.message;
         debugPrint('[VehicleDocuments] ❌ Upload failed: $errorMsg');
         throw Exception(errorMsg);
       }
@@ -1121,7 +1122,7 @@ class _VehicleDocumentsScreenState extends State<VehicleDocumentsScreen> {
                       return Image.network(
                         imageUrl,
                         fit: BoxFit.cover,
-                        headers: {
+                        headers: const {
                           'Accept': 'image/*',
                         },
                         loadingBuilder: (context, child, loadingProgress) {

@@ -49,6 +49,8 @@ class _HomeTabState extends State<HomeTab> {
   @override
   void initState() {
     super.initState();
+    // Initialize socket immediately
+    SocketService().init(widget.token);
     _loadDetails();
     _setupRealtimeListeners();
   }

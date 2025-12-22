@@ -36,36 +36,34 @@ class SocketService {
         return;
       }
       
-      if (_socket != null && _socket!.connected) {
-        debugPrint('[SocketService] Socket already connected, skipping init');
-        return;
+      // If socket exists but is disconnected, we can try to reconnect or recreate
+      if (_socket != null) {
+         if (_socket!.connected) {
+            debugPrint('[SocketService] Socket already connected, checking token...');
+            // Optional: check if token changed? For now, assume if connected, it's fine.
+            return;
+         } else {
+            debugPrint('[SocketService] Socket exists but DISCONNECTED. Re-initializing...');
+            _socket!.dispose();
+         }
       }
 
-      // Ensure we don't have duplicate listeners if re-initializing
-      try {
-        _socket?.dispose();
-      } catch (e) {
-        debugPrint('[SocketService] Error disposing old socket: $e');
-      }
       _isAuthenticated = false;
 
       debugPrint('[SocketService] Initializing socket connection to $kApiBaseUrl');
       
       // IMPORTANT: Use WebSocket-only transport
-      // The socket_io_client package has issues with HTTP polling transport
-      // that causes timeout errors even when the endpoint is reachable.
-      // WebSocket-only bypasses this bug.
       _socket = io.io(
         kApiBaseUrl,
         io.OptionBuilder()
-          .setTransports(['websocket'])  // WebSocket ONLY - polling is buggy
+          .setTransports(['websocket'])  // WebSocket ONLY
           .enableForceNew()
           .disableAutoConnect()
           .setAuth({'token': token})
           .setQuery({'token': token})
           .enableReconnection()
-          .setReconnectionAttempts(5)
-          .setReconnectionDelay(2000)
+          .setReconnectionAttempts(double.infinity) // Retry forever
+          .setReconnectionDelay(3000)
           .build()
       );
       

@@ -93,12 +93,12 @@ export const sendToSingleToken = async (token: string, payload: NotificationPayl
     const message = {
       ...(payload.title && !isTripOffer
         ? {
-            notification: {
-              title: payload.title,
-              body: payload.message,
-              imageUrl: payload.image || '',
-            },
-          }
+          notification: {
+            title: payload.title,
+            body: payload.message,
+            imageUrl: payload.image || '',
+          },
+        }
         : {}),
       data,
       token,
@@ -286,9 +286,16 @@ const chunkArray = <T>(arr: T[], size: number): T[][] => {
 // Send one batch using sendMulticast
 const sendBatch = async (tokens: string[], payload: NotificationPayload) => {
   try {
+    const payloadType = payload.data?.type;
+    const isTripOffer =
+      payloadType === 'NEW_TRIP_OFFER' ||
+      payloadType === 'new-booking' ||
+      payloadType === 'NEW_BOOKING' ||
+      payloadType === 'TRIP_OFFER';
+
     const message: MulticastMessage = {
       tokens,
-      notification: payload.title ? {
+      notification: (payload.title && !isTripOffer) ? {
         title: payload.title,
         body: payload.message || '',
         imageUrl: payload.image,

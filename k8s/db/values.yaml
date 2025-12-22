@@ -50,30 +50,44 @@ auth:
   postgresPassword: "admin_password"
   replicationPassword: "repl_password"
 
+primary:
   persistence:
     enabled: true
     size: 20Gi
   resources:
     requests:
-      cpu: 100m
-      memory: 150Mi
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
   service:
     type: LoadBalancer
 
   livenessProbe:
+    enabled: true
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 10
+    failureThreshold: 6
     exec:
       command:
         - /bin/sh
         - -c
-        - exec pg_isready -U "taxi_user" -d "dbname=defaultdb" -h /tmp -p 5432
+        - exec pg_isready -U "taxi_user" -d "dbname=defaultdb" -h 127.0.0.1 -p 5432
   readinessProbe:
+    enabled: true
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 10
+    failureThreshold: 6
     exec:
       command:
         - /bin/sh
         - -c
         - -e
         - |
-          exec pg_isready -U "taxi_user" -d "dbname=defaultdb" -h /tmp -p 5432
+          exec pg_isready -U "taxi_user" -d "dbname=defaultdb" -h 127.0.0.1 -p 5432
           [ -f /opt/bitnami/postgresql/tmp/.initialized ] || [ -f /bitnami/postgresql/.initialized ]
 
 readReplicas:
