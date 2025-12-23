@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/trip_models.dart';
 import '../widgets/trip_overlay_notification.dart';
 import 'socket_service.dart';
+import 'token_manager.dart';
 import 'trip_service.dart';
 import 'native_overlay_service.dart';
 
@@ -283,39 +285,22 @@ class OverlayNotificationService {
                        eventData['drop'] ?? 
                        eventData['drop_location'] ?? {};
       
-      // Handle JSONB/Map conversion
-      Map<String, dynamic> pickupLoc = {};
-      if (pickupRaw is Map) {
-        pickupLoc = Map<String, dynamic>.from(pickupRaw);
-      } else if (pickupRaw is String) {
-        try {
-          pickupLoc = {'address': pickupRaw};
-        } catch (e) {
-          debugPrint('[OverlayNotification] Error parsing pickup location string: $e');
-        }
-      }
-      
-      Map<String, dynamic> dropLoc = {};
-      if (dropRaw is Map) {
-        dropLoc = Map<String, dynamic>.from(dropRaw);
-      } else if (dropRaw is String) {
-        try {
-          dropLoc = {'address': dropRaw};
-        } catch (e) {
-          debugPrint('[OverlayNotification] Error parsing drop location string: $e');
-        }
-      }
+      // Handle JSONB/Map conversion - parse both JSON strings and plain strings
+      Map<String, dynamic> pickupLoc = _parseLocation(pickupRaw, 'pickup');
+      Map<String, dynamic> dropLoc = _parseLocation(dropRaw, 'drop');
       
       // Extract addresses - try multiple field names
       final pickupAddr = pickupLoc['address']?.toString() ?? 
                         pickupLoc['Address']?.toString() ??
                         pickupLoc['name']?.toString() ?? 
                         pickupLoc['Name']?.toString() ??
+                        pickupLoc['formattedAddress']?.toString() ??
                         'Pickup location';
       final dropAddr = dropLoc['address']?.toString() ?? 
                       dropLoc['Address']?.toString() ??
                       dropLoc['name']?.toString() ?? 
                       dropLoc['Name']?.toString() ??
+                      dropLoc['formattedAddress']?.toString() ??
                       'Drop location';
 
       // Extract fare - try multiple field names (backend uses estimatedAmount/finalAmount)
@@ -377,6 +362,44 @@ class OverlayNotificationService {
       debugPrint('[OverlayNotification] ========================================');
       return null;
     }
+  }
+
+  /// Parse location data from various formats:
+  /// - Map (already parsed JSON)
+  /// - JSON string (e.g. '{"address":"Chennai","lat":13.08,"lng":80.27}')
+  /// - Plain string (e.g. 'Chennai, Tamil Nadu')
+  Map<String, dynamic> _parseLocation(dynamic locationData, String fieldName) {
+    if (locationData == null) {
+      return {};
+    }
+    
+    if (locationData is Map) {
+      return Map<String, dynamic>.from(locationData);
+    }
+    
+    if (locationData is String) {
+      final trimmed = locationData.trim();
+      
+      // Try to parse as JSON first (customer app format)
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          final parsed = json.decode(trimmed);
+          if (parsed is Map) {
+            debugPrint('[OverlayNotification] ✅ Parsed $fieldName as JSON: $parsed');
+            return Map<String, dynamic>.from(parsed);
+          }
+        } catch (e) {
+          debugPrint('[OverlayNotification] ⚠️ Failed to parse $fieldName as JSON: $e');
+        }
+      }
+      
+      // Fallback: treat as plain address string (admin dashboard format)
+      debugPrint('[OverlayNotification] 📍 Using $fieldName as plain address: $trimmed');
+      return {'address': trimmed};
+    }
+    
+    debugPrint('[OverlayNotification] ⚠️ Unknown $fieldName format: ${locationData.runtimeType}');
+    return {};
   }
 
   double? _toDouble(dynamic value) {
@@ -570,8 +593,21 @@ class OverlayNotificationService {
         }
       });
       
+      // Get a fresh token in case current one expired
+      String tokenToUse = _currentToken!;
+      try {
+        final freshToken = await TokenManager.instance.refreshToken();
+        if (freshToken != null) {
+          tokenToUse = freshToken;
+          _currentToken = freshToken;
+          debugPrint('[OverlayNotification] 🔄 Using fresh token for accept request');
+        }
+      } catch (e) {
+        debugPrint('[OverlayNotification] ⚠️ Token refresh failed, using existing token: $e');
+      }
+      
       await _tripService!.acceptTrip(
-        token: _currentToken!,
+        token: tokenToUse,
         tripId: tripId,
       );
       
@@ -581,8 +617,12 @@ class OverlayNotificationService {
       debugPrint('[OverlayNotification] 📌 Overlay will remain visible until confirmation received');
       debugPrint('[OverlayNotification] ========================================');
       
-      // DO NOT hide overlay here - wait for TRIP_ACCEPTED event
-      // The overlay will be hidden when TRIP_ACCEPTED event is received
+      // Hide overlay immediately after successful accept
+      _pendingAcceptTripId = null;
+      _acceptTimeoutTimer?.cancel();
+      _hideOverlay();
+      
+      debugPrint('[OverlayNotification] ✅ Trip accepted successfully - overlay hidden');
       
     } catch (e, stackTrace) {
       debugPrint('[OverlayNotification] ========================================');

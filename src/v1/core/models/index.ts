@@ -187,7 +187,7 @@ export const singleModelSync = async (model: any, options: SyncOptions = { alter
     // await singleModelSync(HourlyPackage, { alter: true });
     // await singleModelSync(Tariff, { alter: true });
     // await singleModelSync(Enquiry, { alter: true});
-    // await singleModelSync(Booking, { alter: true });
+    await singleModelSync(Booking, { alter: true }); // TEMP: Add gpsTrail/gpsDistance columns
     // await singleModelSync(BookingActivityLog, { alter: true });
     // await singleModelSync(VendorBankDetails, { alter: true });
     // await singleModelSync(ConfigKeys, { alter: true });

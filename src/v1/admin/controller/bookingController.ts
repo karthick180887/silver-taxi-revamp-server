@@ -1351,7 +1351,13 @@ export const assignDriver = async (req: Request, res: Response) => {
 
         // 🟢 Emit Socket Event for Real-time Popup
         try {
-            emitNewTripOfferToDriver(driverId, booking.toJSON());
+            // Include fare fields that overlay expects
+            const bookingData = {
+                ...booking.toJSON(),
+                estimatedFare: booking.estimatedAmount || booking.finalAmount || 0,
+                fare: booking.estimatedAmount || booking.finalAmount || 0,
+            };
+            emitNewTripOfferToDriver(driverId, bookingData);
             debug.info(`✅ Socket event 'NEW_TRIP_OFFER' sent to driver ${driverId} from assignDriver`);
         } catch (socketError) {
             debug.error(`❌ Error emitting socket event in assignDriver: ${socketError}`);
@@ -1516,7 +1522,13 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
         if (drivers.length > 0) {
             const driverIds = drivers.map(d => d.driverId);
             try {
-                emitNewTripOfferToDrivers(driverIds, booking.toJSON());
+                // Include fare fields that overlay expects
+                const bookingData = {
+                    ...booking.toJSON(),
+                    estimatedFare: booking.estimatedAmount || booking.finalAmount || 0,
+                    fare: booking.estimatedAmount || booking.finalAmount || 0,
+                };
+                emitNewTripOfferToDrivers(driverIds, bookingData);
                 debug.info(`✅ Socket broadcast 'NEW_TRIP_OFFER' sent to ${driverIds.length} drivers from assignAllDrivers`);
             } catch (socketError) {
                 debug.error(`❌ Error emitting socket broadcast in assignAllDrivers: ${socketError}`);
@@ -1539,6 +1551,23 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
                 const notificationMessage = `${pickupShort} → ${dropShort}\n₹${amount}`;
 
                 // Updated to use direct sendToMultipleTokens instead of RabbitMQ for consistency standard
+                // Parse pickup/drop addresses from JSON if needed
+                const parseAddress = (location: any): string => {
+                    if (!location) return '';
+                    if (typeof location === 'string') {
+                        try {
+                            const parsed = JSON.parse(location);
+                            return parsed.address || parsed.Address || parsed.name || location;
+                        } catch {
+                            return location;
+                        }
+                    }
+                    if (typeof location === 'object') {
+                        return location.address || location.Address || location.name || JSON.stringify(location);
+                    }
+                    return String(location);
+                };
+
                 await sendToMultipleTokens(fcmTokens, {
                     title: notificationTitle,
                     message: notificationMessage,
@@ -1550,9 +1579,11 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
                         channelKey: "booking_channel",
                         bookingId: String(booking.bookingId),
                         adminId: String(booking.adminId),
-                        pickup: String(booking.pickup || ''),
-                        drop: String(booking.drop || ''),
+                        pickup: parseAddress(booking.pickup),
+                        drop: parseAddress(booking.drop),
                         estimatedPrice: String(amount),
+                        estimatedFare: String(amount), // Also include this key for compatibility
+                        fare: String(amount), // Include this too
                         pickupDateTime: String(booking.pickupDateTime || ''),
                         customerName: String(booking.name || ''),
                         customerPhone: String(booking.phone || ''),
@@ -1578,14 +1609,14 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
         });
     } catch (error: any) {
         debug.info(`Assign all drivers | Error: ${error}`);
-        
+
         // Check if it's a connection error
-        const isConnectionError = 
+        const isConnectionError =
             error.name === 'SequelizeConnectionError' ||
             error.message?.includes('connect failed') ||
             error.message?.includes('server_login_retry') ||
             error.code === '08P01';
-        
+
         if (isConnectionError) {
             debug.error(`Assign all drivers | Database connection error: ${error.message}`);
             return res.status(503).json({
@@ -1594,7 +1625,7 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
                 error: "SERVICE_UNAVAILABLE",
             });
         }
-        
+
         return res.status(500).json({
             success: false,
             message: error instanceof Error ? error.message : "Internal server error",

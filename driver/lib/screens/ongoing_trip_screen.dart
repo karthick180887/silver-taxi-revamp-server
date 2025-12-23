@@ -6,6 +6,7 @@ import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'dart:async';
 import '../models/trip_models.dart';
 import '../services/trip_service.dart';
+import '../services/trip_tracking_service.dart';
 import 'end_trip_screen.dart';
 
 const String kGoogleApiKey = "AIzaSyAYjrbg1hQJYC4vOMvQS7C9lJ3TDWQSuFo";
@@ -31,6 +32,11 @@ class _OngoingTripScreenState extends State<OngoingTripScreen> {
   bool _isLoading = false;
   bool _isOffRoute = false; // Simulation state
   
+  // GPS Tracking
+  final TripTrackingService _trackingService = TripTrackingService();
+  Timer? _distanceUpdateTimer;
+  double _liveDistance = 0.0;
+  
   // Maps Implementation
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
@@ -49,6 +55,32 @@ class _OngoingTripScreenState extends State<OngoingTripScreen> {
     _trip = widget.trip;
     _setupMapData();
     _refreshTripDetails();
+    _startGpsTracking();
+  }
+  
+  @override
+  void dispose() {
+    _distanceUpdateTimer?.cancel();
+    super.dispose();
+  }
+  
+  /// Start GPS tracking for this trip
+  Future<void> _startGpsTracking() async {
+    debugPrint('[OngoingTrip] Starting GPS tracking for trip: ${widget.trip.id}');
+    final success = await _trackingService.startTracking(widget.trip.id);
+    if (success) {
+      debugPrint('[OngoingTrip] GPS tracking started successfully');
+      // Update distance display every 30 seconds
+      _distanceUpdateTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) {
+          setState(() {
+            _liveDistance = _trackingService.calculateDistance();
+          });
+        }
+      });
+    } else {
+      debugPrint('[OngoingTrip] Failed to start GPS tracking');
+    }
   }
   
   Future<void> _setupMapData() async {
@@ -550,44 +582,79 @@ class _OngoingTripScreenState extends State<OngoingTripScreen> {
   }
 
   Widget _buildEndTripButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton(
-        onPressed: () {
-           Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => EndTripScreen(
-                trip: _trip, // Use updated trip
-                token: widget.token,
-                tripService: widget.tripService,
+    return Column(
+      children: [
+        // Live distance tracker
+        if (_trackingService.isTracking)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF22C55E).withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.gps_fixed, color: Color(0xFF22C55E), size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'GPS Tracking: ${_liveDistance.toStringAsFixed(1)} km traveled',
+                  style: const TextStyle(
+                    color: Color(0xFF166534),
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: ElevatedButton(
+            onPressed: () {
+              // Stop tracking and get results
+              final trackingResult = _trackingService.stopTracking();
+              debugPrint('[OngoingTrip] GPS tracking stopped. Distance: ${trackingResult.totalDistanceKm} km');
+              
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => EndTripScreen(
+                    trip: _trip,
+                    token: widget.token,
+                    tripService: widget.tripService,
+                    trackingResult: trackingResult, // Pass GPS data
+                  ),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
             ),
-          );
-        },
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFEF4444), // Red
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.stop_circle_outlined),
+                SizedBox(width: 8),
+                Text(
+                  'End Trip',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.stop_circle_outlined),
-            SizedBox(width: 8),
-            Text(
-              'End Trip',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 }

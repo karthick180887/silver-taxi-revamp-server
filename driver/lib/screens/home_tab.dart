@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -53,7 +54,20 @@ class _HomeTabState extends State<HomeTab> {
     SocketService().init(widget.token);
     _loadDetails();
     _setupRealtimeListeners();
+    
+    // Listen for Native Intents (Lock Screen Wake) - NO LONGER SHOWING IN-APP DIALOG
+    // Native overlay and push notifications handle trip offers
+    const MethodChannel('cabigo.driver/overlay').setMethodCallHandler((call) async {
+       if (call.method == 'showTripDialog') {
+            debugPrint('HomeTab: 🚨 Received showTripDialog from Native - ignoring (native overlay handles it)');
+            // No in-app dialog - native overlay is sufficient
+       }
+    });
+    
+    // Pending trip check is no longer needed - native overlay handles it
   }
+  
+  // Removed _checkPendingTripData - no longer showing in-app dialogs
 
   @override
   void dispose() {
@@ -85,6 +99,19 @@ class _HomeTabState extends State<HomeTab> {
           type.isEmpty) {
         debugPrint('HomeTab: ? Refreshing counts due to event: $type');
         _loadBookingCountsOnly();
+        
+        if (type == 'NEW_TRIP_OFFER') {
+             debugPrint('HomeTab: 🔔 NEW_TRIP_OFFER received - native overlay will handle popup');
+             
+             // 1. Play Sound via Native Channel
+             try {
+                const MethodChannel('cabigo.driver/overlay').invokeMethod('playSound');
+             } catch (e) {
+                debugPrint('HomeTab: Error playing sound: $e');
+             }
+             
+             // No in-app dialog - native overlay and push notification are sufficient
+        }
       }
     });
   }
@@ -574,6 +601,68 @@ class _HomeTabState extends State<HomeTab> {
         setState(() => _paymentInProgress = false);
       }
     }
+  }
+
+  void _showTripOfferDialog(Map<String, dynamic> trip) {
+    if (!mounted) return;
+    
+    // Extract details
+    final tripId = trip['ids.bookingId'] ?? trip['bookingId'] ?? trip['ids.tripId'] ?? trip['tripId'] ?? '';
+    final pickup = trip['pickupLocation'] ?? trip['pickup'] ?? 'Unknown location';
+    final drop = trip['dropLocation'] ?? trip['drop'] ?? 'Unknown destination';
+    final fare = trip['estimatedFare'] ?? trip['fare'] ?? '0';
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New Trip Offer! 🚗'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.my_location, color: Colors.green),
+              title: const Text('Pickup'),
+              subtitle: Text(pickup.toString()),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.location_on, color: Colors.red),
+              title: const Text('Drop'),
+              subtitle: Text(drop.toString()),
+            ),
+            const SizedBox(height: 10),
+            Text('💰 Fare: ₹$fare', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+               // Reject logic if needed
+               Navigator.pop(ctx);
+            },
+            child: const Text('IGNORE', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              // Navigate to AllTripsPage or trigger accept
+               Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => AllTripsPage(
+                    token: widget.token,
+                    status: 'new-booking', // Use backend status constant
+                    title: 'New Requests',
+                  ),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            child: const Text('VIEW', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

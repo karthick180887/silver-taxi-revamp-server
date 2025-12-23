@@ -50,7 +50,7 @@ class NotificationMessagingService : FirebaseMessagingService() {
                 // App is in background/closed - show FCM notification
                 // Always try to show notification in system tray provided it's high priority
                 try {
-                    showNotification(title, message)
+                    showNotification(title, message, data)
                 } catch (e: Exception) {
                     android.util.Log.e("NotificationMessagingService", "Error showing notification: ${e.message}", e)
                 }
@@ -88,12 +88,22 @@ class NotificationMessagingService : FirebaseMessagingService() {
         }
     }
 
-    private fun showNotification(title: String, message: String) {
+    private fun showNotification(title: String, message: String, data: Map<String, String>) {
         try {
             createNotificationChannel()
             
             val intent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("unlock", true) // Triggers unlock/wake logic
+                
+                // Pass trip data for immediate display in Flutter
+                if (data.containsKey("bookingId") || data.containsKey("ids.bookingId")) {
+                    putExtra("tripData", true)
+                    putExtra("bookingId", data["bookingId"] ?: data["ids.bookingId"])
+                    putExtra("pickup", data["pickupLocation"] ?: data["pickup"])
+                    putExtra("drop", data["dropLocation"] ?: data["drop"])
+                    putExtra("fare", data["estimatedFare"] ?: data["fare"])
+                }
             }
             val pendingIntent = PendingIntent.getActivity(
                 this, 0, intent,
@@ -135,7 +145,8 @@ class NotificationMessagingService : FirebaseMessagingService() {
                     ?: ""
 
             val fare =
-                data["estimatedFare"]
+                data["estimatedPrice"]
+                    ?: data["estimatedFare"]
                     ?: data["fare"]
                     ?: data["estimatedAmount"]
                     ?: data["finalAmount"]

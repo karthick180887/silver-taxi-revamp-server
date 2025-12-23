@@ -582,6 +582,7 @@ class DriverApiClient extends BaseApiClient {
     required double endOdometer,
     String? endOdometerImage,
     Map<String, dynamic>? driverCharges,
+    List<Map<String, dynamic>>? gpsPoints, // GPS trail data from trip tracking
     String? accessToken, // Added for Widget flow
   }) {
     final Map<String, dynamic> body = {
@@ -594,6 +595,10 @@ class DriverApiClient extends BaseApiClient {
     if (distance != null) body['distance'] = distance;
     if (duration != null) body['duration'] = duration;
     if (driverCharges != null) body['driverCharges'] = driverCharges;
+    if (gpsPoints != null && gpsPoints.isNotEmpty) {
+      body['gpsPoints'] = gpsPoints;
+      body['gpsDistance'] = distance; // Explicitly mark as GPS-calculated distance
+    }
     if (accessToken != null && accessToken.isNotEmpty) {
       body['accessToken'] = accessToken;
     }

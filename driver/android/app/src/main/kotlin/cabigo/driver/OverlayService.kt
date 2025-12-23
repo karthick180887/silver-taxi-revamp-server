@@ -59,15 +59,48 @@ class OverlayService : Service() {
     private val NOTIFICATION_ID = 2
     private val CHANNEL_ID = "overlay_service_channel"
     private val API_BASE_URL = "https://api.cabigo.in"
+    private val SELF_CHECK_INTERVAL = 30_000L // 30 seconds
     
     // Animation
     private var pulseAnimator: ValueAnimator? = null
     private val handler = Handler(Looper.getMainLooper())
+    
+    // Self-monitoring runnable - checks every 30 seconds if floating button is showing
+    private val selfCheckRunnable = object : Runnable {
+        override fun run() {
+            try {
+                android.util.Log.d("OverlayService", "🔄 Self-check: isFloatingButtonShowing=$isFloatingButtonShowing")
+                
+                // Ensure floating button is always visible
+                if (!isFloatingButtonShowing) {
+                    android.util.Log.d("OverlayService", "⚠️ Floating button not showing, restarting...")
+                    showFloatingButton()
+                }
+                
+                // Check if window manager is still valid
+                if (windowManager == null) {
+                    android.util.Log.d("OverlayService", "⚠️ WindowManager is null, reinitializing...")
+                    windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+                }
+                
+                // Schedule next check
+                handler.postDelayed(this, SELF_CHECK_INTERVAL)
+            } catch (e: Exception) {
+                android.util.Log.e("OverlayService", "❌ Self-check error: ${e.message}")
+                // Still schedule next check even on error
+                handler.postDelayed(this, SELF_CHECK_INTERVAL)
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        
+        // Start self-monitoring
+        android.util.Log.d("OverlayService", "🚀 Starting self-monitoring (every ${SELF_CHECK_INTERVAL/1000}s)")
+        handler.postDelayed(selfCheckRunnable, SELF_CHECK_INTERVAL)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -235,19 +268,19 @@ class OverlayService : Service() {
                     null
                 )
             } catch (e: Exception) {
-                // Fallback view
+                // Fallback view - use app launcher icon
                 FrameLayout(this).apply {
                     background = android.graphics.drawable.GradientDrawable().apply {
                          shape = android.graphics.drawable.GradientDrawable.OVAL
-                         setColor(0xFFFF6B35.toInt())
-                         setStroke(2, 0xFFFFFFFF.toInt())
+                         setColor(0xFFFFFFFF.toInt()) // White background
+                         setStroke(3, 0xFF2196F3.toInt()) // Blue border
                     }
-                    val tv = TextView(context).apply {
-                        text = "🚗"
-                        textSize = 24f
-                        gravity = Gravity.CENTER
+                    val iconView = android.widget.ImageView(context).apply {
+                        setImageResource(R.mipmap.ic_launcher)
+                        scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
                     }
-                    addView(tv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+                    val iconSize = 100
+                    addView(iconView, FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER))
                 }
             }
             
@@ -260,8 +293,8 @@ class OverlayService : Service() {
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                         WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-                width = 150
-                height = 150
+                width = 180  // Large to match 140dp button
+                height = 180
                 gravity = Gravity.TOP or Gravity.START
                 x = 20
                 y = 200
@@ -431,62 +464,200 @@ class OverlayService : Service() {
         } catch (e: Exception) {}
     }
 
-    // --- Full Overlay Logic (Trip Offer) ---
-    // Reuse existing logic but simplified
+    // Uber-style bottom sheet overlay
     private fun showOverlay(tripId: String, fare: String, pickup: String, drop: String, customerName: String) {
-        // ... (Similar to previous implementation but ensure it doesn't conflict with button)
-        // Implementation omitted for brevity in this replace block, keeping the core idea
-        // In real impl, I'd paste the full showOverlay logic here.
-        // For the purpose of this tool call, I will paste the previous showOverlay logic back in.
-        
         try {
             if (isOverlayShowing) hideOverlay()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(this)) return
 
-            // Create overlay view logic...
-            // (Using the programmatic view creation from before)
+            android.util.Log.d("OverlayService", "=== SHOWING UBER-STYLE OVERLAY ===")
+            android.util.Log.d("OverlayService", "Trip: $tripId, Fare: $fare")
+            android.util.Log.d("OverlayService", "Pickup: $pickup")
+            android.util.Log.d("OverlayService", "Drop: $drop")
+            
+            // Parse fare - ensure it's a valid number
+            val fareValue = fare.replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: 0.0
+            val fareDisplay = if (fareValue > 0) "₹${String.format("%.0f", fareValue)}" else "₹---"
+
+            val density = resources.displayMetrics.density
+            fun dpToPx(dp: Int): Int = (dp * density).toInt()
+
+            // Main container - dark card with rounded top corners
             overlayView = FrameLayout(this).apply {
-                setBackgroundColor(0xFF2196F3.toInt())
-                setPadding(32, 32, 32, 32)
-                
-                val layout = android.widget.LinearLayout(context).apply {
-                    orientation = android.widget.LinearLayout.VERTICAL
-                    addView(TextView(context).apply { text = "₹$fare"; textSize = 20f; setTextColor(0xFFFFFFFF.toInt()) })
-                    addView(TextView(context).apply { text = "Pickup: $pickup"; setTextColor(0xFFFFFFFF.toInt()) })
-                    addView(TextView(context).apply { text = "Drop: $drop"; setTextColor(0xFFFFFFFF.toInt()) })
-                    
-                    val btns = android.widget.LinearLayout(context).apply {
-                        orientation = android.widget.LinearLayout.HORIZONTAL
-                        addView(Button(context).apply { text = "Accept"; setOnClickListener { 
-                            val intent = Intent("cabigo.driver.OVERLAY_ACCEPT").apply { putExtra("tripId", tripId) }
-                            sendBroadcast(intent)
-                            hideOverlay()
-                        }})
-                        addView(Button(context).apply { text = "Decline"; setOnClickListener { 
-                             rejectTripOffer(tripId, "button")
-                        }})
-                    }
-                    addView(btns)
+                val cardBg = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0xFF1A1A2E.toInt()) // Dark navy
+                    cornerRadii = floatArrayOf(
+                        dpToPx(24).toFloat(), dpToPx(24).toFloat(), // top-left
+                        dpToPx(24).toFloat(), dpToPx(24).toFloat(), // top-right
+                        0f, 0f, 0f, 0f // bottom corners
+                    )
                 }
-                addView(layout)
+                background = cardBg
+                setPadding(dpToPx(20), dpToPx(16), dpToPx(20), dpToPx(24))
+                elevation = dpToPx(16).toFloat()
+
+                val mainLayout = android.widget.LinearLayout(context).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+
+                    // Handle bar (like iOS/Uber style)
+                    addView(View(context).apply {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(0xFF4A4A5A.toInt())
+                            cornerRadius = dpToPx(2).toFloat()
+                        }
+                    }, android.widget.LinearLayout.LayoutParams(dpToPx(40), dpToPx(4)).apply {
+                        gravity = Gravity.CENTER_HORIZONTAL
+                        bottomMargin = dpToPx(16)
+                    })
+
+                    // Header: "New Trip Request" + Fare
+                    addView(android.widget.LinearLayout(context).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL
+                        addView(TextView(context).apply {
+                            text = "New Trip Request"
+                            textSize = 16f
+                            setTextColor(0xFFAAAAAA.toInt())
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                        }, android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                        addView(TextView(context).apply {
+                            text = fareDisplay
+                            textSize = 28f
+                            setTextColor(0xFF4CAF50.toInt()) // Green
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                        })
+                    }, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        bottomMargin = dpToPx(20)
+                    })
+
+                    // Pickup location row
+                    addView(android.widget.LinearLayout(context).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        addView(View(context).apply {
+                            background = android.graphics.drawable.GradientDrawable().apply {
+                                shape = android.graphics.drawable.GradientDrawable.OVAL
+                                setColor(0xFF4CAF50.toInt()) // Green dot
+                            }
+                        }, android.widget.LinearLayout.LayoutParams(dpToPx(12), dpToPx(12)).apply { rightMargin = dpToPx(12) })
+                        addView(TextView(context).apply {
+                            text = pickup.take(50) + if(pickup.length > 50) "..." else ""
+                            textSize = 14f
+                            setTextColor(0xFFFFFFFF.toInt())
+                            maxLines = 2
+                        }, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT))
+                    }, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        bottomMargin = dpToPx(4)
+                    })
+
+                    // Vertical line connector
+                    addView(View(context).apply {
+                        setBackgroundColor(0xFF4A4A5A.toInt())
+                    }, android.widget.LinearLayout.LayoutParams(dpToPx(2), dpToPx(16)).apply {
+                        leftMargin = dpToPx(5)
+                        bottomMargin = dpToPx(4)
+                    })
+
+                    // Drop location row
+                    addView(android.widget.LinearLayout(context).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        addView(View(context).apply {
+                            background = android.graphics.drawable.GradientDrawable().apply {
+                                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                                setColor(0xFFFF5722.toInt()) // Orange square
+                                cornerRadius = dpToPx(2).toFloat()
+                            }
+                        }, android.widget.LinearLayout.LayoutParams(dpToPx(12), dpToPx(12)).apply { rightMargin = dpToPx(12) })
+                        addView(TextView(context).apply {
+                            text = drop.take(50) + if(drop.length > 50) "..." else ""
+                            textSize = 14f
+                            setTextColor(0xFFFFFFFF.toInt())
+                            maxLines = 2
+                        }, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT))
+                    }, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        bottomMargin = dpToPx(24)
+                    })
+
+                    // Buttons row
+                    addView(android.widget.LinearLayout(context).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL
+                        
+                        // Decline button
+                        addView(Button(context).apply {
+                            text = "DECLINE"
+                            textSize = 14f
+                            setTextColor(0xFFFFFFFF.toInt())
+                            background = android.graphics.drawable.GradientDrawable().apply {
+                                setColor(0xFF3A3A4A.toInt())
+                                cornerRadius = dpToPx(12).toFloat()
+                            }
+                            setPadding(dpToPx(16), dpToPx(14), dpToPx(16), dpToPx(14))
+                            setOnClickListener { rejectTripOffer(tripId, "button") }
+                        }, android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                            rightMargin = dpToPx(12)
+                        })
+                        
+                        // Accept button
+                        addView(Button(context).apply {
+                            text = "ACCEPT"
+                            textSize = 14f
+                            setTextColor(0xFFFFFFFF.toInt())
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                            background = android.graphics.drawable.GradientDrawable().apply {
+                                setColor(0xFF4CAF50.toInt()) // Green
+                                cornerRadius = dpToPx(12).toFloat()
+                            }
+                            setPadding(dpToPx(16), dpToPx(14), dpToPx(16), dpToPx(14))
+                            setOnClickListener {
+                                android.util.Log.d("OverlayService", "========================================")
+                                android.util.Log.d("OverlayService", "🎯 ACCEPT BUTTON CLICKED for trip: $tripId")
+                                android.util.Log.d("OverlayService", "========================================")
+                                
+                                // Hide overlay immediately
+                                hideOverlay()
+                                
+                                // Method 1: Launch MainActivity with accept intent
+                                val launchIntent = Intent(this@OverlayService, MainActivity::class.java).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                           Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                           Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                    putExtra("overlayAccept", true)
+                                    putExtra("tripId", tripId)
+                                }
+                                startActivity(launchIntent)
+                                android.util.Log.d("OverlayService", "✅ MainActivity launched with accept intent for trip: $tripId")
+                                
+                                // Method 2: Also send broadcast as backup
+                                val broadcastIntent = Intent("cabigo.driver.OVERLAY_ACCEPT").apply { 
+                                    setPackage(packageName) // Make it explicit
+                                    putExtra("tripId", tripId) 
+                                }
+                                sendBroadcast(broadcastIntent)
+                                android.util.Log.d("OverlayService", "✅ Broadcast sent for trip: $tripId")
+                            }
+                        }, android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                    })
+                }
+                addView(mainLayout, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
             }
             
             val params = WindowManager.LayoutParams().apply {
-                 type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
-                 format = PixelFormat.TRANSLUCENT
-                 width = WindowManager.LayoutParams.MATCH_PARENT
-                 height = WindowManager.LayoutParams.WRAP_CONTENT
-                 gravity = Gravity.TOP
-                 flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
+                format = PixelFormat.TRANSLUCENT
+                width = WindowManager.LayoutParams.MATCH_PARENT
+                height = WindowManager.LayoutParams.WRAP_CONTENT
+                gravity = Gravity.BOTTOM // SLIDE FROM BOTTOM
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                       WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                       WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                       WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
             }
             
             windowManager?.addView(overlayView, params)
             isOverlayShowing = true
+            android.util.Log.d("OverlayService", "✅ Uber-style overlay shown successfully")
         } catch (e: Exception) {
-            android.util.Log.e("OverlayService", "Error showing overlay: ${e.message}")
+            android.util.Log.e("OverlayService", "Error showing overlay: ${e.message}", e)
         }
     }
 
@@ -533,6 +704,10 @@ class OverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         stopPulseAnimation()
+        
+        // Stop self-monitoring
+        handler.removeCallbacks(selfCheckRunnable)
+        android.util.Log.d("OverlayService", "🛑 Self-monitoring stopped")
         
         // RELENTLESS RESTART: Only stop if we specifically receive an intent to stop (e.g. logout)
         // or if the driver token is gone.

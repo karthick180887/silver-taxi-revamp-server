@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Process
@@ -30,6 +31,8 @@ class MainActivity : FlutterActivity() {
         
         // Handle accept intent if app was started from overlay
         handleAcceptIntent(intent)
+        // Handle trip data from notification (Lock Screen Wake)
+        handleTripDataIntent(intent)
 
         // Start native socket foreground service
         startSocketService()
@@ -139,7 +142,42 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleUnlockRequest(intent)
+        handleUnlockRequest(intent)
         handleAcceptIntent(intent)
+        handleTripDataIntent(intent)
+    }
+    
+    private var pendingTripData: Map<String, String>? = null
+
+    private fun handleTripDataIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra("tripData", false) == true) {
+            val bookingId = intent.getStringExtra("bookingId") ?: ""
+            Log.d("MainActivity", "========================================")
+            Log.d("MainActivity", "🚨🚨🚨 HANDLING TRIP DATA INTENT 🚨🚨🚨")
+            Log.d("MainActivity", "Trip ID: $bookingId")
+            
+            val data = mapOf(
+                "bookingId" to bookingId,
+                "pickup" to (intent.getStringExtra("pickup") ?: ""),
+                "drop" to (intent.getStringExtra("drop") ?: ""),
+                "fare" to (intent.getStringExtra("fare") ?: "0")
+            )
+            
+            // Store as pending in case Flutter isn't ready
+            pendingTripData = data
+            
+            if (methodChannel != null) {
+                // Delay slightly to ensure Flutter engine is ready if just launched
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try {
+                        methodChannel?.invokeMethod("showTripDialog", data)
+                        Log.d("MainActivity", "✅ Sent showTripDialog to Flutter")
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "❌ Error sending showTripDialog: ${e.message}")
+                    }
+                }, 1500)
+            }
+        }
     }
     
     private fun handleAcceptIntent(intent: Intent?) {
@@ -193,8 +231,13 @@ class MainActivity : FlutterActivity() {
                 }
             }
             val filter = IntentFilter("cabigo.driver.OVERLAY_ACCEPT")
-            registerReceiver(acceptReceiver, filter)
-            Log.d("MainActivity", "✅ Broadcast receiver registered successfully")
+            // Android 13+ (API 33) requires explicit receiver export flag
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(acceptReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(acceptReceiver, filter)
+            }
+            Log.d("MainActivity", "✅ Broadcast receiver registered successfully (API ${Build.VERSION.SDK_INT})")
         } catch (e: Exception) {
             Log.e("MainActivity", "❌ Error registering broadcast receiver: ${e.message}", e)
         }
@@ -310,6 +353,25 @@ class MainActivity : FlutterActivity() {
                 "requestBatteryOptimization" -> {
                     requestBatteryOptimization()
                     result.success(null)
+                }
+                "getPendingTrip" -> {
+                    if (pendingTripData != null) {
+                        result.success(pendingTripData)
+                        pendingTripData = null // Clear after reading
+                    } else {
+                        result.success(null)
+                    }
+                }
+                "playSound" -> {
+                    try {
+                        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                        val ringtone = RingtoneManager.getRingtone(applicationContext, uri)
+                        ringtone.play()
+                        result.success(true)
+                    } catch (e: Exception) {
+                         Log.e("MainActivity", "Error playing sound: ${e.message}")
+                         result.error("SOUND_ERROR", e.message, null)
+                    }
                 }
                 else -> {
                     result.notImplemented()

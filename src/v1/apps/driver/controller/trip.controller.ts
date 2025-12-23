@@ -798,12 +798,20 @@ export const tripEnd = async (req: Request, res: Response) => {
         }
 
 
+        // Extract GPS trail data if provided
+        const { gpsPoints, gpsDistance } = req.body;
+        console.log("GPS Points received:", gpsPoints?.length || 0, "points");
+        console.log("GPS Distance received:", gpsDistance, "km");
+
         await booking.update({
             endOdometerImage: endOdometerImage || null,
             endOdometerValue,
             endOtp,
             tripCompletedTime: new Date(),
             driverCharges: driverCharges || null,
+            // GPS trail data from driver app
+            gpsTrail: gpsPoints || null,
+            gpsDistance: gpsDistance || null,
         });
 
         await booking.save();

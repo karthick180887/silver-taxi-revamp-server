@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../api_client.dart';
 import '../models/trip_models.dart';
 import '../services/trip_service.dart';
+import '../services/trip_tracking_service.dart';
 import '../services/odometer_ocr_service.dart';
 import 'package:sendotp_flutter_sdk/sendotp_flutter_sdk.dart';
 
@@ -13,11 +14,13 @@ class EndTripScreen extends StatefulWidget {
     required this.trip,
     required this.token,
     required this.tripService,
+    this.trackingResult, // GPS tracking data from OngoingTripScreen
   });
 
   final TripModel trip;
   final String token;
   final TripService tripService;
+  final TripTrackingResult? trackingResult;
 
   @override
   State<EndTripScreen> createState() => _EndTripScreenState();
@@ -25,7 +28,7 @@ class EndTripScreen extends StatefulWidget {
 
 class _EndTripScreenState extends State<EndTripScreen> {
   final _endOdoController = TextEditingController();
-  final _endOtpController = TextEditingController(); // Added for End OTP
+  final _endOtpController = TextEditingController();
   final _petChargeController = TextEditingController(text: '0');
   final _permitChargeController = TextEditingController(text: '0');
   final _parkingChargeController = TextEditingController(text: '0');
@@ -35,7 +38,7 @@ class _EndTripScreenState extends State<EndTripScreen> {
 
   File? _odoImage;
   final ImagePicker _picker = ImagePicker();
-  final _api = ApiClient(baseUrl: kApiBaseUrl); // Added for OTP fetching
+  final _api = ApiClient(baseUrl: kApiBaseUrl);
   final _ocrService = OdometerOcrService();
   bool _loading = false;
   bool _processingOcr = false;
@@ -44,12 +47,32 @@ class _EndTripScreenState extends State<EndTripScreen> {
   double _startOdo = 0.0;
   double _endOdo = 0.0;
   double _totalDistance = 0.0;
+  
+  // GPS tracking info
+  double? _gpsDistance;
+  int? _gpsDuration;
+  int _gpsPointCount = 0;
 
   @override
   void initState() {
     super.initState();
     // Initialize from trip data if available
     _startOdo = widget.trip.startOdometer ?? 0.0;
+    
+    // Initialize GPS data from tracking result if available
+    if (widget.trackingResult != null) {
+      _gpsDistance = widget.trackingResult!.totalDistanceKm;
+      _gpsDuration = widget.trackingResult!.durationMinutes;
+      _gpsPointCount = widget.trackingResult!.gpsPoints.length;
+      
+      // Pre-fill distance with GPS-calculated value
+      _totalDistance = _gpsDistance!;
+      
+      debugPrint('[EndTripScreen] GPS data received:');
+      debugPrint('[EndTripScreen] - Distance: $_gpsDistance km');
+      debugPrint('[EndTripScreen] - Duration: $_gpsDuration min');
+      debugPrint('[EndTripScreen] - Points: $_gpsPointCount');
+    }
   }
 
   @override
@@ -606,9 +629,10 @@ class _EndTripScreenState extends State<EndTripScreen> {
         tripId: widget.trip.id,
         endOtp: _endOtpController.text,
         distance: _totalDistance,
-        duration: 30, // Mock duration in minutes
+        duration: _gpsDuration ?? 30, // Use GPS duration if available, otherwise default
         endOdometer: _endOdo,
         driverCharges: driverCharges,
+        gpsPoints: widget.trackingResult?.gpsPointsJson, // Pass GPS trail data
         accessToken: accessToken, // Pass Widget Token
       );
 
@@ -671,6 +695,85 @@ class _EndTripScreenState extends State<EndTripScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // GPS Tracking Info Card (if available)
+                  if (_gpsDistance != null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.green.shade50, Colors.teal.shade50],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.green.shade200),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade100,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.gps_fixed, color: Colors.green.shade700, size: 20),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'GPS Tracking Data',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Color(0xFF166534),
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade100,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '$_gpsPointCount points',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.green.shade800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildGpsInfoItem(
+                                  icon: Icons.straighten,
+                                  label: 'Distance',
+                                  value: '${_gpsDistance!.toStringAsFixed(1)} km',
+                                ),
+                              ),
+                              Container(width: 1, height: 40, color: Colors.green.shade200),
+                              Expanded(
+                                child: _buildGpsInfoItem(
+                                  icon: Icons.timer_outlined,
+                                  label: 'Duration',
+                                  value: '${_gpsDuration ?? 0} min',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  
                   // Odometer Photo Section with OCR
                   GestureDetector(
                     onTap: _processingOcr ? null : _takePhoto,
@@ -920,6 +1023,35 @@ class _EndTripScreenState extends State<EndTripScreen> {
             prefixText: '₹ ',
             border: OutlineInputBorder(),
             contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGpsInfoItem({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.green.shade700, size: 24),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF166534),
           ),
         ),
       ],

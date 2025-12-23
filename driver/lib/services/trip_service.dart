@@ -318,6 +318,7 @@ class TripService {
     required int duration,
     required double endOdometer, // Now required, not optional
     Map<String, dynamic>? driverCharges,
+    List<Map<String, dynamic>>? gpsPoints, // GPS trail from TripTrackingService
     String? accessToken, // Added for Widget flow
   }) async {
     // Validate required fields
@@ -336,6 +337,7 @@ class TripService {
       duration: duration,
       endOdometer: endOdometer,
       driverCharges: driverCharges,
+      gpsPoints: gpsPoints,
       accessToken: accessToken,
     );
     _ensureSuccess(res, 'end trip');

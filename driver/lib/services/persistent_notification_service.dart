@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'socket_service.dart';
+import 'token_manager.dart';
 import 'trip_service.dart';
 
 /// Persistent notification service that shows trip availability to drivers.
@@ -153,9 +154,40 @@ class PersistentNotificationService {
         await _updateNotification();
       }
     } catch (e) {
-      debugPrint('[PersistentNotification] Error updating trip count: $e');
+      final errorMessage = e.toString().toLowerCase();
+      
+      // Check if this is a token expiration error
+      if (errorMessage.contains('expired') || errorMessage.contains('401') || errorMessage.contains('token')) {
+        debugPrint('[PersistentNotification] Token expired, attempting refresh...');
+        
+        // Try to refresh the token
+        final newToken = await TokenManager.instance.refreshToken();
+        
+        if (newToken != null) {
+          _currentToken = newToken;
+          debugPrint('[PersistentNotification] Token refreshed, retrying...');
+          
+          // Retry with the new token
+          try {
+            final counts = await _tripService.getTripCounts(_currentToken!);
+            final newCount = counts['offers'] ?? 0;
+
+            if (newCount != _currentTripCount) {
+              _currentTripCount = newCount;
+              await _updateNotification();
+            }
+          } catch (retryError) {
+            debugPrint('[PersistentNotification] Retry failed: $retryError');
+          }
+        } else {
+          debugPrint('[PersistentNotification] Token refresh failed');
+        }
+      } else {
+        debugPrint('[PersistentNotification] Error updating trip count: $e');
+      }
     }
   }
+
 
   Future<void> _updateNotification() async {
     if (_currentToken == null) return;

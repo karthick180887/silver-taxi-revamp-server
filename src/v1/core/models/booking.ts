@@ -107,6 +107,11 @@ export interface BookingAttributes {
 
     convenienceFee?: number;
     adminContact?: string;
+
+    // GPS trail from driver app during trip
+    gpsTrail?: { lat: number; lng: number; timestamp: string }[];
+    gpsDistance?: number; // Distance calculated from GPS points (km)
+
     createdAt?: Date;
     updatedAt?: Date;
     deletedAt?: Date;
@@ -219,6 +224,9 @@ class Booking
     public convenienceFee!: number;
     public adminContact!: string;
 
+    // GPS trail from driver app during trip
+    public gpsTrail!: { lat: number; lng: number; timestamp: string }[];
+    public gpsDistance!: number;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -697,6 +705,18 @@ Booking.init(
             type: DataTypes.STRING(20),
             allowNull: true,
             defaultValue: ""
+        },
+        // GPS trail from driver app during trip tracking
+        gpsTrail: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+            defaultValue: null,
+        },
+        gpsDistance: {
+            type: DataTypes.FLOAT,
+            allowNull: true,
+            defaultValue: null,
+            comment: 'Distance in km calculated from GPS points',
         },
     },
     {

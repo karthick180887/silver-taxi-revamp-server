@@ -34,46 +34,52 @@ export async function appAuth(req: Request, res: Response, next: NextFunction) {
     const token = await getJwtToken(req);
 
     if (!token) {
-      res.send("Please provide a auth token");
+      console.log("[appAuth] ❌ No token provided");
+      res.status(401).json({ success: false, message: "Please provide an auth token", data: null });
       return;
     }
-    const decode: JwtType = decodeToken(token);
+
+    let decode: JwtType;
+    try {
+      decode = decodeToken(token);
+    } catch (tokenErr: any) {
+      console.log("[appAuth] ❌ Token decode failed:", tokenErr.message);
+      console.log("[appAuth] Token (first 50 chars):", token.substring(0, 50) + "...");
+      res.status(401).json({
+        success: false,
+        message: tokenErr.name === 'TokenExpiredError' ? "Token expired" : "Invalid token",
+        data: null
+      });
+      return;
+    }
 
     //@ts-ignore
     req.query.id = decode.userData?.id?.toString();
     req.query.username = decode.userData?.username?.toString();
     req.query.role = decode.userData?.role?.toString();
 
-    req.query.driverId = decode.userData.id?.toString();
+    req.query.driverId = decode.userData?.id?.toString();
     req.query.adminId = decode.adminId?.toString();
 
-    console.log("AppAuth Decode:", JSON.stringify(decode));
+    console.log("[appAuth] ✅ Token decoded - driverId:", req.query.driverId, "adminId:", req.query.adminId);
 
     if (req.query.driverId) {
-      console.log("AppAuth: Searching for driverId:", req.query.driverId);
-
       let driver = await getCachedUser('driver', req.query.driverId as string);
 
       if (!driver) {
-        console.log("driver not found or not logged in. ID:", req.query.driverId);
-        res.status(401).json({ message: "driver not authorized" });
-        return
+        console.log("[appAuth] ❌ Driver not found in DB/cache. ID:", req.query.driverId);
+        res.status(401).json({ success: false, message: "Driver not authorized - not found in database", data: null });
+        return;
       }
 
-      if (!driver) {
-        console.log("driver not found or not logged in");
-        res.status(401).json({ message: "driver not authorized" });
-        return
-      }
-
-      // console.log(`✅ driver verified: ${driver.driverId}`);
+      console.log("[appAuth] ✅ Driver verified:", driver.driverId || driver.id);
     } else {
-      console.log("⚠️ No driver in token, using admin access only");
+      console.log("[appAuth] ⚠️ No driverId in token, using admin access only");
     }
     next();
-  } catch (err) {
-    console.log("ERROR>", err);
-    res.status(401).end();
+  } catch (err: any) {
+    console.log("[appAuth] ❌ Unexpected error:", err.message || err);
+    res.status(401).json({ success: false, message: err.message || "Authentication failed", data: null });
   }
 }
 

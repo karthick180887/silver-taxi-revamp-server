@@ -325,13 +325,36 @@ class SocketForegroundService : Service() {
 
     private fun extractAddress(value: Any?): String {
         if (value == null) return ""
-        if (value is String) return value
+        
+        // If it's a string, try to parse as JSON first (customer app format)
+        if (value is String) {
+            val trimmed = value.trim()
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                // Looks like JSON, try to parse it
+                val map = toMap(trimmed)
+                if (map != null) {
+                    val addr = map["address"]?.toString()
+                        ?: map["Address"]?.toString()
+                        ?: map["name"]?.toString()
+                        ?: map["Name"]?.toString()
+                        ?: map["formattedAddress"]?.toString()
+                    if (!addr.isNullOrBlank()) {
+                        android.util.Log.d("SocketForegroundService", "Parsed JSON address: $addr")
+                        return addr
+                    }
+                }
+            }
+            // Not JSON or parsing failed - return as plain address (admin dashboard format)
+            return value
+        }
 
+        // Already a map object
         val map = toMap(value) ?: return value.toString()
         return map["address"]?.toString()
             ?: map["Address"]?.toString()
             ?: map["name"]?.toString()
             ?: map["Name"]?.toString()
+            ?: map["formattedAddress"]?.toString()
             ?: ""
     }
 
