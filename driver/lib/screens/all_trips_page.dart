@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api_client.dart';
 import '../services/trip_service.dart';
+import '../services/socket_service.dart';
 import '../models/trip_models.dart';
 import 'estimated_fare_screen.dart';
 import 'start_trip_screen.dart';
 import 'ongoing_trip_screen.dart';
+import 'trip_summary_screen.dart';
 import '../design_system.dart';
 
 class AllTripsPage extends StatefulWidget {
@@ -29,11 +32,36 @@ class _AllTripsPageState extends State<AllTripsPage> {
   List<TripModel> _allTrips = [];
   bool _loading = false;
   String? _error;
+  StreamSubscription? _bookingSub;
 
   @override
   void initState() {
     super.initState();
     _loadAllTrips();
+    _setupSocketListener();
+  }
+
+  @override
+  void dispose() {
+    _bookingSub?.cancel();
+    super.dispose();
+  }
+
+  void _setupSocketListener() {
+    _bookingSub = SocketService().bookingUpdateStream.listen((data) {
+      final type = data['type']?.toString() ?? '';
+      
+      // Auto-refresh on new trip offers, cancellations, or acceptances
+      if (type == 'NEW_TRIP_OFFER' || 
+          type == 'TRIP_CANCELLED' || 
+          type == 'TRIP_ACCEPTED' ||
+          type.isEmpty) {
+        debugPrint('[AllTripsPage] 🔄 Auto-refreshing due to event: $type');
+        if (mounted) {
+          _loadAllTrips();
+        }
+      }
+    });
   }
 
   Future<void> _loadAllTrips() async {
@@ -116,6 +144,19 @@ class _AllTripsPageState extends State<AllTripsPage> {
           ),
         ),
       ).then((_) => _loadAllTrips());
+      return;
+    }
+    
+    // For Completed trips, go to Trip Summary screen
+    if (status == 'completed') {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => TripSummaryScreen(
+            trip: trip,
+            token: widget.token,
+          ),
+        ),
+      );
       return;
     }
     

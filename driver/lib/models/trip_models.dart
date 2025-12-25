@@ -54,6 +54,7 @@ class TripModel {
     required this.raw,
     this.fare,
     this.distance,
+    this.gpsDistance,
     this.duration,
     this.startOtp,
     this.endOtp,
@@ -67,6 +68,11 @@ class TripModel {
     this.permitCharge,
     this.parkingCharge,
     this.waitingCharge,
+    this.taxAmount,
+    this.convenienceFee,
+    this.discountAmount,
+    this.advanceAmount,
+    this.tripCompletedTaxAmount,
   });
 
   final String id;
@@ -76,6 +82,7 @@ class TripModel {
   final String customerName;
   final double? fare;
   final double? distance;
+  final double? gpsDistance; // New field for verification
   final int? duration; // Duration in minutes
   final String? startOtp;
   final String? endOtp;
@@ -89,9 +96,17 @@ class TripModel {
   final double? permitCharge;
   final double? parkingCharge;
   final double? waitingCharge;
+  final double? taxAmount;
+  final double? convenienceFee;
+  final double? discountAmount;
+  final double? advanceAmount;
+  final double? tripCompletedTaxAmount;
   final Map<String, dynamic> raw;
 
   String get normalizedStatus => status.toLowerCase();
+
+  /// Returns the booking/trip ID
+  String get bookingId => id;
 
   // Updated status checks to match new workflow: NEW → OFFERED → ACCEPTED → NON-STARTED → STARTED → COMPLETED/CANCELLED
   bool get isNew =>
@@ -247,7 +262,17 @@ class TripModel {
         data['fare'],
         data['amount'],
       ]),
-      distance: _toDouble(data['distance']),
+      distance: _firstDouble([
+        data['distance'],
+        data['totalDistance'],
+        data['total_distance'],
+        data['estimatedDistance'],
+        data['estimated_distance'],
+      ]),
+      gpsDistance: _firstDouble([
+        data['gpsDistance'],
+        data['gps_distance'],
+      ]),
       duration: data['duration'] is int
           ? data['duration'] as int?
           : (data['duration'] is num
@@ -255,16 +280,57 @@ class TripModel {
               : null),
       startOtp: data['startOtp']?.toString(),
       endOtp: data['endOtp']?.toString(),
-      startOdometer: _toDouble(data['startOdometer']),
-      endOdometer: _toDouble(data['endOdometer']),
-      baseRatePerKm: _toDouble(data['baseRatePerKm'] ?? data['pricePerKm']),
-      vehicleBaseRate: _toDouble(data['vehicleBaseRate']),
-      hillCharge: getCharge('hillCharge'),
-      tollCharge: getCharge('tollCharge'),
+      startOdometer: _toDouble(data['startOdometerValue'] ?? data['startOdometer']),
+      endOdometer: _toDouble(data['endOdometerValue'] ?? data['endOdometer']),
+      baseRatePerKm: _firstDouble([
+        data['baseRatePerKm'],
+        data['pricePerKm'],
+        data['price_per_km'],
+        data['ratePerKm'],
+        data['rate_per_km'],
+        // Also check nested fare objects
+        (data['normalFare'] is Map) ? data['normalFare']['pricePerKm'] : null,
+        (data['modifiedFare'] is Map) ? data['modifiedFare']['pricePerKm'] : null,
+      ]),
+      // Vehicle Base Rate / Driver Beta - check multiple field names
+      vehicleBaseRate: _firstDouble([
+        data['vehicleBaseRate'],
+        data['tripCompletedDriverBeta'],
+        data['driverBeta'],
+        data['driver_beta'],
+      ]),
+      // Hill, Toll, Permit are stored in separate columns (extraHill, extraToll, extraPermitCharge)
+      hillCharge: _firstDouble([
+        data['hillCharge'],
+        data['extraHill'],
+        data['extra_hill'],
+        getCharge('hillCharge'),
+      ]),
+      tollCharge: _firstDouble([
+        data['tollCharge'],
+        data['extraToll'],
+        data['extra_toll'],
+        getCharge('tollCharge'),
+      ]),
+      // Pet, Parking, Waiting are in extraCharges JSON
       petCharge: getCharge('petCharge'),
-      permitCharge: getCharge('permitCharge'),
+      permitCharge: _firstDouble([
+        data['permitCharge'],
+        data['extraPermitCharge'],
+        data['extra_permit_charge'],
+        getCharge('permitCharge'),
+      ]),
       parkingCharge: getCharge('parkingCharge'),
       waitingCharge: getCharge('waitingCharge'),
+      taxAmount: _firstDouble([
+        data['taxAmount'],
+        data['gst'], // Sometimes returned as gst in commission breakup
+        data['tripCompletedTaxAmount'],
+      ]),
+      convenienceFee: _toDouble(data['convenienceFee']),
+      discountAmount: _toDouble(data['discountAmount']),
+      advanceAmount: _toDouble(data['advanceAmount']),
+      tripCompletedTaxAmount: _toDouble(data['tripCompletedTaxAmount']),
       raw: data,
     );
   }

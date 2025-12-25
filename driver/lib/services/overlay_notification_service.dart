@@ -26,6 +26,7 @@ class OverlayNotificationService {
   Timer? _acceptTimeoutTimer; // Timeout for acceptance confirmation
   Timer? _connectionCheckTimer; // Socket connection check timer
   bool _isListenerSetup = false; // Prevent duplicate listener setup
+  bool _hasActiveTripInProgress = false; // Track if driver has a trip in progress
 
   /// Initialize the overlay notification service
   void init(String token, TripService tripService, BuildContext context) {
@@ -58,6 +59,16 @@ class OverlayNotificationService {
   void updateContext(BuildContext context) {
     debugPrint('[OverlayNotification] Updating context');
     _overlayContext = context;
+  }
+
+  /// Set whether driver has an active trip in progress
+  /// When true, new trip offers will be blocked from showing overlays
+  void setActiveTripStatus(bool hasActiveTripInProgress) {
+    _hasActiveTripInProgress = hasActiveTripInProgress;
+    debugPrint('[OverlayNotification] Active trip status set to: $hasActiveTripInProgress');
+    if (hasActiveTripInProgress) {
+      debugPrint('[OverlayNotification] 🚫 New trip offers will be blocked until current trip is completed');
+    }
   }
 
   /// Test function to manually show overlay (for debugging)
@@ -133,6 +144,13 @@ class OverlayNotificationService {
           
           if (_tripService == null) {
             debugPrint('[OverlayNotification] ⚠️ No trip service available');
+            return;
+          }
+          
+          // Check if driver has an active trip in progress - block new offers
+          if (_hasActiveTripInProgress) {
+            debugPrint('[OverlayNotification] 🚫 BLOCKING NEW OFFER - Driver has a trip in progress');
+            debugPrint('[OverlayNotification] ℹ️ Complete current trip to receive new offers');
             return;
           }
           
@@ -410,6 +428,12 @@ class OverlayNotificationService {
     return null;
   }
 
+  /// Public method to manually trigger the overlay (e.g., from HomeTab on startup)
+  void showTripOffer(TripModel trip) {
+    debugPrint('[OverlayNotification] 🔔 Manually triggering overlay for trip: ${trip.id}');
+    _showOverlayNotification(trip);
+  }
+
   void _showOverlayNotification(TripModel trip) async {
     debugPrint('[OverlayNotification] Attempting to show overlay for trip: ${trip.id}');
     
@@ -675,6 +699,13 @@ class OverlayNotificationService {
         
         if (_currentToken == null || _tripService == null) {
           debugPrint('[OverlayNotification] ⚠️ Service not initialized yet, cannot show overlay');
+          return;
+        }
+
+        // Check if driver has an active trip in progress - block new offers
+        if (_hasActiveTripInProgress) {
+          debugPrint('[OverlayNotification] 🚫 BLOCKING FCM OFFER - Driver has a trip in progress');
+          debugPrint('[OverlayNotification] ℹ️ Complete current trip to receive new offers');
           return;
         }
 

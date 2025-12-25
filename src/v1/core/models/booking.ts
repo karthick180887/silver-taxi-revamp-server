@@ -109,8 +109,12 @@ export interface BookingAttributes {
     adminContact?: string;
 
     // GPS trail from driver app during trip
-    gpsTrail?: { lat: number; lng: number; timestamp: string }[];
-    gpsDistance?: number; // Distance calculated from GPS points (km)
+    gpsTrail?: { lat: number; lng: number; timestamp: string }[] | null;
+    gpsDistance?: number | null; // Distance calculated from GPS points (km)
+
+    distanceSource?: string | null;
+    distanceMismatchPercent?: number | null;
+    distanceMismatchNotes?: string | null;
 
     createdAt?: Date;
     updatedAt?: Date;
@@ -224,9 +228,16 @@ class Booking
     public convenienceFee!: number;
     public adminContact!: string;
 
+    public cancelReason!: string;
+    public cancelledBy!: string;
+
     // GPS trail from driver app during trip
-    public gpsTrail!: { lat: number; lng: number; timestamp: string }[];
-    public gpsDistance!: number;
+    public gpsTrail!: { lat: number; lng: number; timestamp: string }[] | null;
+    public gpsDistance!: number | null;
+
+    public distanceSource!: string | null;
+    public distanceMismatchPercent!: number | null;
+    public distanceMismatchNotes!: string | null;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -717,6 +728,22 @@ Booking.init(
             allowNull: true,
             defaultValue: null,
             comment: 'Distance in km calculated from GPS points',
+        },
+        // New fields for GPS vs Odometer verification
+        distanceSource: {
+            type: DataTypes.STRING(20), // 'gps', 'odometer', 'matched'
+            allowNull: true,
+            defaultValue: 'odometer' // default to odometer for backwards compatibility
+        },
+        distanceMismatchPercent: {
+            type: DataTypes.FLOAT,
+            allowNull: true,
+            defaultValue: 0
+        },
+        distanceMismatchNotes: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            defaultValue: null
         },
     },
     {

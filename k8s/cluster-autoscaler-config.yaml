@@ -1,0 +1,56 @@
+# Cluster Autoscaler Configuration for Bin-Packing Strategy
+# This configures pods to pack tightly on nodes before scaling out
+#
+# To enable on DigitalOcean:
+# 1. Go to DigitalOcean Dashboard > Kubernetes > Your Cluster > Node Pools
+# 2. Enable "Autoscale" on your node pool
+# 3. Set Min Nodes: 1, Max Nodes: 3 (adjust as needed)
+#
+# The autoscaler will:
+# - Keep Node 1 fully utilized
+# - Only add Node 2 when Node 1 reaches resource limits
+# - Remove unused nodes to save costs
+
+---
+# Priority Class for critical pods (databases)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: critical-priority
+value: 1000000
+globalDefault: false
+description: "Priority for critical services like databases"
+
+---
+# Priority Class for normal pods (apps)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: normal-priority
+value: 100000
+globalDefault: true
+description: "Default priority for application pods"
+
+---
+# Pod Disruption Budget for backend - allows autoscaler to safely remove nodes
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend-go-app
+
+---
+# Pod Disruption Budget for ingress
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ingress-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx

@@ -274,7 +274,19 @@ export const odoCalculation = async (
         )} Hours ${String(minutes).padStart(2, "0")} Mins`;
 
         // Distance
-        const tripCompletedDistance = Number(endOdometerValue) - Number(startOdometerValue);
+        let tripCompletedDistance = 0;
+        if ((booking.distanceSource === 'gps' || booking.distanceSource === 'matched') && (booking.gpsDistance || 0) > 0) {
+            tripCompletedDistance = booking.gpsDistance || 0;
+        } else {
+            tripCompletedDistance = Number(endOdometerValue) - Number(startOdometerValue);
+        }
+        // Ensure non-negative
+        if (tripCompletedDistance < 0) tripCompletedDistance = 0;
+
+        // If distanceSource is missing but gpsDistance exists and odo diff is 0 (fallback for testing)
+        if (tripCompletedDistance === 0 && (booking.gpsDistance || 0) > 0) {
+            tripCompletedDistance = booking.gpsDistance || 0;
+        }
 
         // Days for round trip
         const service = await Service.findOne({ where: { name: booking.serviceType } });
@@ -331,8 +343,9 @@ export const odoCalculation = async (
         let gst = 0;
         let finalPayOut = 0;
         let driverDeduction: any;
-        // Commission
-        const driverCommissionRate = service?.driverCommission || 0;
+        // FIXED: Always use 11% commission rate instead of service-based rate
+        const FIXED_COMMISSION_RATE = 11; // 11% of trip amount
+        const driverCommissionRate = FIXED_COMMISSION_RATE;
         const vendorCommissionRate = service?.vendorCommission || 0;
 
         // Admin & Vendor Commission
@@ -388,6 +401,9 @@ export const odoCalculation = async (
                     gst +
                     driverBeta +
                     booking.convenienceFee +
+                    (booking.extraToll || 0) +
+                    (booking.extraHill || 0) +
+                    (booking.extraPermitCharge || 0) +
                     driverChargesTotal +
                     extraChargesTotal;
 
@@ -494,6 +510,9 @@ export const odoCalculation = async (
                         gst +
                         driverBeta +
                         booking.convenienceFee +
+                        (booking.extraToll || 0) +
+                        (booking.extraHill || 0) +
+                        (booking.extraPermitCharge || 0) +
                         driverChargesTotal +
                         extraChargesTotal;
 
@@ -528,18 +547,22 @@ export const odoCalculation = async (
                 : Math.max(tripCompletedDistance, (booking.minKm || 0));
             baseFare = km * (booking.pricePerKm + (booking.extraPricePerKm || 0));
             booking.discountAmount = discounts ? (discounts?.type === "Flat" ? discounts?.value : Math.ceil((baseFare * discounts?.value) / 100)) : 0;
-            taxAmount = Math.ceil((baseFare * booking.taxPercentage) / 100);
-            gst = taxAmount || booking.tripCompletedTaxAmount;
-            const driverChargesTotal = sumSingleObject(booking.driverCharges || {});
+            // Tax is currently disabled - not including in calculation
+            taxAmount = 0; // Math.ceil((baseFare * booking.taxPercentage) / 100);
+            gst = 0; // taxAmount || booking.tripCompletedTaxAmount;
+            // NOTE: driverCharges is a legacy field - charges are now stored in individual columns
+            // extraCharges contains Pet, Parking, Waiting charges
             const extraChargesTotal = sumSingleObject(booking.extraCharges || {});
             finalPayOut =
                 baseFare +
-                taxAmount +
+                // taxAmount + // Tax disabled
                 extraKmCharge +
                 hourlyPackagePrice +
-                driverChargesTotal +
-                extraChargesTotal +
+                extraChargesTotal + // Pet, Parking, Waiting
                 tripCompletedDriverBeta +
+                (booking.extraHill || 0) + // Hill charge
+                (booking.extraToll || 0) + // Toll charge
+                (booking.extraPermitCharge || 0) + // Permit charge
                 booking.convenienceFee;
 
             finalPayOut -= booking.discountAmount + booking.advanceAmount;
@@ -620,7 +643,8 @@ export const odoCalculation = async (
             tripCompletedTaxAmount: taxAmount,
             days: days.toString(),
             commissionTaxPercentage: companyCommissionPercentage,
-            minKm: booking.minKm || 0
+            minKm: booking.minKm || 0,
+            distance: tripCompletedDistance // Ensure standard field is updated
         });
         await booking.save();
 

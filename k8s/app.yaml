@@ -68,11 +68,11 @@ spec:
           imagePullPolicy: IfNotPresent
           resources:
             requests:
-              cpu: "100m"
-              memory: "128Mi"
+              cpu: "50m"       # Reduced for bin-packing
+              memory: "64Mi"   # Reduced for bin-packing
             limits:
-              cpu: "1000m"
-              memory: "1024Mi"
+              cpu: "500m"      # Burst capacity
+              memory: "512Mi"  # Burst capacity
           ports:
             - containerPort: 8081
           envFrom:

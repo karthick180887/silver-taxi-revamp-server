@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import '../api_client.dart';
 
 /// GPS point with timestamp for trip tracking
 class GpsPoint {
@@ -44,13 +45,13 @@ class TripTrackingService {
 
   // Tracking state
   String? _currentTripId;
-  Timer? _trackingTimer;
+  StreamSubscription<Position>? _positionStreamSubscription;
   final List<GpsPoint> _gpsPoints = [];
   bool _isTracking = false;
   DateTime? _startTime;
   
   // Configuration
-  static const Duration trackingInterval = Duration(minutes: 1);
+  static const int distanceFilterMeters = 10;
   
   /// Check if tracking is active
   bool get isTracking => _isTracking;
@@ -68,7 +69,7 @@ class TripTrackingService {
   List<GpsPoint> get gpsPoints => List.unmodifiable(_gpsPoints);
   
   /// Start tracking GPS for a trip
-  Future<bool> startTracking(String tripId) async {
+  Future<bool> startTracking(String tripId, String token) async {
     if (_isTracking) {
       debugPrint('[TripTracking] Already tracking trip: $_currentTripId');
       return false;
@@ -105,13 +106,27 @@ class TripTrackingService {
     debugPrint('[TripTracking] 🚗 Started tracking for trip: $tripId');
     debugPrint('[TripTracking] ========================================');
     
+    // Configure location settings for 10m updates
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: distanceFilterMeters,
+    );
+
     // Record initial position immediately
-    await _recordCurrentPosition();
+    try {
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      _recordPosition(position, token);
+    } catch (e) {
+      debugPrint('[TripTracking] Error getting initial position: $e');
+    }
     
-    // Start periodic tracking (every 1 minute)
-    _trackingTimer = Timer.periodic(trackingInterval, (_) {
-      _recordCurrentPosition();
-    });
+    // Start position stream
+    _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings)
+        .listen((Position position) {
+           _recordPosition(position, token);
+        }, onError: (e) {
+           debugPrint('[TripTracking] Location stream error: $e');
+        });
     
     return true;
   }
@@ -123,8 +138,8 @@ class TripTrackingService {
     debugPrint('[TripTracking] Total points recorded: ${_gpsPoints.length}');
     debugPrint('[TripTracking] ========================================');
     
-    _trackingTimer?.cancel();
-    _trackingTimer = null;
+    _positionStreamSubscription?.cancel();
+    _positionStreamSubscription = null;
     _isTracking = false;
     
     final result = TripTrackingResult(
@@ -143,14 +158,9 @@ class TripTrackingService {
     return result;
   }
   
-  /// Record current GPS position
-  Future<void> _recordCurrentPosition() async {
+  /// Record position update
+  Future<void> _recordPosition(Position position, String token) async {
     try {
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
-      );
-      
       final point = GpsPoint.fromPosition(position);
       _gpsPoints.add(point);
       
@@ -159,6 +169,26 @@ class TripTrackingService {
       // Calculate running distance
       final currentDistance = calculateDistance();
       debugPrint('[TripTracking] 📏 Running distance: ${currentDistance.toStringAsFixed(2)} km');
+
+      // Update server with current location
+      try {
+        debugPrint('[TripTracking] 📡 Updating server location (Distance: ${currentDistance.toStringAsFixed(3)} km)...');
+        
+        final res = await DriverApiClient().updateLocation(
+          token: token,
+          latitude: point.lat,
+          longitude: point.lng,
+        );
+        
+        if (res.success) {
+           debugPrint('[TripTracking] ✅ Server location updated successfully');
+        } else {
+           debugPrint('[TripTracking] ⚠️ Failed to update server location: ${res.message}');
+        }
+         
+      } catch (e) {
+        debugPrint('[TripTracking] ⚠️ Error updating server location: $e');
+      }
       
     } catch (e) {
       debugPrint('[TripTracking] ⚠️ Error recording position: $e');

@@ -584,6 +584,13 @@ class DriverApiClient extends BaseApiClient {
     Map<String, dynamic>? driverCharges,
     List<Map<String, dynamic>>? gpsPoints, // GPS trail data from trip tracking
     String? accessToken, // Added for Widget flow
+    // Extra charges as separate fields for backend
+    double? hillCharge,
+    double? tollCharge,
+    double? petCharge,
+    double? permitCharge,
+    double? parkingCharge,
+    double? waitingCharge,
   }) {
     final Map<String, dynamic> body = {
       'endOtp': endOtp,
@@ -602,6 +609,13 @@ class DriverApiClient extends BaseApiClient {
     if (accessToken != null && accessToken.isNotEmpty) {
       body['accessToken'] = accessToken;
     }
+    // Add extra charges as separate fields (required by backend tripEnd schema)
+    if (hillCharge != null && hillCharge > 0) body['hillCharge'] = hillCharge;
+    if (tollCharge != null && tollCharge > 0) body['tollCharge'] = tollCharge;
+    if (petCharge != null && petCharge > 0) body['petCharge'] = petCharge;
+    if (permitCharge != null && permitCharge > 0) body['permitCharge'] = permitCharge;
+    if (parkingCharge != null && parkingCharge > 0) body['parkingCharge'] = parkingCharge;
+    if (waitingCharge != null && waitingCharge > 0) body['waitingCharge'] = waitingCharge;
     
     return post('/app/trip/end/$tripId', body, token: token);
   }
@@ -756,6 +770,18 @@ class DriverApiClient extends BaseApiClient {
   /// Alias for getTripCounts (backward compatibility)
   Future<ApiResult> fetchTripCounts({required String token}) {
     return getTripCounts(token: token);
+  }
+
+  /// Fetch bookings by status (e.g., 'not-started', 'started', 'completed')
+  /// Uses the /app/booking/specific endpoint
+  Future<ApiResult> fetchBookingsByStatus({
+    required String token,
+    required String status,
+  }) {
+    return get('/app/booking/specific',
+      token: token,
+      queryParams: {'status': status},
+    );
   }
 
   // Note: Monthly earnings endpoint not found in backend

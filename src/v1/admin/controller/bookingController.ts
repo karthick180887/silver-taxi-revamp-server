@@ -235,6 +235,11 @@ export const getAllBookings = async (req: Request, res: Response): Promise<void>
                         model: Customer,
                         as: 'customer',
                         attributes: ['name', 'phone', 'customerId']
+                    },
+                    {
+                        model: Vehicle,
+                        as: 'vehicles',
+                        attributes: ['name', 'type', 'vehicleNumber', 'vehicleId']
                     }
                 ],
                 distinct: true
@@ -878,6 +883,12 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
 
         const companyProfile = await CompanyProfile.findOne({ where: { adminId } });
 
+        // Use tariff values as fallback when not provided in request body
+        const effectivePricePerKm = pricePerKm ?? tariff?.price ?? 0;
+        const effectiveExtraPricePerKm = extraPricePerKm ?? tariff?.extraPrice ?? 0;
+        const effectiveDriverBeta = driverBeta ?? tariff?.driverBeta ?? 0;
+        const effectiveExtraDriverBeta = extraDriverBeta ?? 0;
+
         // console.log("tariff ---> ", tariff);
         // Create booking
         let convertedDistance = Math.round(Number(distance));
@@ -949,10 +960,11 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             extraToll: extraToll ?? null,
             extraHill: extraHill ?? null,
             extraPermitCharge: extraPermitCharge ?? null,
-            pricePerKm: pricePerKm ?? null,
+            pricePerKm: effectivePricePerKm,
+            extraPricePerKm: effectiveExtraPricePerKm,
             taxPercentage: taxPercentage ?? null,
             taxAmount: taxAmount ?? null,
-            driverBeta: driverBeta ?? null,
+            driverBeta: effectiveDriverBeta,
             duration: convertedDuration ?? null,
             startOtp: startOtp,
             endOtp: endOtp,
@@ -968,8 +980,10 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             normalFare: {
                 days: days || 1,
                 distance: distance,
-                pricePerKm: pricePerKm,
-                driverBeta: driverBeta,
+                pricePerKm: effectivePricePerKm,
+                extraPricePerKm: effectiveExtraPricePerKm,
+                driverBeta: effectiveDriverBeta,
+                extraDriverBeta: effectiveExtraDriverBeta,
                 toll: toll,
                 hill: hill,
                 permitCharge: permitCharge,
@@ -979,13 +993,13 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             modifiedFare: {
                 days: (days ?? 1),
                 distance: (distance ?? 0),
-                pricePerKm: (pricePerKm ?? 0),
-                extraPricePerKm: (extraPricePerKm ?? 0),
-                driverBeta: (driverBeta ?? 0) + (extraDriverBeta ?? 0),
+                pricePerKm: effectivePricePerKm,
+                extraPricePerKm: effectiveExtraPricePerKm,
+                driverBeta: effectiveDriverBeta + effectiveExtraDriverBeta,
                 toll: (toll ?? 0) + (extraToll ?? 0),
                 hill: (hill ?? 0) + (extraHill ?? 0),
                 permitCharge: (permitCharge ?? 0) + (extraPermitCharge ?? 0),
-                estimatedAmount: Number(estimatedAmount) + (distance * (extraPricePerKm ?? 0)),
+                estimatedAmount: Number(estimatedAmount) + (distance * effectiveExtraPricePerKm),
                 finalAmount: Number(finalAmount),
             },
             convenienceFee: companyProfile?.convenienceFee ?? 0,
@@ -1534,6 +1548,30 @@ export const assignAllDrivers = async (req: Request, res: Response) => {
                 debug.error(`❌ Error emitting socket broadcast in assignAllDrivers: ${socketError}`);
             }
         }
+
+        // 🟢 Persist "New Trip Offer" Notification to Database for all targeted drivers
+        // This ensures it appears in the Driver App's Notification List
+        // We do this asynchronously to not block the response
+        (async () => {
+            try {
+                const results = await Promise.allSettled(drivers.map(d =>
+                    createDriverNotification({
+                        title: "🆕 New Trip Offer",
+                        message: `New trip available: ${booking.pickup} → ${booking.drop}. Fare: ₹${booking.estimatedAmount || booking.finalAmount || 0}`,
+                        ids: {
+                            adminId: booking.adminId,
+                            driverId: d.driverId,
+                            bookingId: booking.bookingId
+                        },
+                        type: "NEW_TRIP_OFFER",
+                    })
+                ));
+                const persistedCount = results.filter(r => r.status === 'fulfilled').length;
+                debug.info(`✅ Persisted 'NEW_TRIP_OFFER' notification for ${persistedCount}/${drivers.length} drivers`);
+            } catch (err) {
+                debug.error(`❌ Error persisting NEW_TRIP_OFFER notifications: ${err}`);
+            }
+        })();
 
         // Extract active FCM tokens
         const fcmTokens = drivers

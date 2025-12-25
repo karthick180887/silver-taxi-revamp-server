@@ -14,4 +14,16 @@ export const tripEndSchema = z.object({
     endOtp: z.string().min(6, "End OTP must be 6 digits"),
     driverCharges: z.record(z.any()).optional(),
     accessToken: z.string().optional(),
+    // GPS vs Odometer Verification
+    distanceSource: z.enum(['gps', 'odometer', 'matched']).optional(),
+    distanceMismatchPercent: z.number().optional(),
+    distanceMismatchNotes: z.string().optional(),
+
+    // Extra Charges
+    hillCharge: z.number().optional(),
+    tollCharge: z.number().optional(),
+    petCharge: z.number().optional(),
+    permitCharge: z.number().optional(),
+    parkingCharge: z.number().optional(),
+    waitingCharge: z.number().optional(),
 });

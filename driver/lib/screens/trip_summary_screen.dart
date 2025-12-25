@@ -61,9 +61,9 @@ class _TripSummaryScreenState extends State<TripSummaryScreen> {
           'fare': tripDetails['finalAmount'] ?? tripSummary['finalAmount'] ?? tripDetails['tripCompletedFinalAmount'],
           // Map duration
           'duration': tripDetails['duration'] ?? tripSummary['duration'],
-          // Map base rate
+          // Map base rate (driver beta / vehicle base rate)
           'baseRatePerKm': tripDetails['pricePerKm'] ?? tripSummary['pricePerKm'],
-          'vehicleBaseRate': tripSummary['baseFare'] ?? tripDetails['estimatedAmount'],
+          'vehicleBaseRate': tripDetails['driverBeta'] ?? tripDetails['tripCompletedDriverBeta'] ?? tripSummary['driverBeta'] ?? tripSummary['baseFare'],
           // Map extra charges from tripDetails or tripSummary
           'extraCharges': tripDetails['extraCharges'] ?? tripSummary['additionalCharges'] ?? {},
           // Map individual charges if available
@@ -161,7 +161,16 @@ class _TripSummaryScreenState extends State<TripSummaryScreen> {
     final double baseRate = trip.baseRatePerKm ?? 13.0;
     final double vehicleRate = trip.vehicleBaseRate ?? 300.0;
     final double baseFare = distance * baseRate;
-    final double totalFare = trip.fare ?? 0.0;
+    
+    // Calculate total from breakdown (not the stored fare which may be different)
+    final double hillCharge = trip.hillCharge ?? 0.0;
+    final double tollCharge = trip.tollCharge ?? 0.0;
+    final double petCharge = trip.petCharge ?? 0.0;
+    final double permitCharge = trip.permitCharge ?? 0.0;
+    final double parkingCharge = trip.parkingCharge ?? 0.0;
+    final double waitingCharge = trip.waitingCharge ?? 0.0;
+    
+    final double totalFare = baseFare + vehicleRate + hillCharge + tollCharge + petCharge + permitCharge + parkingCharge + waitingCharge;
 
     return Scaffold(
       appBar: AppBar(
@@ -253,7 +262,7 @@ class _TripSummaryScreenState extends State<TripSummaryScreen> {
                 children: [
                   _buildFareRow('Base Rate (₹$baseRate/km)', '₹${baseFare.toStringAsFixed(2)}'),
                   const SizedBox(height: 8),
-                  _buildFareRow('Vehicle Base Rate', '₹${vehicleRate.toStringAsFixed(2)}'),
+                  _buildFareRow('Driver Beta', '₹${vehicleRate.toStringAsFixed(2)}'),
                   const SizedBox(height: 8),
                   // Individual extra charges
                   if ((trip.hillCharge ?? 0) > 0) ...[

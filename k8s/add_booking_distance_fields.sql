@@ -1,0 +1,3 @@
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS "distanceSource" VARCHAR(20) DEFAULT 'odometer';
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS "distanceMismatchPercent" FLOAT DEFAULT 0;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS "distanceMismatchNotes" TEXT DEFAULT NULL;

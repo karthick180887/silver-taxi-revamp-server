@@ -81,12 +81,12 @@ class _DriverDetailsPageState extends State<DriverDetailsPage> {
       return '';
     }
 
-    final aadharFront = _pickDoc(['aadharFront', 'aadharFrontImage', 'aadhar_front', 'aadhaarFront', 'aadhaarFrontImage']);
-    final aadharBack = _pickDoc(['aadharBack', 'aadharBackImage', 'aadhar_back', 'aadhaarBack', 'aadhaarBackImage']);
-    final licenseFront = _pickDoc(['dlFront', 'licenseFront', 'license_front', 'licenseFrontImage']);
-    final licenseBack = _pickDoc(['dlBack', 'licenseBack', 'license_back', 'licenseBackImage']);
-    final panCard = _pickDoc(['panCard', 'panCardImage', 'pan', 'pan_card']);
-    final driverPhoto = _pickDoc(['driverCurrentPhoto', 'driverImageUrl', 'profilePicture', 'driver_photo']);
+    final aadharFront = transformImageUrl(_pickDoc(['aadharFront', 'aadharFrontImage', 'aadhar_front', 'aadhaarFront', 'aadhaarFrontImage']));
+    final aadharBack = transformImageUrl(_pickDoc(['aadharBack', 'aadharBackImage', 'aadhar_back', 'aadhaarBack', 'aadhaarBackImage']));
+    final licenseFront = transformImageUrl(_pickDoc(['dlFront', 'licenseFront', 'license_front', 'licenseFrontImage']));
+    final licenseBack = transformImageUrl(_pickDoc(['dlBack', 'licenseBack', 'license_back', 'licenseBackImage']));
+    final panCard = transformImageUrl(_pickDoc(['panCard', 'panCardImage', 'pan', 'pan_card']));
+    final driverPhoto = transformImageUrl(_pickDoc(['driverCurrentPhoto', 'driverImageUrl', 'profilePicture', 'driver_photo']));
     final dlExpiry = _pickDoc(['dlExpiry', 'licenseExpiry', 'license_expiry']);
 
     final name = (profile['name'] ?? '').toString();
@@ -150,7 +150,7 @@ class _DriverDetailsPageState extends State<DriverDetailsPage> {
                 children: [
                   CircleAvatar(
                     radius: 60,
-                    backgroundImage: avatar != null && avatar.toString().isNotEmpty ? NetworkImage(avatar) : null,
+                    backgroundImage: avatar != null && avatar.toString().isNotEmpty ? NetworkImage(transformImageUrl(avatar.toString())) : null,
                     child: avatar == null || avatar.toString().isEmpty ? const Icon(Icons.person, size: 60) : null,
                   ),
                   const SizedBox(height: 12),

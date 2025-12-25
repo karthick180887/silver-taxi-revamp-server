@@ -222,20 +222,11 @@ export function emitNewTripOfferToDriver(driverId: string, bookingData: any): bo
             data: bookingData,
         };
 
-        // Check if any sockets are in the driver's room
-        const room = io.sockets.adapter.rooms.get(driverId);
-        const socketCount = room ? room.size : 0;
-
-        logger.info(`Emitting NEW_TRIP_OFFER to driver room "${driverId}": ${socketCount} socket(s) connected`);
-
-        if (socketCount === 0) {
-            logger.warn(`⚠️ No sockets found in room "${driverId}" - driver may not be connected`);
-            return false; // Driver offline
-        }
-
+        // In multi-instance setup with Redis, we cannot rely on local room check.
+        // Just emit to the room and let Redis adapter handle broadcasting to other nodes.
         io.to(driverId).emit('notification', eventData);
-        logger.info(`✅ NEW_TRIP_OFFER event sent to driver: ${driverId}, bookingId: ${bookingData.bookingId || 'unknown'}`);
-        return true; // Sent successfully
+        logger.info(`✅ NEW_TRIP_OFFER event sent to driver room: ${driverId}`);
+        return true;
     } catch (error) {
         logger.error(`Error emitting NEW_TRIP_OFFER to driver ${driverId}:`, error);
         return false;
@@ -263,25 +254,13 @@ export function emitNewTripOfferToDrivers(driverIds: string[], bookingData: any)
             data: bookingData,
         };
 
-        let connectedCount = 0;
-        let disconnectedCount = 0;
-
         // Emit to each driver's room
+        // With Redis adapter, we blind emit to ensure it reaches drivers on other instances
         driverIds.forEach(driverId => {
-            const room = io.sockets.adapter.rooms.get(driverId);
-            const socketCount = room ? room.size : 0;
-
-            if (socketCount > 0) {
-                connectedCount++;
-                io.to(driverId).emit('notification', eventData);
-                logger.info(`✅ Emitted to driver ${driverId} (${socketCount} socket(s) connected)`);
-            } else {
-                disconnectedCount++;
-                logger.warn(`⚠️ Driver ${driverId} not connected (room empty)`);
-            }
+            io.to(driverId).emit('notification', eventData);
         });
 
-        logger.info(`NEW_TRIP_OFFER event sent: ${connectedCount} connected, ${disconnectedCount} disconnected, bookingId: ${bookingData.bookingId || 'unknown'}`);
+        logger.info(`NEW_TRIP_OFFER broadcast sent to ${driverIds.length} driver rooms`);
     } catch (error) {
         logger.error(`Error emitting NEW_TRIP_OFFER to multiple drivers:`, error);
     }
@@ -311,5 +290,72 @@ export function emitTripUpdateToCustomer(customerId: string, data: any): void {
     }
 }
 
+/**
+ * Emit TRIP_ACCEPTED event to a specific driver via Socket.IO
+ * Used to notify the driver app to refresh after accepting a trip
+ */
+export function emitTripAcceptedToDriver(driverId: string, bookingData: any): boolean {
+    if (!io) {
+        logger.error('Socket.IO server not initialized');
+        return false;
+    }
+
+    try {
+        // Emit to the driver's room (they join with their driverId)
+        // Flutter app expects: { type: 'TRIP_ACCEPTED', data: { ...bookingData } }
+        const eventData = {
+            type: 'TRIP_ACCEPTED',
+            data: {
+                tripId: bookingData.bookingId,
+                bookingId: bookingData.bookingId,
+                status: 'Not-Started',
+                ...bookingData,
+            },
+        };
+
+        // Check if any sockets are in the driver's room
+        const room = io.sockets.adapter.rooms.get(driverId);
+        const socketCount = room ? room.size : 0;
+
+        logger.info(`Emitting TRIP_ACCEPTED to driver room "${driverId}": ${socketCount} socket(s) connected`);
+
+        if (socketCount === 0) {
+            logger.warn(`⚠️ No sockets found in room "${driverId}" - driver may not be connected`);
+            return false; // Driver offline
+        }
+
+        io.to(driverId).emit('notification', eventData);
+        logger.info(`✅ TRIP_ACCEPTED event sent to driver: ${driverId}, bookingId: ${bookingData.bookingId || 'unknown'}`);
+        return true; // Sent successfully
+    } catch (error) {
+        logger.error(`Error emitting TRIP_ACCEPTED to driver ${driverId}:`, error);
+        return false;
+    }
+}
 
 
+
+/**
+ * Emit generic TRIP_UPDATE event (STARTED, COMPLETED, CANCELLED) to a specific driver via Socket.IO
+ */
+export function emitTripUpdateToDriver(driverId: string, bookingData: any, type: string = 'TRIP_UPDATE'): boolean {
+    if (!io) {
+        logger.error('Socket.IO server not initialized');
+        return false;
+    }
+
+    try {
+        // Emit to the driver's room
+        const eventData = {
+            type: type,
+            data: bookingData,
+        };
+
+        io.to(driverId).emit('notification', eventData);
+        logger.info(`✅ ${type} event sent to driver: ${driverId}`);
+        return true;
+    } catch (error) {
+        logger.error(`Error emitting ${type} to driver ${driverId}:`, error);
+        return false;
+    }
+}

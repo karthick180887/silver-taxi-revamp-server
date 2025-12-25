@@ -236,8 +236,7 @@ class TripService {
     return 0;
   }
 
-  // Removed: getActiveTrips() and getTripsByStatus() - endpoints don't exist in backend
-  // Use getLiveTrips() for pending offers instead
+  // Note: getTripsByStatus is defined above (line 74) - use that method
 
   Future<void> acceptTrip({
     required String token,
@@ -320,6 +319,13 @@ class TripService {
     Map<String, dynamic>? driverCharges,
     List<Map<String, dynamic>>? gpsPoints, // GPS trail from TripTrackingService
     String? accessToken, // Added for Widget flow
+    // Extra charges as separate fields
+    double? hillCharge,
+    double? tollCharge,
+    double? petCharge,
+    double? permitCharge,
+    double? parkingCharge,
+    double? waitingCharge,
   }) async {
     // Validate required fields
     if (endOtp.isEmpty) {
@@ -339,6 +345,13 @@ class TripService {
       driverCharges: driverCharges,
       gpsPoints: gpsPoints,
       accessToken: accessToken,
+      // Pass extra charges to API
+      hillCharge: hillCharge,
+      tollCharge: tollCharge,
+      petCharge: petCharge,
+      permitCharge: permitCharge,
+      parkingCharge: parkingCharge,
+      waitingCharge: waitingCharge,
     );
     _ensureSuccess(res, 'end trip');
   }
@@ -387,6 +400,49 @@ class TripService {
       type: type,
     );
     _ensureSuccess(res, 'cancel trip');
+  }
+
+  /// Check if driver has an active trip (Started or Not-Started)
+  /// Returns the active trip if found, prioritizing Started trips over Not-Started
+  /// This is used to:
+  /// 1. Show active trip banner on home screen
+  /// 2. Block new trip offers when a trip is in progress
+  Future<TripModel?> getActiveTrip(String token) async {
+    try {
+      _log('[TripService] ========================================');
+      _log('[TripService] 🔍 Checking for active trips...');
+      _log('[TripService] ========================================');
+
+      // 1. Check for Started trips first (highest priority - trip in progress)
+      final startedTrips = await getTripsByStatus(token: token, status: 'started');
+      if (startedTrips.isNotEmpty) {
+        _log('[TripService] ✅ Found ${startedTrips.length} started trips');
+        _log('[TripService] Returning first started trip: ${startedTrips.first.bookingId}');
+        return startedTrips.first;
+      }
+
+      // 2. Check for Not-Started trips (accepted but not yet started)
+      final notStartedTrips = await getTripsByStatus(token: token, status: 'not-started');
+      if (notStartedTrips.isNotEmpty) {
+        _log('[TripService] ✅ Found ${notStartedTrips.length} not-started trips');
+        _log('[TripService] Returning first not-started trip: ${notStartedTrips.first.bookingId}');
+        return notStartedTrips.first;
+      }
+
+      _log('[TripService] ℹ️ No active trips found');
+      return null;
+    } catch (e) {
+      _log('[TripService] ❌ Error checking active trips: $e');
+      return null; // Return null on error to not block the app
+    }
+  }
+
+  /// Check if driver has a trip in progress (status = Started)
+  /// Returns true if a trip is currently in progress
+  bool hasTripInProgress(TripModel? activeTrip) {
+    if (activeTrip == null) return false;
+    final status = activeTrip.status?.toLowerCase() ?? '';
+    return status == 'started';
   }
 
 

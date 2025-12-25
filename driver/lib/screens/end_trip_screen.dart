@@ -52,6 +52,12 @@ class _EndTripScreenState extends State<EndTripScreen> {
   double? _gpsDistance;
   int? _gpsDuration;
   int _gpsPointCount = 0;
+  
+  // Distance comparison
+  static const double _distanceTolerance = 0.05; // 5% tolerance
+  String _distanceSource = 'matched'; // 'matched', 'gps', 'odometer'
+  double _distanceMismatchPercent = 0.0;
+  bool _showMismatchWarning = false;
 
   @override
   void initState() {
@@ -266,58 +272,60 @@ class _EndTripScreenState extends State<EndTripScreen> {
                 ),
               ],
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  enabled: false,
-                  controller: TextEditingController(text: _startOdo.toString()),
-                  decoration: const InputDecoration(
-                    labelText: 'Start Odometer (KM)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.speed),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    enabled: false,
+                    controller: TextEditingController(text: _startOdo.toString()),
+                    decoration: const InputDecoration(
+                      labelText: 'Start Odometer (KM)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.speed),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: endOdoCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'End Odometer (KM)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.speed, color: Colors.green),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: endOdoCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'End Odometer (KM)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.speed, color: Colors.green),
+                    ),
+                    onChanged: (val) {
+                      setState(() {});
+                    },
                   ),
-                  onChanged: (val) {
-                    setState(() {});
-                  },
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.shade100),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'Total Distance',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${dist.toStringAsFixed(1)} KM',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade100),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Total Distance',
+                          style: TextStyle(color: Colors.grey),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          '${dist.toStringAsFixed(1)} KM',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -351,12 +359,147 @@ class _EndTripScreenState extends State<EndTripScreen> {
           _endOdo = result;
           _totalDistance = (_endOdo - _startOdo).clamp(0.0, double.infinity);
           _endOdoController.text = _endOdo.toString();
+          // Compare GPS and Odometer distances after setting odometer
+          _compareDistances();
         });
       }
     });
   }
 
-  void _showFareBreakdown(double totalFare, double baseFare, double vehicleFare, double extraCharges) {
+  /// Compare GPS distance with Odometer distance and determine which to use
+  void _compareDistances() {
+    final odometerDistance = (_endOdo - _startOdo).clamp(0.0, double.infinity);
+    final gpsDistance = _gpsDistance ?? 0.0;
+    
+    // If we don't have GPS data, use odometer
+    if (gpsDistance <= 0 || _gpsPointCount < 2) {
+      _distanceSource = 'odometer';
+      _showMismatchWarning = false;
+      _totalDistance = odometerDistance;
+      debugPrint('[DistanceVerify] No valid GPS data, using odometer: $odometerDistance km');
+      return;
+    }
+    
+    // Calculate percentage difference
+    final avgDistance = (odometerDistance + gpsDistance) / 2;
+    if (avgDistance > 0) {
+      _distanceMismatchPercent = ((odometerDistance - gpsDistance).abs() / avgDistance) * 100;
+    }
+    
+    debugPrint('[DistanceVerify] ========================================');
+    debugPrint('[DistanceVerify] GPS Distance: ${gpsDistance.toStringAsFixed(2)} km');
+    debugPrint('[DistanceVerify] Odometer Distance: ${odometerDistance.toStringAsFixed(2)} km');
+    debugPrint('[DistanceVerify] Difference: ${_distanceMismatchPercent.toStringAsFixed(1)}%');
+    
+    // Check if within tolerance
+    if (_distanceMismatchPercent <= (_distanceTolerance * 100)) {
+      // Within tolerance - distances match
+      _distanceSource = 'matched';
+      _showMismatchWarning = false;
+      // Use GPS distance as it's typically more accurate for billing
+      _totalDistance = gpsDistance;
+      debugPrint('[DistanceVerify] ✅ Distances match within tolerance - using GPS');
+    } else {
+      // Mismatch detected - prioritize odometer (physical evidence)
+      _distanceSource = 'odometer';
+      _showMismatchWarning = true;
+      _totalDistance = odometerDistance;
+      debugPrint('[DistanceVerify] ⚠️ MISMATCH - prioritizing odometer reading');
+    }
+    debugPrint('[DistanceVerify] Final distance: ${_totalDistance.toStringAsFixed(2)} km');
+    debugPrint('[DistanceVerify] ========================================');
+  }
+
+  /// Show distance mismatch warning dialog
+  Future<bool> _showDistanceMismatchWarning() async {
+    final odometerDistance = (_endOdo - _startOdo).clamp(0.0, double.infinity);
+    final gpsDistance = _gpsDistance ?? 0.0;
+    
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange[700], size: 28),
+            const SizedBox(width: 8),
+            const Text('Distance Mismatch'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'GPS tracking and Odometer readings show different distances:',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            _buildDistanceCompareRow('📍 GPS Distance', '${gpsDistance.toStringAsFixed(1)} km'),
+            const SizedBox(height: 8),
+            _buildDistanceCompareRow('🔢 Odometer Distance', '${odometerDistance.toStringAsFixed(1)} km'),
+            const SizedBox(height: 8),
+            _buildDistanceCompareRow('📊 Difference', '${_distanceMismatchPercent.toStringAsFixed(1)}%',
+                color: Colors.orange[700]),
+            const Divider(height: 24),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Using Odometer reading (${odometerDistance.toStringAsFixed(1)} km) for fare calculation as physical evidence.',
+                      style: TextStyle(fontSize: 12, color: Colors.blue[800]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Proceed with Odometer'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Widget _buildDistanceCompareRow(String label, String value, {Color? color}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 14)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showFareBreakdown(double totalFare, double baseFare, double vehicleFare, double extraCharges, double convenienceFee) {
     // Parse individual charges for display
     final hillCharge = double.tryParse(_hillChargeController.text) ?? 0.0;
     final tollCharge = double.tryParse(_tollChargeController.text) ?? 0.0;
@@ -385,6 +528,9 @@ class _EndTripScreenState extends State<EndTripScreen> {
               if (permitCharge > 0) _buildFareRow('Permit Charge', '₹${permitCharge.toStringAsFixed(2)}', null),
               if (parkingCharge > 0) _buildFareRow('Parking Charge', '₹${parkingCharge.toStringAsFixed(2)}', null),
               if (waitingCharge > 0) _buildFareRow('Waiting Charge', '₹${waitingCharge.toStringAsFixed(2)}', null),
+              const Divider(),
+              // Convenience Fee only (NO TAX)
+              _buildFareRow('Convenience Fee', '₹${convenienceFee.toStringAsFixed(2)}', null),
               const Divider(thickness: 2),
               _buildFareRow('Total Fare', '₹${totalFare.toStringAsFixed(2)}', FontWeight.bold),
             ],
@@ -443,9 +589,18 @@ class _EndTripScreenState extends State<EndTripScreen> {
       return;
     }
 
+    // Show distance mismatch warning if detected
+    if (_showMismatchWarning) {
+      final proceed = await _showDistanceMismatchWarning();
+      if (!proceed) {
+        return; // User cancelled - don't proceed
+      }
+    }
+
     // Calculate fare with actual rates
     double baseRate = widget.trip.baseRatePerKm ?? 13.0; // Default to 13 if not available
     double vehicleRate = widget.trip.vehicleBaseRate ?? 300.0; // Default to 300 if not available
+    double convenienceFee = widget.trip.convenienceFee ?? 30.0; // Default to 30 if not available
     
     double baseFare = _totalDistance * baseRate;
     
@@ -458,10 +613,11 @@ class _EndTripScreenState extends State<EndTripScreen> {
     extraCharges += double.tryParse(_hillChargeController.text) ?? 0;
     extraCharges += double.tryParse(_tollChargeController.text) ?? 0;
 
-    double totalFare = baseFare + vehicleRate + extraCharges;
+    // Total fare = base fare + vehicle rate + extra charges + convenience fee (NO TAX)
+    double totalFare = baseFare + vehicleRate + extraCharges + convenienceFee;
 
     // Show breakdown before submitting
-    _showFareBreakdown(totalFare, baseFare, vehicleRate, extraCharges);
+    _showFareBreakdown(totalFare, baseFare, vehicleRate, extraCharges, convenienceFee);
   }
 
   void _showEndOtpRequiredDialog() {
@@ -634,6 +790,13 @@ class _EndTripScreenState extends State<EndTripScreen> {
         driverCharges: driverCharges,
         gpsPoints: widget.trackingResult?.gpsPointsJson, // Pass GPS trail data
         accessToken: accessToken, // Pass Widget Token
+        // Extra charges as separate fields for backend
+        hillCharge: double.tryParse(_hillChargeController.text) ?? 0.0,
+        tollCharge: double.tryParse(_tollChargeController.text) ?? 0.0,
+        petCharge: double.tryParse(_petChargeController.text) ?? 0.0,
+        permitCharge: double.tryParse(_permitChargeController.text) ?? 0.0,
+        parkingCharge: double.tryParse(_parkingChargeController.text) ?? 0.0,
+        waitingCharge: double.tryParse(_waitingChargeController.text) ?? 0.0,
       );
 
       // 5. Complete Trip (Record payment/fare)

@@ -67,7 +67,7 @@ class _OngoingTripScreenState extends State<OngoingTripScreen> {
   /// Start GPS tracking for this trip
   Future<void> _startGpsTracking() async {
     debugPrint('[OngoingTrip] Starting GPS tracking for trip: ${widget.trip.id}');
-    final success = await _trackingService.startTracking(widget.trip.id);
+    final success = await _trackingService.startTracking(widget.trip.id, widget.token);
     if (success) {
       debugPrint('[OngoingTrip] GPS tracking started successfully');
       // Update distance display every 30 seconds

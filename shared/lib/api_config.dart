@@ -8,6 +8,10 @@ class ApiConfig {
   static String transformImageUrl(String? url) {
     if (url == null || url.isEmpty) return "";
     if (url.startsWith("http")) return url;
+    // Handle missing slash
+    if (!url.startsWith("/")) {
+      return "$baseUrl/$url";
+    }
     return "$baseUrl$url";
   }
 }

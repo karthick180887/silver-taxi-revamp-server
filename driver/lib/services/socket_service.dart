@@ -83,6 +83,11 @@ class SocketService {
         if (_socket != null) {
           debugPrint('Socket ID: ${_socket!.id}');
           debugPrint('Socket connected: ${_socket!.connected}');
+          
+          // Explicitly emit authenticate event to ensure server joins room
+          // This is a robust fallback if handshake auth fails
+          debugPrint('Sending explicit authenticate event...');
+          _socket!.emit('authenticate', {'token': token});
         }
         debugPrint('========================================');
         
@@ -282,6 +287,9 @@ class SocketService {
         case 'NEW_TRIP_OFFER':
         case 'TRIP_CANCELLED':
         case 'TRIP_ACCEPTED':
+        case 'TRIP_STARTED':
+        case 'TRIP_COMPLETED':
+        case 'TRIP_UPDATE':
           debugPrint('========================================');
           debugPrint('🚗🚗🚗 ROUTING TO bookingUpdateStream 🚗🚗🚗');
           debugPrint('   Type: $type');

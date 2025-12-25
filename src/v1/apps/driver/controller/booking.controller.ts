@@ -6,12 +6,12 @@ import {
 import { Response, Request } from "express";
 import { driverAcceptedSchema } from "../../../../common/validations/bookingSchema";
 import { sendWhatsAppMessage } from "../../../../common/services/whatsApp/wachat";
-import { createCustomerNotification, createNotification } from "../../../core/function/notificationCreate";
+import { createCustomerNotification, createNotification, createDriverNotification } from "../../../core/function/notificationCreate";
 import { driverAssigned } from "../../../../common/services/mail/mail";
 import dayjs from "../../../../utils/dayjs";
 import { sendToSingleToken } from "../../../../common/services/firebase/appNotify";
 import { infoLogger as info, debugLogger as debug } from "../../../../utils/logger";
-import { sendNotification } from "../../../../common/services/socket/websocket";
+import { sendNotification, emitTripAcceptedToDriver } from "../../../../common/services/socket/websocket";
 import { Op } from "sequelize";
 import SMSService from "../../../../common/services/sms/sms";
 import { publishNotification } from "../../../../common/services/rabbitmq/publisher";
@@ -540,6 +540,29 @@ export const acceptOrRejectBooking = async (req: Request, res: Response) => {
             return;
         }
 
+        // ROBUST CHECK: Query database directly for any active trips (Not-Started or Started)
+        // This ensures only 1 active trip per driver at a time, regardless of assigned flag
+        const activeBooking = await Booking.findOne({
+            where: {
+                driverId: driverId,
+                adminId,
+                status: { [Op.in]: ["Not-Started", "Started"] },
+                driverAccepted: "accepted"
+            },
+            attributes: ["bookingId", "status"]
+        });
+
+        if (activeBooking) {
+            console.log(`[ACCEPT] ❌ Driver already has active trip: ${activeBooking.bookingId} (status: ${activeBooking.status})`);
+            res.status(400).json({
+                success: false,
+                message: `You already have an active trip (${activeBooking.bookingId}). Please complete or cancel your current trip before accepting a new one.`,
+                activeBookingId: activeBooking.bookingId,
+                activeStatus: activeBooking.status
+            });
+            return;
+        }
+
         const vehicle = await Vehicle.findOne({
             where: { driverId: driverId, isActive: true },
         })
@@ -614,39 +637,31 @@ export const acceptOrRejectBooking = async (req: Request, res: Response) => {
         //     return;
         // }
 
-        const service = await Service.findOne({
-            where: {
-                adminId,
-                serviceId: booking.serviceId,
-            }
-        })
+        // Commission is always 11% of the estimated trip amount
+        const COMMISSION_RATE = 11; // 11%
+        const tripCommissionAmount = Math.ceil((booking.estimatedAmount * COMMISSION_RATE) / 100);
 
-        let tripCommissionAmount = (booking.estimatedAmount * 10) / 100
-        // const companyProfile = await CompanyProfile.findOne({ where: { adminId } });
-
-        if (service) {
-            const driverCommissionRate = service.driverCommission;
-            let gst = booking.taxAmount || 0;
-            let convenienceFee = booking.convenienceFee || 0;
-            let extraChargeCommission = 0;
-            let commissionAmount = Math.ceil((booking.estimatedAmount * driverCommissionRate) / 100);
-            if (booking.createdBy === "Vendor") {
-                extraChargeCommission = booking.extraHill + booking.extraDriverBeta + booking.extraPermitCharge + (booking.extraPricePerKm * booking.distance) || 0;
-            }
-            tripCommissionAmount = commissionAmount + gst + convenienceFee + extraChargeCommission
-        }
+        console.log(`[ACCEPT] 💰 Commission Check:`);
+        console.log(`[ACCEPT]   - Estimated Amount: ₹${booking.estimatedAmount}`);
+        console.log(`[ACCEPT]   - Commission Rate: ${COMMISSION_RATE}%`);
+        console.log(`[ACCEPT]   - Required Balance: ₹${tripCommissionAmount}`);
 
         const driverBalance = JSON.parse(JSON.stringify(driver)).wallet?.balance ?? 0;
+        console.log(`[ACCEPT]   - Driver Balance: ₹${driverBalance}`);
 
         if (driverBalance < tripCommissionAmount) {
-            debug.info(`Driver balance >> ${driverBalance}, definedWalletAmount >> ${tripCommissionAmount}`);
+            console.log(`[ACCEPT] ❌ Insufficient balance!`);
             res.status(400).json({
                 success: false,
-                message: `You don’t have enough balance to accept this booking. Your wallet balance is ${driverBalance}, and the trip charge is ${tripCommissionAmount}. You need to add ${tripCommissionAmount - (driverBalance)} to your wallet and try again.`,
-                recharge: true
+                message: `Insufficient wallet balance. You need ₹${tripCommissionAmount} (11% of ₹${booking.estimatedAmount}) but have only ₹${driverBalance}. Please add ₹${tripCommissionAmount - driverBalance} to your wallet.`,
+                recharge: true,
+                required: tripCommissionAmount,
+                available: driverBalance,
+                shortfall: tripCommissionAmount - driverBalance
             });
             return
         }
+        console.log(`[ACCEPT] ✅ Sufficient balance for commission`);
 
         let isCustomerAvailable = false;
 
@@ -780,6 +795,18 @@ export const acceptOrRejectBooking = async (req: Request, res: Response) => {
                 }
             }
 
+            // 🟢 Persist "Trip Accepted" Notification for Driver (So it shows in their list)
+            await createDriverNotification({
+                title: "✅ Trip Accepted",
+                message: `You have accepted Trip #${booking.bookingId}. Pickup: ${booking.pickup}`,
+                ids: {
+                    adminId: adminId,
+                    driverId: driverId,
+                    bookingId: booking.bookingId
+                },
+                type: "TRIP_ACCEPTED",
+            });
+
             if (adminNotificationResponse.success) {
                 sendNotification(adminId, {
                     notificationId: adminNotificationResponse.notificationId ?? undefined,
@@ -909,6 +936,21 @@ export const acceptOrRejectBooking = async (req: Request, res: Response) => {
         await booking.save();
         await driver.save();
         await activityLog.save();
+
+        // Emit TRIP_ACCEPTED socket event to driver for auto-refresh
+        try {
+            emitTripAcceptedToDriver(driverId, {
+                bookingId: id,
+                pickup: booking.pickup,
+                drop: booking.drop,
+                estimatedAmount: booking.estimatedAmount,
+                status: booking.status,
+            });
+            console.log(`[ACCEPT] ✅ TRIP_ACCEPTED socket event emitted to driver: ${driverId}`);
+        } catch (socketError) {
+            console.error("[ACCEPT] ⚠️ Failed to emit TRIP_ACCEPTED socket event:", socketError);
+            // Don't fail the entire request if socket emission fails
+        }
 
         res.status(200).json({
             success: true,

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import 'dart:convert';
+
 import 'socket_service.dart';
 import 'token_manager.dart';
 import 'trip_service.dart';
@@ -279,28 +281,64 @@ class PersistentNotificationService {
 
       String pickupAddress = 'Unknown location';
       if (pickupString != null && pickupString.isNotEmpty) {
-        // Simple string format from backend
-        pickupAddress = pickupString;
+        // Try to parse JSON if it starts with {
+        if (pickupString.trim().startsWith('{')) {
+          try {
+             final Map<String, dynamic> parsed = jsonDecode(pickupString);
+             pickupAddress = parsed['address'] ?? parsed['Address'] ?? pickupString;
+          } catch (_) {
+             pickupAddress = pickupString;
+          }
+        } else {
+           pickupAddress = pickupString;
+        }
       } else if (pickupLocation is Map) {
         // Object format with address field
         pickupAddress = pickupLocation['address']?.toString() ??
             pickupLocation['Address']?.toString() ??
             'Unknown location';
       } else if (pickupLocation is String && pickupLocation.isNotEmpty) {
-        pickupAddress = pickupLocation;
+         if (pickupLocation.trim().startsWith('{')) {
+          try {
+             final Map<String, dynamic> parsed = jsonDecode(pickupLocation);
+             pickupAddress = parsed['address'] ?? parsed['Address'] ?? pickupLocation;
+          } catch (_) {
+             pickupAddress = pickupLocation;
+          }
+        } else {
+           pickupAddress = pickupLocation;
+        }
       }
 
       String dropAddress = 'Unknown location';
       if (dropString != null && dropString.isNotEmpty) {
-        // Simple string format from backend
-        dropAddress = dropString;
+         // Try to parse JSON if it starts with {
+        if (dropString.trim().startsWith('{')) {
+          try {
+             final Map<String, dynamic> parsed = jsonDecode(dropString);
+             dropAddress = parsed['address'] ?? parsed['Address'] ?? dropString;
+          } catch (_) {
+             dropAddress = dropString;
+          }
+        } else {
+           dropAddress = dropString;
+        }
       } else if (dropLocation is Map) {
         // Object format with address field
         dropAddress = dropLocation['address']?.toString() ??
             dropLocation['Address']?.toString() ??
             'Unknown location';
       } else if (dropLocation is String && dropLocation.isNotEmpty) {
-        dropAddress = dropLocation;
+         if (dropLocation.trim().startsWith('{')) {
+          try {
+             final Map<String, dynamic> parsed = jsonDecode(dropLocation);
+             dropAddress = parsed['address'] ?? parsed['Address'] ?? dropLocation;
+          } catch (_) {
+             dropAddress = dropLocation;
+          }
+        } else {
+           dropAddress = dropLocation;
+        }
       }
 
       final fareText = estimatedFare != null && estimatedFare != 0

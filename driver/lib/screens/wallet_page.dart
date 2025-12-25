@@ -284,7 +284,13 @@ class _WalletPageState extends State<WalletPage> {
 
   Widget _buildTransactionItem(Map<String, dynamic> item) {
     final amount = _toDouble(item['amount'] ?? item['value'] ?? item['txnAmount']);
-    final isCredit = amount >= 0;
+    final type = (item['type'] ?? item['txnType'] ?? '').toString().toLowerCase();
+    
+    // Check type explicitly. If 'debit', it's not a credit. 
+    // If type is ambiguous, fallback to amounts sign. 
+    // Note: Backend stores debit amounts as positive numbers, so we must rely on 'type'.
+    final isCredit = type == 'credit' || (type != 'debit' && amount >= 0);
+    
     final label = (item['description'] ?? item['txnType'] ?? item['type'] ?? 'Transaction').toString();
     final date = _formatDate(item['createdAt'] ?? item['date'] ?? item['timestamp']);
     final tag = (item['reason'] ?? item['category'] ?? item['txnType'] ?? item['type'] ?? '').toString().toUpperCase();
@@ -341,7 +347,7 @@ class _WalletPageState extends State<WalletPage> {
             ),
           ),
           Text(
-            (isCredit ? '+' : '') + _formatAmount(amount),
+            (isCredit ? '+' : '-') + _formatAmount(amount.abs()),
             style: AppTextStyles.h3.copyWith(
               fontSize: 15,
               color: isCredit ? AppColors.success : AppColors.error,

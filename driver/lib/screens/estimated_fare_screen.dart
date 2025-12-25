@@ -223,11 +223,36 @@ class _EstimatedFareScreenState extends State<EstimatedFareScreen> {
     }
     
     final serviceType = raw['serviceType']?.toString() ?? 'One way';
+    // Vehicle Type - check multiple sources
+    final vehicleType = raw['vehicleType']?.toString() ?? 
+                       (raw['vehicle'] is Map ? raw['vehicle']['name']?.toString() : null) ??
+                       raw['vehicleName']?.toString() ??
+                       'Not specified';
     final distance = trip.distance ?? _toDouble(raw['distance']) ?? 0.0;
     final minKm = _toDouble(raw['minKm']) ?? _toDouble(raw['minimumKm']) ?? 0.0;
+    
+    // Priority: API Distance > GPS > Odometer Diff > minKm (Smart Distance Logic)
+    double displayDistance = distance;
+    if (displayDistance <= 0.1) {
+        if ((trip.gpsDistance ?? 0) > 0) {
+          displayDistance = trip.gpsDistance!;
+        } else if (trip.endOdometer != null && trip.startOdometer != null) {
+          displayDistance = (trip.endOdometer! - trip.startOdometer!).clamp(0.0, double.infinity);
+        } else if (minKm > 0) {
+          // Fallback to minKm if no actual distance available
+          displayDistance = minKm;
+        }
+    }
+
+    // Don't use fallback - show actual rate from booking, 0 if missing
     final pricePerKm = trip.baseRatePerKm ?? _toDouble(raw['pricePerKm']) ?? 0.0;
     final permitCharge = trip.permitCharge ?? _toDouble(raw['permitCharge']) ?? 0.0;
-    final driverBeta = _toDouble(raw['driverBeta']) ?? _toDouble(raw['driver_beta']) ?? 0.0;
+    // Driver Beta can come from multiple fields
+    final driverBeta = _toDouble(raw['tripCompletedDriverBeta']) ?? 
+                       _toDouble(raw['driverBeta']) ?? 
+                       _toDouble(raw['driver_beta']) ?? 
+                       trip.vehicleBaseRate ?? 
+                       0.0;
     final estimatedFare = trip.fare ?? _toDouble(raw['finalAmount']) ?? _toDouble(raw['estimatedAmount']) ?? 0.0;
     final duration = trip.duration;
     final paymentMethod = raw['paymentMethod']?.toString() ?? 'Cash';
@@ -394,19 +419,138 @@ class _EstimatedFareScreenState extends State<EstimatedFareScreen> {
                     ),
                     const SizedBox(height: 16),
                     _buildFareRow('Service Type', serviceType),
+                    const SizedBox(height: 8),
+                    _buildFareRow('Vehicle Type', vehicleType),
                     const SizedBox(height: 12),
-                    _buildFareRow('Total Distance', '${distance.toStringAsFixed(0)}KM'),
+                    
+                    // Distance Verification Section
+                    if (trip.status.toLowerCase() == 'completed' && trip.endOdometer != null && trip.startOdometer != null) ...[
+                      const Divider(),
+                       Text(
+                        'Distance Verification',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Odometer Distance
+                      _buildFareRow(
+                        'Odometer Distance', 
+                        '${((trip.endOdometer ?? 0) - (trip.startOdometer ?? 0)).toStringAsFixed(1)} KM',
+                        isSubItem: true
+                      ),
+                      // GPS Distance
+                      if ((trip.gpsDistance ?? 0) > 0)
+                        _buildFareRow(
+                          'GPS Distance', 
+                          '${(trip.gpsDistance ?? 0).toStringAsFixed(1)} KM',
+                          isSubItem: true
+                        ),
+                      const SizedBox(height: 8),
+                      // Breakdown Mismatch Warning (if applicable)
+                      if ((trip.gpsDistance ?? 0) > 0 && 
+                          ((((trip.endOdometer ?? 0) - (trip.startOdometer ?? 0)) - (trip.gpsDistance ?? 0)).abs() > 0.5))
+                         Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.warning_amber_rounded, size: 16, color: Colors.orange.shade800),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Distance Mismatch Detected. Using Odometer Reading.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.orange.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const Divider(),
+                    ],
+
+                    // Smart Distance Display
+                    _buildFareRow('Total Distance', '${displayDistance.toStringAsFixed(1)} KM'),
                     const SizedBox(height: 12),
+                    
                     _buildFareRow('Minimum KM', '${minKm.toStringAsFixed(0)} KM'),
                     const SizedBox(height: 12),
-                    _buildFareRow('Price Per KM', '₹${pricePerKm.toStringAsFixed(0)}'),
+                    
+                    // KM Rate Breakdown - Show actual rate from booking
+                    () {
+                      final hasActualRate = pricePerKm > 0;
+                      final rate = hasActualRate ? pricePerKm : 0.0;
+                      final billableKm = displayDistance > minKm ? displayDistance : minKm;
+                      final distanceFare = billableKm * rate;
+                      return Column(
+                        children: [
+                          _buildFareRow(
+                            'Rate Per KM', 
+                            hasActualRate ? '₹${rate.toStringAsFixed(0)}' : 'Not set',
+                          ),
+                          if (hasActualRate) ...[
+                            const SizedBox(height: 8),
+                            _buildFareRow(
+                              'Distance Fare (${billableKm.toStringAsFixed(0)} KM × ₹${rate.toStringAsFixed(0)})', 
+                              '₹${distanceFare.toStringAsFixed(0)}',
+                              isSubItem: true
+                            ),
+                          ] else ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              '⚠️ Vehicle rate not saved in booking. Please check admin settings.',
+                              style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                        ],
+                      );
+                    }(),
+                    
+                    // Extra Charges - Always display all charges (even if 0)
+                    _buildFareRow('Hill Charge', '₹${(trip.hillCharge ?? 0).toStringAsFixed(0)}'),
+                    _buildFareRow('Toll Charge', '₹${(trip.tollCharge ?? 0).toStringAsFixed(0)}'),
+                    _buildFareRow('Pet Charge', '₹${(trip.petCharge ?? 0).toStringAsFixed(0)}'),
+                    _buildFareRow('Permit Charge', '₹${permitCharge.toStringAsFixed(0)}'),
+                    _buildFareRow('Parking Charge', '₹${(trip.parkingCharge ?? 0).toStringAsFixed(0)}'),
+                    _buildFareRow('Waiting Charge', '₹${(trip.waitingCharge ?? 0).toStringAsFixed(0)}'),
+                    
                     const SizedBox(height: 12),
-                    if (permitCharge > 0)
-                      _buildFareRow('Permit Charge', '₹${permitCharge.toStringAsFixed(0)}'),
-                    if (permitCharge > 0) const SizedBox(height: 12),
-                    if (driverBeta > 0)
-                      _buildFareRow('Driver Beta', '₹${driverBeta.toStringAsFixed(0)}'),
-                    if (driverBeta > 0) const SizedBox(height: 16),
+
+                    // Driver Beta / Vehicle Base Rate - always show with fallback
+                    _buildFareRow('Driver Beta', '₹${((driverBeta > 0 ? driverBeta : (trip.vehicleBaseRate != null && trip.vehicleBaseRate! > 0 ? trip.vehicleBaseRate! : 300))).toStringAsFixed(0)}'),
+                    const SizedBox(height: 12),
+                    
+                    // Tax & Convenience Fee
+                    if (trip.tripCompletedTaxAmount != null && trip.tripCompletedTaxAmount! > 0)
+                      _buildFareRow('Tax (GST)', '₹${trip.tripCompletedTaxAmount!.toStringAsFixed(0)}'),
+                    if (trip.taxAmount != null && trip.taxAmount! > 0 && (trip.tripCompletedTaxAmount == null || trip.tripCompletedTaxAmount == 0))
+                       _buildFareRow('Tax (GST)', '₹${trip.taxAmount!.toStringAsFixed(0)}'),
+                    
+                    if (trip.convenienceFee != null && trip.convenienceFee! > 0) ...[
+                      const SizedBox(height: 8),
+                      _buildFareRow('Convenience Fee', '₹${trip.convenienceFee!.toStringAsFixed(0)}'),
+                    ],
+
+                    // Discount & Advance
+                    if (trip.discountAmount != null && trip.discountAmount! > 0) ...[
+                      const SizedBox(height: 8),
+                      _buildFareRow('Discount', '- ₹${trip.discountAmount!.toStringAsFixed(0)}', color: Colors.green),
+                    ],
+                    if (trip.advanceAmount != null && trip.advanceAmount! > 0) ...[
+                      const SizedBox(height: 8),
+                      _buildFareRow('Advance Paid', '- ₹${trip.advanceAmount!.toStringAsFixed(0)}', color: Colors.blue),
+                    ],
+
                     const Divider(),
                     const SizedBox(height: 12),
                     Row(
@@ -435,52 +579,7 @@ class _EstimatedFareScreenState extends State<EstimatedFareScreen> {
             
             const SizedBox(height: 16),
             
-            // Driver Beta and Estimated Fare Summary
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Driver Beta',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                        Text(
-                          '₹${driverBeta.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Estimated Fare',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '₹${estimatedFare.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            // Removed redundant Driver Beta and Estimated Fare Summary card
             
             const SizedBox(height: 16),
             
@@ -690,22 +789,29 @@ class _EstimatedFareScreenState extends State<EstimatedFareScreen> {
     );
   }
 
-  Widget _buildFareRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 14),
-        ),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
+  Widget _buildFareRow(String label, String value, {bool isSubItem = false, Color? color}) {
+    return Padding(
+      padding: EdgeInsets.only(left: isSubItem ? 16.0 : 0.0, bottom: isSubItem ? 4.0 : 0.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: isSubItem ? 13 : 14,
+              color: color ?? (isSubItem ? Colors.grey.shade700 : Colors.black87),
+            ),
           ),
-        ),
-      ],
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: isSubItem ? 13 : 14,
+              fontWeight: isSubItem ? FontWeight.normal : FontWeight.w600,
+              color: color ?? (isSubItem ? Colors.grey.shade700 : Colors.black87),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

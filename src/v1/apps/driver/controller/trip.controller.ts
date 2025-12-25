@@ -16,9 +16,9 @@ import { infoLogger as log, debugLogger as debug } from "../../../../utils/logge
 import { odoCalculation } from "../../../core/function/odoCalculation";
 import { createInvoice, InvoiceResponse } from "../../../core/function/createFn/invoiceCreate";
 import { sumSingleObject } from "../../../core/function/objectArrays";
-import { createCustomerNotification, createNotification } from "../../../core/function/notificationCreate";
+import { createCustomerNotification, createNotification, createDriverNotification } from "../../../core/function/notificationCreate";
 import { sendToSingleToken } from "../../../../common/services/firebase/appNotify";
-import { sendNotification, emitTripUpdateToCustomer } from "../../../../common/services/socket/websocket";
+import { sendNotification, emitTripUpdateToCustomer, emitTripUpdateToDriver } from "../../../../common/services/socket/websocket";
 import { publishNotification } from "../../../../common/services/rabbitmq/publisher";
 import { toLocalTime } from "../../../core/function/dataFn";
 
@@ -499,6 +499,21 @@ export const tripStarted = async (req: Request, res: Response) => {
                 tripStartedTime: dayjs().toDate()
 
             });
+
+            // 🟢 Persist "Trip Started" Notification
+            await createDriverNotification({
+                title: "▶️ Trip Started",
+                message: `You have started Trip #${id}. Drive safely!`,
+                ids: {
+                    adminId: adminId,
+                    driverId: driverId,
+                    bookingId: id
+                },
+                type: "TRIP_STARTED",
+            });
+
+            // Emit Socket Event for Instant Refresh
+            emitTripUpdateToDriver(driverId, { ...booking.toJSON(), status: "Started" }, "TRIP_STARTED");
             return;
         }
         else {
@@ -664,6 +679,9 @@ export const tripStarted = async (req: Request, res: Response) => {
             message: "Trip Started"
         });
 
+        // Emit Socket Event to Driver for Instant Refresh
+        emitTripUpdateToDriver(driverId, { ...booking.toJSON(), status: "Started" }, "TRIP_STARTED");
+
         // Send FCM notification to vendor (if booking was created by vendor)
         if (booking.createdBy === "Vendor" && booking.vendorId) {
             const vendor = await Vendor.findOne({
@@ -751,7 +769,12 @@ export const tripEnd = async (req: Request, res: Response) => {
             return;
         }
 
-        const { endOdometerImage, endOdometerValue, endOtp, driverCharges, accessToken } = validateData.data;
+        const {
+            endOdometerImage, endOdometerValue, endOtp, driverCharges, accessToken,
+            distanceSource, distanceMismatchPercent, distanceMismatchNotes,
+            // Extra Charges
+            hillCharge, tollCharge, petCharge, permitCharge, parkingCharge, waitingCharge
+        } = validateData.data;
 
         if (booking.startOdometerValue >= endOdometerValue) {
             res.status(400).json({
@@ -797,11 +820,22 @@ export const tripEnd = async (req: Request, res: Response) => {
             }
         }
 
-
         // Extract GPS trail data if provided
         const { gpsPoints, gpsDistance } = req.body;
         console.log("GPS Points received:", gpsPoints?.length || 0, "points");
         console.log("GPS Distance received:", gpsDistance, "km");
+
+        // DEBUG: Log extra charges received from driver app
+        console.log("🔥 [tripEnd] Extra Charges Received:", {
+            hillCharge,
+            tollCharge,
+            petCharge,
+            permitCharge,
+            parkingCharge,
+            waitingCharge,
+            driverCharges
+        });
+
 
         await booking.update({
             endOdometerImage: endOdometerImage || null,
@@ -812,6 +846,23 @@ export const tripEnd = async (req: Request, res: Response) => {
             // GPS trail data from driver app
             gpsTrail: gpsPoints || null,
             gpsDistance: gpsDistance || null,
+
+            // New Distance Verification Fields
+            distanceSource: distanceSource || 'odometer',
+            distanceMismatchPercent: distanceMismatchPercent || 0,
+            distanceMismatchNotes: distanceMismatchNotes || null,
+
+            // Update Extra Charges
+            extraHill: hillCharge || 0,
+            extraToll: tollCharge || 0,
+            extraPermitCharge: permitCharge || 0,
+            // Store non-standard charges in extraCharges JSON
+            extraCharges: {
+                ...(booking.extraCharges || {}),
+                petCharge: petCharge || 0,
+                parkingCharge: parkingCharge || 0,
+                waitingCharge: waitingCharge || 0
+            }
         });
 
         await booking.save();
@@ -991,15 +1042,17 @@ export const tripCompleted = async (req: Request, res: Response) => {
             });
             driver.assigned = false;
             driver.bookingCount += 1;
-            driver.totalEarnings = String(Number(driver.totalEarnings) + (Number(booking.tripCompletedFinalAmount) - Number(booking.driverDeductionAmount)));
+
+            // FIXED: Calculate 11% commission first
+            const COMMISSION_RATE = 11; // 11%
+            const tripFinalAmount = booking.tripCompletedFinalAmount || 0;
+            const driverDeductionFinalAmount = Math.ceil((tripFinalAmount * COMMISSION_RATE) / 100);
+            console.log(`[TripComplete] 💰 Commission: ${COMMISSION_RATE}% of ₹${tripFinalAmount} = ₹${driverDeductionFinalAmount}`);
+
+            // Update driver earnings (trip amount minus 11% commission)
+            driver.totalEarnings = String(Number(driver.totalEarnings) + (tripFinalAmount - driverDeductionFinalAmount));
             await driver.save();
 
-            const excludeKeys = ["Toll", "Hill", "Permit Charge"];
-            const extraChargesSum = sumSingleObject(booking.extraCharges, excludeKeys);
-            const extraChargesValue = Number(extraChargesSum)
-
-            const driverDeductionFinalAmount = booking.driverDeductionAmount + extraChargesValue
-            console.log("From and to", booking.pickup, booking.drop, "driverDeductionFinalAmount", driverDeductionFinalAmount);
             const driverCommission = await commissionCalculation({
                 debitedId: driverId,
                 amount: driverDeductionFinalAmount,
@@ -1013,6 +1066,9 @@ export const tripCompleted = async (req: Request, res: Response) => {
                 driverFareBreakup: booking.driverCommissionBreakup,
 
             });
+
+            // Emit Socket Event for Instant Refresh (Trip Completed)
+            emitTripUpdateToDriver(driverId, { ...booking.toJSON(), status: "Completed" }, "TRIP_COMPLETED");
 
             if (booking.createdBy === "Vendor") {
                 const vendorCommission = await commissionCalculation({

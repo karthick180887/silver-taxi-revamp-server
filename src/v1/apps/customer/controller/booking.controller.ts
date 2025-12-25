@@ -513,6 +513,21 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         }
         console.log("DEBUG: validServiceType (after):", validServiceType);
 
+        // Fetch tariff to get rate values as fallback when not provided in request body
+        let tariff: Tariff | null = null;
+        if (tariffId) {
+            tariff = await Tariff.findOne({
+                where: { tariffId, adminId }
+            });
+        }
+
+        // Use tariff values as fallback when not provided in request body
+        const effectivePricePerKm = pricePerKm ?? tariff?.price ?? 0;
+        const effectiveExtraPricePerKm = extraPricePerKm ?? tariff?.extraPrice ?? 0;
+        const effectiveDriverBeta = driverBeta ?? tariff?.driverBeta ?? 0;
+        const effectiveExtraDriverBeta = extraDriverBeta ?? 0;
+
+
         const bookingData = {
             adminId,
             customerId: (createdBy === "User" || !createdBy) ? customerId : null,
@@ -549,10 +564,11 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             toll: toll ?? null,
             hill: hill ?? null,
             permitCharge: permitCharge ?? null,
-            pricePerKm: pricePerKm ?? null,
+            pricePerKm: effectivePricePerKm,
+            extraPricePerKm: effectiveExtraPricePerKm,
             taxPercentage: taxPercentage ?? null,
             taxAmount: taxAmount ?? null,
-            driverBeta: driverBeta ?? null,
+            driverBeta: effectiveDriverBeta,
             duration: convertedDuration ?? null,
             startOtp,
             days: days.toString(),
@@ -571,8 +587,10 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             normalFare: {
                 days: days,
                 distance: convertedDistance,
-                pricePerKm: pricePerKm,
-                driverBeta: driverBeta,
+                pricePerKm: effectivePricePerKm,
+                extraPricePerKm: effectiveExtraPricePerKm,
+                driverBeta: effectiveDriverBeta,
+                extraDriverBeta: effectiveExtraDriverBeta,
                 toll: toll,
                 hill: hill,
                 permitCharge: permitCharge,
@@ -582,17 +600,16 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             modifiedFare: {
                 days: days,
                 distance: (convertedDistance ?? 0),
-                pricePerKm: (pricePerKm ?? 0),
-                extraPricePerKm: extraPricePerKm ?? 0,
-                driverBeta: (driverBeta ?? 0) + (extraDriverBeta ?? 0),
+                pricePerKm: effectivePricePerKm,
+                extraPricePerKm: effectiveExtraPricePerKm,
+                driverBeta: effectiveDriverBeta + effectiveExtraDriverBeta,
                 toll: (toll ?? 0) + (extraToll ?? 0),
                 hill: (hill ?? 0) + (extraHill ?? 0),
                 permitCharge: (permitCharge ?? 0) + (extraPermitCharge ?? 0),
-                estimatedAmount: Number(estimatedAmount) + (distance * (extraPricePerKm ?? 0)),
+                estimatedAmount: Number(estimatedAmount) + (distance * effectiveExtraPricePerKm),
                 finalAmount: Number(finalAmount),
             },
             convenienceFee: companyProfile?.convenienceFee,
-            extraPricePerKm: extraPricePerKm ?? 0,
             adminContact: String(companyProfile?.phone[0]) ?? "9876543210"
         };
 

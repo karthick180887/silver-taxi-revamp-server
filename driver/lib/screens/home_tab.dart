@@ -5,16 +5,20 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
+import '../models/trip_models.dart';
 import '../services/native_overlay_service.dart';
 import '../services/overlay_notification_service.dart';
 import '../services/razorpay_service.dart';
 import '../services/socket_service.dart';
 import '../services/trip_service.dart';
 import '../services/background_service_manager.dart';
+import '../widgets/active_trip_banner.dart';
 import 'payment_details_page.dart';
 import 'payment_processing_page.dart';
 import 'wallet_page.dart';
 import 'all_trips_page.dart';
+import 'start_trip_screen.dart';
+import 'ongoing_trip_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import '../design_system.dart';
 
@@ -39,6 +43,7 @@ class _HomeTabState extends State<HomeTab> {
   Map<String, dynamic>? _driverDetails;
   Map<String, dynamic>? _wallet;
   Map<String, dynamic>? _bookingCounts;
+  TripModel? _activeTrip; // Active trip (Not-Started or Started)
   bool _loading = false;
   bool _online = false;
   bool _paymentInProgress = false;
@@ -47,11 +52,23 @@ class _HomeTabState extends State<HomeTab> {
   StreamSubscription? _bookingSub;
   StreamSubscription? _positionStreamSub; // NEW: Position stream subscription
 
+  /// Helper to check if driver has a trip in progress
+  bool get hasTripInProgress => _activeTrip?.isStarted ?? false;
+
   @override
   void initState() {
     super.initState();
     // Initialize socket immediately
     SocketService().init(widget.token);
+    
+    // Initialize OverlayNotificationService containing socket listeners for overlay
+    // Only call this once
+    OverlayNotificationService().init(
+      widget.token,
+      TripService(apiClient: _api),
+      context,
+    );
+
     _loadDetails();
     _setupRealtimeListeners();
     
@@ -119,15 +136,18 @@ class _HomeTabState extends State<HomeTab> {
   Future<void> _loadDetails() async {
     setState(() => _loading = true);
     try {
+      final tripService = TripService(apiClient: _api);
       final results = await Future.wait([
         _api.fetchDriverDetails(token: widget.token),
         _api.fetchWallet(token: widget.token),
-        TripService(apiClient: _api).getTripCounts(widget.token),
+        tripService.getTripCounts(widget.token),
+        tripService.getActiveTrip(widget.token), // Check for active trips
       ]);
 
       final resp = results[0] as Map<String, dynamic>;
       final wallet = results[1] as Map<String, dynamic>;
-      final counts = results[2] as Map<String, dynamic>;
+      final counts = results[2] as Map<String, int>; // getTripCounts returns Map<String, int>
+      final activeTrip = results[3] as TripModel?;
 
       if (mounted) {
         // DEBUG: Log what the API returns for isOnline field
@@ -135,17 +155,27 @@ class _HomeTabState extends State<HomeTab> {
         debugPrint('HomeTab: _loadDetails - API Response:');
         debugPrint('HomeTab: isOnline value: ${resp['data']?['isOnline']}');
         debugPrint('HomeTab: isOnline type: ${resp['data']?['isOnline'].runtimeType}');
-        debugPrint('HomeTab: Full driver data keys: ${(resp['data'] as Map?)?.keys.toList()}');
+        debugPrint('HomeTab: Active trip: ${activeTrip?.bookingId ?? 'none'}');
+        debugPrint('HomeTab: Active trip status: ${activeTrip?.status ?? 'none'}');
         debugPrint('HomeTab: ========================================');
         
         setState(() {
           _driverDetails = resp['data'] as Map<String, dynamic>?;
           _wallet = wallet['data'] as Map<String, dynamic>?;
           _bookingCounts = counts;
+          _activeTrip = activeTrip;
           // Backend stores isOnline as boolean, not onlineStatus as string
           _online = _driverDetails?['isOnline'] == true;
           debugPrint('HomeTab: _online set to: $_online');
         });
+        
+        // NEW: Check for pending offers and restore overlay if needed
+        _checkAndRestoreOverlay();
+
+        // Update overlay service with active trip status to block new offers
+        // Block offers when driver has ANY active trip (Not-Started or Started)
+        final hasActiveTrip = activeTrip != null;
+        OverlayNotificationService().setActiveTripStatus(hasActiveTrip);
 
         // NEW: If backend says we are Online, resume location tracking immediately
         if (_online) {
@@ -220,6 +250,31 @@ class _HomeTabState extends State<HomeTab> {
       }
     } catch (e) {
       debugPrint('HomeTab: ? Error loading booking counts: $e');
+    }
+  }
+
+  /// Check if there are pending offers and restore the overlay if needed
+  Future<void> _checkAndRestoreOverlay() async {
+    // Only restore if we have new bookings and NO active trip
+    final newBookings = _bookingCounts?['new-bookings'] ?? 0;
+    if (newBookings > 0 && !hasTripInProgress) {
+      debugPrint('HomeTab: 🔄 Found $newBookings pending offers - attempting to restore overlay');
+      try {
+        final liveTrips = await TripService(apiClient: _api).getLiveTrips(widget.token);
+        if (liveTrips.offers.isNotEmpty) {
+          final trip = liveTrips.offers.first;
+          debugPrint('HomeTab: 🔔 Restoring overlay for trip: ${trip.id}');
+          OverlayNotificationService().showTripOffer(trip);
+          
+          // Also play sound
+          try {
+             // Method channel playSound
+             const MethodChannel('cabigo.driver/overlay').invokeMethod('playSound');
+          } catch (_) {}
+        }
+      } catch (e) {
+        debugPrint('HomeTab: ❌ Error restoring overlay: $e');
+      }
     }
   }
 
@@ -665,6 +720,44 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
+  /// Navigate to the active trip screen based on trip status
+  void _navigateToActiveTrip() {
+    if (_activeTrip == null) return;
+    
+    final trip = _activeTrip!;
+    final tripService = TripService(apiClient: _api);
+    
+    if (trip.isStarted) {
+      // Trip is in progress - navigate to OngoingTripScreen
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => OngoingTripScreen(
+            trip: trip,
+            token: widget.token,
+            tripService: tripService,
+          ),
+        ),
+      ).then((_) {
+        // Refresh data when returning from trip screen
+        _loadDetails();
+      });
+    } else {
+      // Trip is not started - navigate to StartTripScreen  
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => StartTripScreen(
+            trip: trip,
+            token: widget.token,
+            tripService: tripService,
+          ),
+        ),
+      ).then((_) {
+        // Refresh data when returning from trip screen
+        _loadDetails();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = _driverDetails?['name'] ?? 'Driver';
@@ -744,6 +837,13 @@ class _HomeTabState extends State<HomeTab> {
                 ),
 
                 const SizedBox(height: 24),
+
+                // Active Trip Banner (shows when driver has an active trip)
+                if (_activeTrip != null)
+                  ActiveTripBanner(
+                    trip: _activeTrip!,
+                    onContinue: _navigateToActiveTrip,
+                  ),
 
                 // 2. Premium Wallet Card
                 Container(

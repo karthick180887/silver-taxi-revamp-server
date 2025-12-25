@@ -144,6 +144,11 @@ class _BookingListPageState extends State<BookingListPage> {
         } else {
           _loadBookings();
         }
+      } else if (type == 'TRIP_STARTED' || type == 'TRIP_COMPLETED' || type == 'TRIP_UPDATE') {
+        // For any lifecycle change, trigger a reload to keep list fresh
+        debugPrint('[BookingListPage] 🔄 Received lifecycle update ($type), reloading list...');
+        _loadBookings();
+        widget.onRefreshCounts?.call();
       } else if (type.isEmpty && widget.isLive) {
         // Legacy payload without type, still refresh the new tab.
         _loadBookings();

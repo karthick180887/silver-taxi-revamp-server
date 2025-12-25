@@ -187,7 +187,7 @@ export const singleModelSync = async (model: any, options: SyncOptions = { alter
     // await singleModelSync(HourlyPackage, { alter: true });
     // await singleModelSync(Tariff, { alter: true });
     // await singleModelSync(Enquiry, { alter: true});
-    await singleModelSync(Booking, { alter: true }); // TEMP: Add gpsTrail/gpsDistance columns
+    // await singleModelSync(Booking, { alter: true }); // DISABLED: Was causing SQL syntax errors on startup
     // await singleModelSync(BookingActivityLog, { alter: true });
     // await singleModelSync(VendorBankDetails, { alter: true });
     // await singleModelSync(ConfigKeys, { alter: true });
@@ -215,8 +215,8 @@ Booking.belongsTo(Driver, { foreignKey: 'driverId', targetKey: 'driverId', as: '
 DriverBankDetails.belongsTo(Driver, { foreignKey: 'driverId', targetKey: 'driverId', as: 'driver' });
 Driver.hasMany(DriverBankDetails, { foreignKey: 'driverId', sourceKey: 'driverId', as: 'driverBankDetails' });
 
-// Vehicle.hasMany(Booking, { foreignKey: 'vehicleId', sourceKey: 'vehicleId', as: 'bookings' });
-// Booking.belongsTo(Vehicle, { foreignKey: 'vehicleId', targetKey: 'vehicleId', as: 'vehicles' });
+Vehicle.hasMany(Booking, { foreignKey: 'vehicleId', sourceKey: 'vehicleId', as: 'bookings' });
+Booking.belongsTo(Vehicle, { foreignKey: 'vehicleId', targetKey: 'vehicleId', as: 'vehicles' });
 
 Offers.hasMany(Booking, { foreignKey: 'offerId', sourceKey: 'offerId', as: 'bookings' });
 Booking.belongsTo(Offers, { foreignKey: 'offerId', targetKey: 'offerId', as: 'offers' });
