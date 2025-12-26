@@ -1,1 +1,0 @@
-DROP INDEX "notifications_notification_id_date_vendor_id_admin_id";

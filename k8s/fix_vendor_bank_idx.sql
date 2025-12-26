@@ -1,1 +1,0 @@
-DROP INDEX "vendor_bank_details_vendor_id_upi_id_upi_number_bank_account_nu";

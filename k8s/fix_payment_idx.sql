@@ -1,1 +1,0 @@
-DROP INDEX "payment_transactions_gateway_transaction_id_transaction_id_admi";
