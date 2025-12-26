@@ -449,7 +449,116 @@ export const tripOtpSend = async (req: Request, res: Response) => {
 }
 
 
+/**
+ * Save GPS points during an active trip (for persistence across app restarts)
+ * POST /driver/trip/:id/gps-points
+ */
+export const saveGpsPoints = async (req: Request, res: Response) => {
+    const adminId = req.body.adminId ?? req.query.adminId;
+    const driverId = req.body.driverId ?? req.query.driverId;
+    const { id } = req.params; // bookingId
+    const { gpsPoints, gpsDistance } = req.body;
 
+    console.log("[GPS] 📍 Saving GPS points for trip:", id);
+    console.log("[GPS] Points count:", gpsPoints?.length || 0);
+    console.log("[GPS] Distance:", gpsDistance, "km");
+
+    if (!driverId) {
+        res.status(401).json({ success: false, message: "Driver ID is required" });
+        return;
+    }
+
+    if (!gpsPoints || !Array.isArray(gpsPoints)) {
+        res.status(400).json({ success: false, message: "gpsPoints array is required" });
+        return;
+    }
+
+    try {
+        const booking = await Booking.findOne({
+            where: {
+                bookingId: id,
+                driverId,
+                adminId,
+                status: { [require('sequelize').Op.in]: ["Not-Started", "Started"] }
+            }
+        });
+
+        if (!booking) {
+            res.status(404).json({ success: false, message: "Active booking not found" });
+            return;
+        }
+
+        // Update the booking with GPS trail data
+        await booking.update({
+            gpsTrail: gpsPoints,
+            gpsDistance: gpsDistance || null
+        });
+
+        console.log("[GPS] ✅ GPS points saved successfully");
+
+        res.status(200).json({
+            success: true,
+            message: "GPS points saved successfully",
+            pointsCount: gpsPoints.length,
+            distance: gpsDistance
+        });
+    } catch (error) {
+        console.error("[GPS] ❌ Error saving GPS points:", error);
+        res.status(500).json({ success: false, message: "Internal server error", error });
+    }
+};
+
+
+/**
+ * Retrieve GPS points for an active trip (for restoring state after app restart)
+ * GET /driver/trip/:id/gps-points
+ */
+export const getGpsPoints = async (req: Request, res: Response) => {
+    const adminId = req.body.adminId ?? req.query.adminId;
+    const driverId = req.body.driverId ?? req.query.driverId;
+    const { id } = req.params; // bookingId
+
+    console.log("[GPS] 📥 Fetching GPS points for trip:", id);
+
+    if (!driverId) {
+        res.status(401).json({ success: false, message: "Driver ID is required" });
+        return;
+    }
+
+    try {
+        const booking = await Booking.findOne({
+            where: {
+                bookingId: id,
+                driverId,
+                adminId
+            },
+            attributes: ['bookingId', 'gpsTrail', 'gpsDistance', 'status']
+        });
+
+        if (!booking) {
+            res.status(404).json({ success: false, message: "Booking not found" });
+            return;
+        }
+
+        const gpsPoints = booking.gpsTrail || [];
+        const gpsDistance = booking.gpsDistance || 0;
+
+        console.log("[GPS] ✅ Retrieved", gpsPoints.length, "points, distance:", gpsDistance, "km");
+
+        res.status(200).json({
+            success: true,
+            data: {
+                gpsPoints,
+                gpsDistance,
+                pointsCount: gpsPoints.length,
+                status: booking.status
+            }
+        });
+    } catch (error) {
+        console.error("[GPS] ❌ Error fetching GPS points:", error);
+        res.status(500).json({ success: false, message: "Internal server error", error });
+    }
+};
 
 export const tripStarted = async (req: Request, res: Response) => {
     const adminId = req.body.adminId ?? req.query.adminId;

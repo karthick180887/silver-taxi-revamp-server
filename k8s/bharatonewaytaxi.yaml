@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bharatonewaytaxi
+  namespace: default
+  labels:
+    app: bharatonewaytaxi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bharatonewaytaxi
+  template:
+    metadata:
+      labels:
+        app: bharatonewaytaxi
+    spec:
+      imagePullSecrets:
+        - name: do-registry-secret
+      containers:
+        - name: bharatonewaytaxi
+          image: registry.digitalocean.com/cabigo/bharatonewaytaxi-image
+          ports:
+            - containerPort: 3000
+          resources:
+             requests:
+               cpu: "100m"
+               memory: "128Mi"
+             limits:
+               cpu: "500m"
+               memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bharatonewaytaxi
+  namespace: default
+spec:
+  selector:
+    app: bharatonewaytaxi
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bharatonewaytaxi-ingress
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - bharatonewaytaxi.com
+        - www.bharatonewaytaxi.com
+      secretName: bharatonewaytaxi-tls
+  rules:
+    - host: bharatonewaytaxi.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bharatonewaytaxi
+                port:
+                  number: 80
+    - host: www.bharatonewaytaxi.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bharatonewaytaxi
+                port:
+                  number: 80
+    - host: 139.59.52.42.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bharatonewaytaxi
+                port:
+                  number: 80

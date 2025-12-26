@@ -4,7 +4,9 @@ import {
     getTripSummary, tripOtpSend,
     tripCompleted, verifyTripPayment,
     getOrCreateRazorpayOrder,
-    driverTripCancellation
+    driverTripCancellation,
+    saveGpsPoints,
+    getGpsPoints
 } from "../controller/trip.controller";
 
 
@@ -15,6 +17,10 @@ router.get("/summary/:id", getTripSummary);
 
 // (Optional) Get or create Razorpay order for retry
 router.get("/payment/order/:id", getOrCreateRazorpayOrder);
+
+// GPS Points - Save (during trip) and Retrieve (on app restart)
+router.post("/gps-points/:id", saveGpsPoints);
+router.get("/gps-points/:id", getGpsPoints);
 
 // Start trip
 router.post("/start/:id", tripStarted);

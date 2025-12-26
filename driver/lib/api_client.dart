@@ -711,6 +711,27 @@ class DriverApiClient extends BaseApiClient {
     }, token: token);
   }
 
+  /// Save GPS points to server during an active trip (for persistence across app restarts)
+  Future<ApiResult> saveGpsPoints({
+    required String token,
+    required String tripId,
+    required List<Map<String, dynamic>> gpsPoints,
+    double? gpsDistance,
+  }) {
+    return post('/app/trip/gps-points/$tripId', {
+      'gpsPoints': gpsPoints,
+      'gpsDistance': gpsDistance,
+    }, token: token);
+  }
+
+  /// Retrieve GPS points from server for an active trip (to restore state after app restart)
+  Future<ApiResult> getGpsPoints({
+    required String token,
+    required String tripId,
+  }) {
+    return get('/app/trip/gps-points/$tripId', token: token);
+  }
+
   // Analytics & Earnings
   Future<ApiResult> getAnalytics({
     required String token,

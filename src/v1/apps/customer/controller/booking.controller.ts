@@ -336,6 +336,18 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
         const tariffId = req.body.tariffId ?? req.body.vehicleTypeId;
         const vehicleId = undefined;
 
+        // Helper function to clean phone number (remove all 91 prefixes and non-digits)
+        const cleanPhone = (phone: string | undefined | null): string => {
+            if (!phone) return '';
+            // Remove all non-digit characters first
+            let cleaned = phone.replace(/\D/g, '');
+            // Remove leading 91 country code (can appear multiple times)
+            while (cleaned.startsWith('91') && cleaned.length > 10) {
+                cleaned = cleaned.substring(2);
+            }
+            return cleaned;
+        };
+
         // Ensure pickup and drop are stringified JSON if they are objects to preserve lat/lng
         if (typeof pickup === 'object' && pickup !== null) {
             pickup = JSON.stringify(pickup);
@@ -493,7 +505,8 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
 
         // Self-healing: Update customer profile if phone is missing
         if (!customerData?.phone && req.body.phone) {
-            const formattedPhone = `91 ${req.body.phone}`;
+            const cleanedInputPhone = cleanPhone(req.body.phone);
+            const formattedPhone = `91 ${cleanedInputPhone}`;
             try {
                 await Customer.update(
                     { phone: formattedPhone },
@@ -533,7 +546,7 @@ export const customerCreateBooking = async (req: Request, res: Response): Promis
             customerId: (createdBy === "User" || !createdBy) ? customerId : null,
             name: String(customerData?.name),
             email: customerData?.email,
-            phone: `91 ${req.body.phone}` || customerData?.phone,
+            phone: req.body.phone ? `91 ${cleanPhone(req.body.phone)}` : customerData?.phone,
             pickup,
             drop,
 

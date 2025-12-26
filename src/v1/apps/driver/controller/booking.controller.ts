@@ -12,7 +12,8 @@ import dayjs from "../../../../utils/dayjs";
 import { sendToSingleToken } from "../../../../common/services/firebase/appNotify";
 import { infoLogger as info, debugLogger as debug } from "../../../../utils/logger";
 import { sendNotification, emitTripAcceptedToDriver } from "../../../../common/services/socket/websocket";
-import { Op } from "sequelize";
+import { Op, Transaction } from "sequelize";
+import { sequelize } from "../../../../common/db/postgres";
 import SMSService from "../../../../common/services/sms/sms";
 import { publishNotification } from "../../../../common/services/rabbitmq/publisher";
 import { toLocalTime } from "../../../core/function/dataFn";
@@ -483,308 +484,353 @@ export const acceptOrRejectBooking = async (req: Request, res: Response) => {
         // const { action } = validData.data;
         const { action } = req.body;
 
-        // First, check if booking exists at all
-        const anyBooking = await Booking.findOne({
-            where: { bookingId: id, adminId },
+        // 🔒 Use transaction with row-level locking to prevent race conditions
+        const t = await sequelize.transaction({
+            isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED
         });
 
-        console.log("[ACCEPT] 📋 Booking lookup (any status):");
-        console.log("[ACCEPT]   - Found:", !!anyBooking);
-        if (anyBooking) {
-            console.log("[ACCEPT]   - Current status:", anyBooking.status);
-            console.log("[ACCEPT]   - driverAccepted:", anyBooking.driverAccepted);
-            console.log("[ACCEPT]   - driverId on booking:", anyBooking.driverId);
-            console.log("[ACCEPT]   - assignAllDriver:", anyBooking.assignAllDriver);
-        }
-
-        const booking = await Booking.findOne({
-            where: {
-                bookingId: id,
-                adminId,
-                status: "Booking Confirmed",
-                driverAccepted: "pending"
-            },
-        });
-
-
-        if (!booking) {
-            console.log("[ACCEPT] ❌ Booking not found with status='Booking Confirmed' AND driverAccepted='pending'");
-            res.status(404).json({
-                success: false,
-                message: "Booking not found or already processed",
+        try {
+            // First, check if booking exists at all (for logging)
+            const anyBooking = await Booking.findOne({
+                where: { bookingId: id, adminId },
+                transaction: t
             });
-            return;
-        }
 
-        console.log("[ACCEPT] ✅ Booking found with correct status");
-
-
-        const driver = await Driver.findOne({
-            where: { driverId: driverId },
-            include: [{ model: DriverWallet, as: 'wallet' }],
-        });
-
-        if (!driver) {
-            res.status(404).json({
-                success: false,
-                message: "Driver not found",
-            });
-            return;
-        }
-
-        if (driver.assigned) {
-            res.status(400).json({
-                success: false,
-                message: "Driver is already assigned to another booking",
-            });
-            return;
-        }
-
-        // ROBUST CHECK: Query database directly for any active trips (Not-Started or Started)
-        // This ensures only 1 active trip per driver at a time, regardless of assigned flag
-        const activeBooking = await Booking.findOne({
-            where: {
-                driverId: driverId,
-                adminId,
-                status: { [Op.in]: ["Not-Started", "Started"] },
-                driverAccepted: "accepted"
-            },
-            attributes: ["bookingId", "status"]
-        });
-
-        if (activeBooking) {
-            console.log(`[ACCEPT] ❌ Driver already has active trip: ${activeBooking.bookingId} (status: ${activeBooking.status})`);
-            res.status(400).json({
-                success: false,
-                message: `You already have an active trip (${activeBooking.bookingId}). Please complete or cancel your current trip before accepting a new one.`,
-                activeBookingId: activeBooking.bookingId,
-                activeStatus: activeBooking.status
-            });
-            return;
-        }
-
-        const vehicle = await Vehicle.findOne({
-            where: { driverId: driverId, isActive: true },
-        })
-
-        if (!vehicle) {
-            res.status(404).json({
-                success: false,
-                message: "Vehicle not found or not active",
-            });
-            return;
-        }
-
-        if (booking.assignAllDriver && booking.driverAccepted === "accepted") {
-            res.status(400).json({
-                success: false,
-                message: "Booking was already someone accepted",
-            });
-            return;
-        }
-
-        console.log("Action", action);
-
-
-        let activityLog;
-        activityLog = await DriverBookingLog.findOne({
-            where: {
-                bookingId: id,
-                adminId,
-                driverId: driverId,
-            },
-            attributes: [
-                "id",
-                "acceptTime",
-                "tripStatus"
-            ]
-
-        });
-
-        if (!activityLog) {
-            activityLog = await DriverBookingLog.create({
-                adminId,
-                driverId,
-                bookingId: id,
-                acceptTime,
-                tripStatus: "Driver Accepted"
-            })
-        }
-
-
-        debug.info(`Booking vehicle type: ${booking.vehicleType}`);
-        // const vehicleType = await VehicleTypes.findOne({
-        //     where: {
-        //         name: booking.vehicleType.toLowerCase(),
-        //     },
-        // })
-
-        // if (!vehicleType) {
-        //     res.status(404).json({
-        //         success: false,
-        //         message: "Vehicle type not found",
-        //     });
-        //     return;
-        // }
-
-        // debug.info(`Vehicle type >> ${vehicleType.acceptedVehicleTypes} , vehicle.type >> ${vehicle.type}`);
-
-        // if (!vehicleType.acceptedVehicleTypes.includes(vehicle.type.toLowerCase())) {
-        //     res.status(400).json({
-        //         success: false,
-        //         message: `You can't accept this booking with ${booking.vehicleType} vehicle`,
-        //     });
-        //     return;
-        // }
-
-        // Commission is always 11% of the estimated trip amount
-        const COMMISSION_RATE = 11; // 11%
-        const tripCommissionAmount = Math.ceil((booking.estimatedAmount * COMMISSION_RATE) / 100);
-
-        console.log(`[ACCEPT] 💰 Commission Check:`);
-        console.log(`[ACCEPT]   - Estimated Amount: ₹${booking.estimatedAmount}`);
-        console.log(`[ACCEPT]   - Commission Rate: ${COMMISSION_RATE}%`);
-        console.log(`[ACCEPT]   - Required Balance: ₹${tripCommissionAmount}`);
-
-        const driverBalance = JSON.parse(JSON.stringify(driver)).wallet?.balance ?? 0;
-        console.log(`[ACCEPT]   - Driver Balance: ₹${driverBalance}`);
-
-        if (driverBalance < tripCommissionAmount) {
-            console.log(`[ACCEPT] ❌ Insufficient balance!`);
-            res.status(400).json({
-                success: false,
-                message: `Insufficient wallet balance. You need ₹${tripCommissionAmount} (11% of ₹${booking.estimatedAmount}) but have only ₹${driverBalance}. Please add ₹${tripCommissionAmount - driverBalance} to your wallet.`,
-                recharge: true,
-                required: tripCommissionAmount,
-                available: driverBalance,
-                shortfall: tripCommissionAmount - driverBalance
-            });
-            return
-        }
-        console.log(`[ACCEPT] ✅ Sufficient balance for commission`);
-
-        let isCustomerAvailable = false;
-
-        // ✅ Accept or Reject logic
-        if (action === "reject") {
-            booking.driverAccepted = "rejected";
-
-        } else {
-            booking.driverId = driverId;
-            booking.driverAccepted = "accepted";
-            booking.acceptTime = acceptTime;
-            booking.status = "Not-Started";
-            booking.vehicleId = vehicle.vehicleId;
-            driver.assigned = true;
-            driver.vehicleId = booking.vehicleId;
-            activityLog.acceptTime = acceptTime;
-            activityLog.tripStatus = "Driver Accepted"
-
-
-            const requestTime = dayjs(booking.requestSentTime);
-            const acceptTimeObj = dayjs(acceptTime);
-
-            const diffInSeconds = acceptTimeObj.diff(requestTime, 'second', true);
-
-            let formattedAcceptTime;
-
-
-            if (diffInSeconds >= 60) {
-                formattedAcceptTime = `${Math.floor(diffInSeconds / 60)} min`;
-            } else {
-                formattedAcceptTime = `${diffInSeconds.toFixed(2)} sec`;
+            console.log("[ACCEPT] 📋 Booking lookup (any status):");
+            console.log("[ACCEPT]   - Found:", !!anyBooking);
+            if (anyBooking) {
+                console.log("[ACCEPT]   - Current status:", anyBooking.status);
+                console.log("[ACCEPT]   - driverAccepted:", anyBooking.driverAccepted);
+                console.log("[ACCEPT]   - driverId on booking:", anyBooking.driverId);
+                console.log("[ACCEPT]   - assignAllDriver:", anyBooking.assignAllDriver);
             }
 
-            console.log("Driver Accept Time:", formattedAcceptTime);
-
-            activityLog.avgAcceptTime = diffInSeconds;
-
-            const customer = await Customer.findOne({
+            // 🔒 Row-level lock: FOR UPDATE prevents other transactions from reading this row
+            const booking = await Booking.findOne({
                 where: {
-                    customerId: booking.customerId,
+                    bookingId: id,
+                    adminId,
+                    status: "Booking Confirmed",
+                    driverAccepted: "pending"
                 },
+                lock: t.LOCK.UPDATE,  // 🔒 KEY: Prevents concurrent reads
+                transaction: t
+            });
+
+
+            if (!booking) {
+                await t.rollback();
+                console.log("[ACCEPT] ❌ Booking not found with status='Booking Confirmed' AND driverAccepted='pending'");
+                res.status(404).json({
+                    success: false,
+                    message: "Booking not found or already accepted by another driver",
+                });
+                return;
+            }
+
+            console.log("[ACCEPT] ✅ Booking found with correct status (locked for update)");
+
+
+            const driver = await Driver.findOne({
+                where: { driverId: driverId },
+                include: [{ model: DriverWallet, as: 'wallet' }],
+                transaction: t
+            });
+
+            if (!driver) {
+                await t.rollback();
+                res.status(404).json({
+                    success: false,
+                    message: "Driver not found",
+                });
+                return;
+            }
+
+            if (driver.assigned) {
+                await t.rollback();
+                res.status(400).json({
+                    success: false,
+                    message: "Driver is already assigned to another booking",
+                });
+                return;
+            }
+
+            // ROBUST CHECK: Query database directly for any active trips (Not-Started or Started)
+            // This ensures only 1 active trip per driver at a time, regardless of assigned flag
+            const activeBooking = await Booking.findOne({
+                where: {
+                    driverId: driverId,
+                    adminId,
+                    status: { [Op.in]: ["Not-Started", "Started"] },
+                    driverAccepted: "accepted"
+                },
+                attributes: ["bookingId", "status"],
+                transaction: t
+            });
+
+            if (activeBooking) {
+                await t.rollback();
+                console.log(`[ACCEPT] ❌ Driver already has active trip: ${activeBooking.bookingId} (status: ${activeBooking.status})`);
+                res.status(400).json({
+                    success: false,
+                    message: `You already have an active trip (${activeBooking.bookingId}). Please complete or cancel your current trip before accepting a new one.`,
+                    activeBookingId: activeBooking.bookingId,
+                    activeStatus: activeBooking.status
+                });
+                return;
+            }
+
+            const vehicle = await Vehicle.findOne({
+                where: { driverId: driverId, isActive: true },
+                transaction: t
             })
 
-            const customerCleanedPhone = booking.phone.replace(/^\+?91|\D/g, '');
-            const driverCleanedPhone = driver.phone.replace(/^\+?91|\D/g, '');
-
-            if (customer) {
-                let customerName = customer ? customer.name : "Customer";
-
-                const customerNotification = await createCustomerNotification({
-                    title: "Driver has been assigned to your booking!",
-                    message: `Hi ${customerName}, Driver ${driver.name} has been assigned to your ride. They will contact you shortly and are on their way.`,
-                    ids: {
-                        adminId: booking.adminId,
-                        bookingId: booking.bookingId,
-                        customerId: booking.customerId
-                    },
-                    type: "booking"
+            if (!vehicle) {
+                await t.rollback();
+                res.status(404).json({
+                    success: false,
+                    message: "Vehicle not found or not active",
                 });
+                return;
+            }
+
+            if (booking.assignAllDriver && booking.driverAccepted === "accepted") {
+                await t.rollback();
+                res.status(400).json({
+                    success: false,
+                    message: "Booking was already someone accepted",
+                });
+                return;
+            }
+
+            console.log("Action", action);
 
 
-                try {
-                    if (customerNotification) {
-                        const tokenResponse = await sendToSingleToken(customer.fcmToken, {
-                            // title: 'New Booking Arrived',
-                            // message: `Mr ${driver.name} You have received a new booking`,
-                            ids: {
-                                adminId: booking.adminId,
-                                bookingId: booking.bookingId,
-                                customerId: booking.customerId
-                            },
-                            data: {
-                                title: 'Driver has been assigned to your booking!',
-                                message: `Hi ${customerName}, Driver ${driver.name} has been assigned to your ride. They will contact you shortly and are on their way.`,
-                                type: "customer-driver-assigned",
-                                channelKey: "customer_info",
-                            }
-                        });
-                        debug.info(`FCM Notification Response: ${tokenResponse}`);
-                    } else {
-                        debug.info("driver assigned notification to customer is false");
-                    }
-                } catch (err: any) {
-                    debug.info(`FCM Notification Error - driver assigned notification to customer: ${err}`);
+            let activityLog;
+            activityLog = await DriverBookingLog.findOne({
+                where: {
+                    bookingId: id,
+                    adminId,
+                    driverId: driverId,
+                },
+                attributes: [
+                    "id",
+                    "acceptTime",
+                    "tripStatus"
+                ],
+                transaction: t
+            });
+
+            if (!activityLog) {
+                activityLog = await DriverBookingLog.create({
+                    adminId,
+                    driverId,
+                    bookingId: id,
+                    acceptTime,
+                    tripStatus: "Driver Accepted"
+                }, { transaction: t })
+            }
+
+
+            debug.info(`Booking vehicle type: ${booking.vehicleType}`);
+            // const vehicleType = await VehicleTypes.findOne({
+            //     where: {
+            //         name: booking.vehicleType.toLowerCase(),
+            //     },
+            // })
+
+            // if (!vehicleType) {
+            //     res.status(404).json({
+            //         success: false,
+            //         message: "Vehicle type not found",
+            //     });
+            //     return;
+            // }
+
+            // debug.info(`Vehicle type >> ${vehicleType.acceptedVehicleTypes} , vehicle.type >> ${vehicle.type}`);
+
+            // if (!vehicleType.acceptedVehicleTypes.includes(vehicle.type.toLowerCase())) {
+            //     res.status(400).json({
+            //         success: false,
+            //         message: `You can't accept this booking with ${booking.vehicleType} vehicle`,
+            //     });
+            //     return;
+            // }
+
+            // Commission is always 11% of the estimated trip amount
+            const COMMISSION_RATE = 11; // 11%
+            const tripCommissionAmount = Math.ceil((booking.estimatedAmount * COMMISSION_RATE) / 100);
+
+            console.log(`[ACCEPT] 💰 Commission Check:`);
+            console.log(`[ACCEPT]   - Estimated Amount: ₹${booking.estimatedAmount}`);
+            console.log(`[ACCEPT]   - Commission Rate: ${COMMISSION_RATE}%`);
+            console.log(`[ACCEPT]   - Required Balance: ₹${tripCommissionAmount}`);
+
+            const driverBalance = JSON.parse(JSON.stringify(driver)).wallet?.balance ?? 0;
+            console.log(`[ACCEPT]   - Driver Balance: ₹${driverBalance}`);
+
+            if (driverBalance < tripCommissionAmount) {
+                await t.rollback();
+                console.log(`[ACCEPT] ❌ Insufficient balance!`);
+                res.status(400).json({
+                    success: false,
+                    message: `Insufficient wallet balance. You need ₹${tripCommissionAmount} (11% of ₹${booking.estimatedAmount}) but have only ₹${driverBalance}. Please add ₹${tripCommissionAmount - driverBalance} to your wallet.`,
+                    recharge: true,
+                    required: tripCommissionAmount,
+                    available: driverBalance,
+                    shortfall: tripCommissionAmount - driverBalance
+                });
+                return
+            }
+            console.log(`[ACCEPT] ✅ Sufficient balance for commission`);
+
+            let isCustomerAvailable = false;
+
+            // ✅ Accept or Reject logic
+            if (action === "reject") {
+                booking.driverAccepted = "rejected";
+
+            } else {
+                booking.driverId = driverId;
+                booking.driverAccepted = "accepted";
+                booking.acceptTime = acceptTime;
+                booking.status = "Not-Started";
+                booking.vehicleId = vehicle.vehicleId;
+                driver.assigned = true;
+                driver.vehicleId = booking.vehicleId;
+                activityLog.acceptTime = acceptTime;
+                activityLog.tripStatus = "Driver Accepted"
+
+
+                const requestTime = dayjs(booking.requestSentTime);
+                const acceptTimeObj = dayjs(acceptTime);
+
+                const diffInSeconds = acceptTimeObj.diff(requestTime, 'second', true);
+
+                let formattedAcceptTime;
+
+
+                if (diffInSeconds >= 60) {
+                    formattedAcceptTime = `${Math.floor(diffInSeconds / 60)} min`;
+                } else {
+                    formattedAcceptTime = `${diffInSeconds.toFixed(2)} sec`;
                 }
 
-                isCustomerAvailable = true
+                console.log("Driver Accept Time:", formattedAcceptTime);
 
-            }
+                activityLog.avgAcceptTime = diffInSeconds;
+
+                const customer = await Customer.findOne({
+                    where: {
+                        customerId: booking.customerId,
+                    },
+                })
+
+                const customerCleanedPhone = booking.phone.replace(/^\+?91|\D/g, '');
+                const driverCleanedPhone = driver.phone.replace(/^\+?91|\D/g, '');
+
+                if (customer) {
+                    let customerName = customer ? customer.name : "Customer";
+
+                    const customerNotification = await createCustomerNotification({
+                        title: "Driver has been assigned to your booking!",
+                        message: `Hi ${customerName}, Driver ${driver.name} has been assigned to your ride. They will contact you shortly and are on their way.`,
+                        ids: {
+                            adminId: booking.adminId,
+                            bookingId: booking.bookingId,
+                            customerId: booking.customerId
+                        },
+                        type: "booking"
+                    });
 
 
-            // Send notification to admin panel and vendor panel
-            const time = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: 'numeric', hour12: true, timeZone: 'Asia/Kolkata' }).format(new Date());
-            const notification = {
-                adminId,
-                vendorId: booking.createdBy === "Vendor" ? booking.vendorId : null,
-                title: `Driver Accepted Booking – Trip #${booking.bookingId}`,
-                description: `Driver has accepted the booking for Trip #${booking.bookingId}.`,
-                type: "booking",
-                read: false,
-                date: new Date(),
-                time: time,
-            };
+                    try {
+                        if (customerNotification) {
+                            const tokenResponse = await sendToSingleToken(customer.fcmToken, {
+                                // title: 'New Booking Arrived',
+                                // message: `Mr ${driver.name} You have received a new booking`,
+                                ids: {
+                                    adminId: booking.adminId,
+                                    bookingId: booking.bookingId,
+                                    customerId: booking.customerId
+                                },
+                                data: {
+                                    title: 'Driver has been assigned to your booking!',
+                                    message: `Hi ${customerName}, Driver ${driver.name} has been assigned to your ride. They will contact you shortly and are on their way.`,
+                                    type: "customer-driver-assigned",
+                                    channelKey: "customer_info",
+                                }
+                            });
+                            debug.info(`FCM Notification Response: ${tokenResponse}`);
+                        } else {
+                            debug.info("driver assigned notification to customer is false");
+                        }
+                    } catch (err: any) {
+                        debug.info(`FCM Notification Error - driver assigned notification to customer: ${err}`);
+                    }
+
+                    isCustomerAvailable = true
+
+                }
 
 
-            const adminNotification = {
-                adminId,
-                vendorId: null,
-                title: `Driver Accepted Booking – Trip #${booking.bookingId}`,
-                description: `Driver ${driver.name} has accepted the booking for Trip #${booking.bookingId}.`,
-                type: "booking",
-                read: false,
-                date: new Date(),
-                time: time,
-            }
+                // Send notification to admin panel and vendor panel
+                const time = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: 'numeric', hour12: true, timeZone: 'Asia/Kolkata' }).format(new Date());
+                const notification = {
+                    adminId,
+                    vendorId: booking.createdBy === "Vendor" ? booking.vendorId : null,
+                    title: `Driver Accepted Booking – Trip #${booking.bookingId}`,
+                    description: `Driver has accepted the booking for Trip #${booking.bookingId}.`,
+                    type: "booking",
+                    read: false,
+                    date: new Date(),
+                    time: time,
+                };
 
-            const adminNotificationResponse = await createNotification(adminNotification as any);
 
-            if (booking.createdBy === "Vendor") {
-                const notificationResponse = await createNotification(notification as any);
-                if (notificationResponse.success) {
-                    sendNotification(booking.vendorId, {
-                        notificationId: notificationResponse.notificationId ?? undefined,
+                const adminNotification = {
+                    adminId,
+                    vendorId: null,
+                    title: `Driver Accepted Booking – Trip #${booking.bookingId}`,
+                    description: `Driver ${driver.name} has accepted the booking for Trip #${booking.bookingId}.`,
+                    type: "booking",
+                    read: false,
+                    date: new Date(),
+                    time: time,
+                }
+
+                const adminNotificationResponse = await createNotification(adminNotification as any);
+
+                if (booking.createdBy === "Vendor") {
+                    const notificationResponse = await createNotification(notification as any);
+                    if (notificationResponse.success) {
+                        sendNotification(booking.vendorId, {
+                            notificationId: notificationResponse.notificationId ?? undefined,
+                            title: `Driver Accepted Booking – Trip #${booking.bookingId}`,
+                            description: `Driver has accepted the booking for Trip #${booking.bookingId}.`,
+                            type: "booking",
+                            read: false,
+                            date: new Date(),
+                            time: time,
+                        });
+                    }
+                }
+
+                // 🟢 Persist "Trip Accepted" Notification for Driver (So it shows in their list)
+                await createDriverNotification({
+                    title: "✅ Trip Accepted",
+                    message: `You have accepted Trip #${booking.bookingId}. Pickup: ${booking.pickup}`,
+                    ids: {
+                        adminId: adminId,
+                        driverId: driverId,
+                        bookingId: booking.bookingId
+                    },
+                    type: "TRIP_ACCEPTED",
+                });
+
+                if (adminNotificationResponse.success) {
+                    sendNotification(adminId, {
+                        notificationId: adminNotificationResponse.notificationId ?? undefined,
                         title: `Driver Accepted Booking – Trip #${booking.bookingId}`,
                         description: `Driver has accepted the booking for Trip #${booking.bookingId}.`,
                         type: "booking",
@@ -793,171 +839,156 @@ export const acceptOrRejectBooking = async (req: Request, res: Response) => {
                         time: time,
                     });
                 }
+
+                // Send email to customer
+                try {
+                    const emailData = {
+                        bookingId: booking.bookingId,
+                        name: booking.name,
+                        email: booking.email,
+                        pickup: booking.pickup,
+                        drop: booking.drop ?? null,
+                        pickupDate: new Date(booking.pickupDateTime).toLocaleString('en-IN', {
+                            timeZone: 'Asia/Kolkata',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        }),
+                        pickupTime: new Date(booking.pickupDateTime).toLocaleString('en-IN', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        }),
+                        dropDate: booking.dropDate ? new Date(booking.dropDate).toLocaleString('en-IN', {
+                            timeZone: 'Asia/Kolkata',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        }) : null,
+                        driverName: driver.name,
+                        driverPhone: driver.phone
+                    };
+
+                    // console.log("emailData ---> ", emailData);
+                    const emailResponse = await driverAssigned(emailData);
+                    // console.log("emailResponse ---> ", emailResponse);
+                    if (emailResponse.status === 200) {
+                        console.log(`Email sent successfully to ${emailResponse.sentTo}`);
+                    } else {
+                        console.log("Email not sent");
+                    }
+
+                } catch (error) {
+                    console.error("Error sending email:", error);
+                }
+
+                // SMS Send
+                // try {
+                //     const cleanedPhone = booking.phone.replace(/^\+?91|\D/g, '');
+                //     const companyProfile = await CompanyProfile.findOne({ where: { adminId } });
+                //     const smsResponse = await sms.sendTemplateMessage({
+                //         mobile: Number(cleanedPhone),
+                //         template: "driver_assigned",
+                //         data: {
+                //             name: booking.name,
+                //             driverName: driver.name,
+                //             driverPhone: driver.phone,
+                //             vehicleNumber: vehicle.vehicleNumber,
+                //             contactNumber: companyProfile?.phone[0] ?? "9876543210",
+                //             website: companyProfile?.website ?? "https://silvercalltaxi.in/",
+                //         }
+                //     })
+                //     if (smsResponse) {
+                //         debug.info("Driver assigned SMS sent successfully");
+                //     } else {
+                //         debug.info("Driver assigned SMS not sent");
+                //     }
+                // } catch (error) {
+                //     debug.info(`Error sending Driver assigned SMS: ${error}`);
+                // }
+
+
+                // whatsapp assigned message
+                try {
+                    // send notification to driver
+                    const waDriverPayload = {
+                        phone: driverCleanedPhone,
+                        variables: [
+                            { type: "text", text: `${booking.pickup} to ${booking.drop}` },
+                            {
+                                type: "text", text: new Date(toLocalTime(booking.pickupDateTime)).toLocaleString('en-IN', {
+                                    timeZone: "Asia/Kolkata",
+                                    year: "numeric",
+                                    month: "long",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    hour12: true
+                                })
+                            },
+                            { type: "text", text: customerCleanedPhone },
+                        ],
+                        templateName: "driverTripAccepted"
+                    }
+
+                    publishNotification("notification.whatsapp", waDriverPayload)
+                        .catch((err) => console.log("❌ Failed to publish Whatsapp notification", waDriverPayload.templateName, err));
+
+
+                    // send notification to customer
+                    const waCustomerPayload = {
+                        phone: customerCleanedPhone,
+                        variables: [
+                            { type: "text", text: driver.name },
+                            { type: "text", text: driverCleanedPhone },
+                            { type: "text", text: vehicle.vehicleNumber },
+                            { type: "text", text: booking.adminContact ?? "9876543210" },
+                        ],
+                        templateName: "driverDetails"
+                    }
+
+                    publishNotification("notification.whatsapp", waCustomerPayload)
+                        .catch((err) => console.log("❌ Failed to publish Whatsapp notification", waCustomerPayload.templateName, err));
+                } catch (error) {
+                    console.error("Error sending whatsapp driver assigned:", error);
+                }
+
             }
 
-            // 🟢 Persist "Trip Accepted" Notification for Driver (So it shows in their list)
-            await createDriverNotification({
-                title: "✅ Trip Accepted",
-                message: `You have accepted Trip #${booking.bookingId}. Pickup: ${booking.pickup}`,
-                ids: {
-                    adminId: adminId,
-                    driverId: driverId,
-                    bookingId: booking.bookingId
-                },
-                type: "TRIP_ACCEPTED",
-            });
+            await booking.save({ transaction: t });
+            await driver.save({ transaction: t });
+            await activityLog.save({ transaction: t });
 
-            if (adminNotificationResponse.success) {
-                sendNotification(adminId, {
-                    notificationId: adminNotificationResponse.notificationId ?? undefined,
-                    title: `Driver Accepted Booking – Trip #${booking.bookingId}`,
-                    description: `Driver has accepted the booking for Trip #${booking.bookingId}.`,
-                    type: "booking",
-                    read: false,
-                    date: new Date(),
-                    time: time,
-                });
-            }
+            // 🔒 Commit the transaction - only now is the booking truly accepted
+            await t.commit();
+            console.log("[ACCEPT] ✅ Transaction committed successfully");
 
-            // Send email to customer
+            // Emit TRIP_ACCEPTED socket event to driver for auto-refresh
             try {
-                const emailData = {
-                    bookingId: booking.bookingId,
-                    name: booking.name,
-                    email: booking.email,
+                emitTripAcceptedToDriver(driverId, {
+                    bookingId: id,
                     pickup: booking.pickup,
-                    drop: booking.drop ?? null,
-                    pickupDate: new Date(booking.pickupDateTime).toLocaleString('en-IN', {
-                        timeZone: 'Asia/Kolkata',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                    }),
-                    pickupTime: new Date(booking.pickupDateTime).toLocaleString('en-IN', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    }),
-                    dropDate: booking.dropDate ? new Date(booking.dropDate).toLocaleString('en-IN', {
-                        timeZone: 'Asia/Kolkata',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                    }) : null,
-                    driverName: driver.name,
-                    driverPhone: driver.phone
-                };
-
-                // console.log("emailData ---> ", emailData);
-                const emailResponse = await driverAssigned(emailData);
-                // console.log("emailResponse ---> ", emailResponse);
-                if (emailResponse.status === 200) {
-                    console.log(`Email sent successfully to ${emailResponse.sentTo}`);
-                } else {
-                    console.log("Email not sent");
-                }
-
-            } catch (error) {
-                console.error("Error sending email:", error);
+                    drop: booking.drop,
+                    estimatedAmount: booking.estimatedAmount,
+                    status: booking.status,
+                });
+                console.log(`[ACCEPT] ✅ TRIP_ACCEPTED socket event emitted to driver: ${driverId}`);
+            } catch (socketError) {
+                console.error("[ACCEPT] ⚠️ Failed to emit TRIP_ACCEPTED socket event:", socketError);
+                // Don't fail the entire request if socket emission fails
             }
 
-            // SMS Send
-            // try {
-            //     const cleanedPhone = booking.phone.replace(/^\+?91|\D/g, '');
-            //     const companyProfile = await CompanyProfile.findOne({ where: { adminId } });
-            //     const smsResponse = await sms.sendTemplateMessage({
-            //         mobile: Number(cleanedPhone),
-            //         template: "driver_assigned",
-            //         data: {
-            //             name: booking.name,
-            //             driverName: driver.name,
-            //             driverPhone: driver.phone,
-            //             vehicleNumber: vehicle.vehicleNumber,
-            //             contactNumber: companyProfile?.phone[0] ?? "9876543210",
-            //             website: companyProfile?.website ?? "https://silvercalltaxi.in/",
-            //         }
-            //     })
-            //     if (smsResponse) {
-            //         debug.info("Driver assigned SMS sent successfully");
-            //     } else {
-            //         debug.info("Driver assigned SMS not sent");
-            //     }
-            // } catch (error) {
-            //     debug.info(`Error sending Driver assigned SMS: ${error}`);
-            // }
-
-
-            // whatsapp assigned message
-            try {
-                // send notification to driver
-                const waDriverPayload = {
-                    phone: driverCleanedPhone,
-                    variables: [
-                        { type: "text", text: `${booking.pickup} to ${booking.drop}` },
-                        {
-                            type: "text", text: new Date(toLocalTime(booking.pickupDateTime)).toLocaleString('en-IN', {
-                                timeZone: "Asia/Kolkata",
-                                year: "numeric",
-                                month: "long",
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                hour12: true
-                            })
-                        },
-                        { type: "text", text: customerCleanedPhone },
-                    ],
-                    templateName: "driverTripAccepted"
-                }
-
-                publishNotification("notification.whatsapp", waDriverPayload)
-                    .catch((err) => console.log("❌ Failed to publish Whatsapp notification", waDriverPayload.templateName, err));
-
-
-                // send notification to customer
-                const waCustomerPayload = {
-                    phone: customerCleanedPhone,
-                    variables: [
-                        { type: "text", text: driver.name },
-                        { type: "text", text: driverCleanedPhone },
-                        { type: "text", text: vehicle.vehicleNumber },
-                        { type: "text", text: booking.adminContact ?? "9876543210" },
-                    ],
-                    templateName: "driverDetails"
-                }
-
-                publishNotification("notification.whatsapp", waCustomerPayload)
-                    .catch((err) => console.log("❌ Failed to publish Whatsapp notification", waCustomerPayload.templateName, err));
-            } catch (error) {
-                console.error("Error sending whatsapp driver assigned:", error);
-            }
-
-        }
-
-        await booking.save();
-        await driver.save();
-        await activityLog.save();
-
-        // Emit TRIP_ACCEPTED socket event to driver for auto-refresh
-        try {
-            emitTripAcceptedToDriver(driverId, {
-                bookingId: id,
-                pickup: booking.pickup,
-                drop: booking.drop,
-                estimatedAmount: booking.estimatedAmount,
-                status: booking.status,
+            res.status(200).json({
+                success: true,
+                message: isCustomerAvailable ? `Booking ${action}ed successfully` : `Booking ${action}ed successfully, customer data not found for this booking so notification may not be delivered to customer`,
+                data: booking,
             });
-            console.log(`[ACCEPT] ✅ TRIP_ACCEPTED socket event emitted to driver: ${driverId}`);
-        } catch (socketError) {
-            console.error("[ACCEPT] ⚠️ Failed to emit TRIP_ACCEPTED socket event:", socketError);
-            // Don't fail the entire request if socket emission fails
+            return;
+        } catch (txError) {
+            // Rollback transaction on any error within the transaction block
+            await t.rollback();
+            console.error("[ACCEPT] ❌ Transaction rolled back due to error:", txError);
+            throw txError; // Re-throw to be caught by outer catch
         }
-
-        res.status(200).json({
-            success: true,
-            message: isCustomerAvailable ? `Booking ${action}ed successfully` : `Booking ${action}ed successfully, customer data not found for this booking so notification may not be delivered to customer`,
-            data: booking,
-        });
-        return;
     } catch (error) {
         console.error("Error accepting or rejecting booking:", error);
         res.status(500).json({

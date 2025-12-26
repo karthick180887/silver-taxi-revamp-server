@@ -1,4 +1,4 @@
-package cabigo.driver
+package com.cabigo.driver
 
 import android.content.BroadcastReceiver
 import android.content.Context

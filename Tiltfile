@@ -107,3 +107,17 @@ if mode == "admin" or mode == "all":
     k8s_resource("cabigo-website", labels=["frontend"])
 else:
     print("Skipping Cabigo Website (Mode: {})".format(mode))
+
+# BharatOneWayTaxi Website
+if mode == "admin" or mode == "all":
+    print("Loading BharatOneWayTaxi Website...")
+    docker_build(
+        "registry.digitalocean.com/cabigo/bharatonewaytaxi-image",
+        "bharatonewaytaxi",
+        dockerfile="bharatonewaytaxi/Dockerfile",
+        ignore=["node_modules/", ".next/", ".git/"],
+    )
+    k8s_yaml("k8s/bharatonewaytaxi.yaml")
+    k8s_resource("bharatonewaytaxi", labels=["frontend"])
+else:
+    print("Skipping BharatOneWayTaxi Website (Mode: {})".format(mode))

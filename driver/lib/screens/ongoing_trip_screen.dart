@@ -67,6 +67,24 @@ class _OngoingTripScreenState extends State<OngoingTripScreen> {
   /// Start GPS tracking for this trip
   Future<void> _startGpsTracking() async {
     debugPrint('[OngoingTrip] Starting GPS tracking for trip: ${widget.trip.id}');
+    
+    // If tracking is already active (e.g., navigated back), restore the existing distance
+    if (_trackingService.isTracking && _trackingService.currentTripId == widget.trip.id) {
+      debugPrint('[OngoingTrip] Tracking already active, restoring distance');
+      setState(() {
+        _liveDistance = _trackingService.calculateDistance();
+      });
+      // Start timer to update distance display
+      _distanceUpdateTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) {
+          setState(() {
+            _liveDistance = _trackingService.calculateDistance();
+          });
+        }
+      });
+      return;
+    }
+    
     final success = await _trackingService.startTracking(widget.trip.id, widget.token);
     if (success) {
       debugPrint('[OngoingTrip] GPS tracking started successfully');

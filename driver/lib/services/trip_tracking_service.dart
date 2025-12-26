@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../api_client.dart';
 
 /// GPS point with timestamp for trip tracking
@@ -45,13 +47,16 @@ class TripTrackingService {
 
   // Tracking state
   String? _currentTripId;
+  String? _authToken; // Store token for server sync
   StreamSubscription<Position>? _positionStreamSubscription;
   final List<GpsPoint> _gpsPoints = [];
   bool _isTracking = false;
   DateTime? _startTime;
+  int _syncCounter = 0; // Counter for server sync (sync every 5 points)
   
   // Configuration
   static const int distanceFilterMeters = 10;
+  static const int _serverSyncInterval = 5; // Sync to server every N GPS points
   
   /// Check if tracking is active
   bool get isTracking => _isTracking;
@@ -73,6 +78,30 @@ class TripTrackingService {
     if (_isTracking) {
       debugPrint('[TripTracking] Already tracking trip: $_currentTripId');
       return false;
+    }
+
+    // 1. Try to restore from server first (most reliable across app kills)
+    if (_currentTripId == null) {
+      await _restoreFromServer(tripId, token);
+      if (_currentTripId == tripId && _gpsPoints.isNotEmpty) {
+        debugPrint('[TripTracking] Restored ${_gpsPoints.length} points from server for trip: $tripId');
+        _isTracking = true;
+        _authToken = token;
+        _startLocationStream(token);
+        return true;
+      }
+    }
+    
+    // 2. Fallback: Try to restore from local SharedPreferences
+    if (_currentTripId == null) {
+      await _restoreState();
+      if (_currentTripId == tripId) {
+        debugPrint('[TripTracking] Resuming tracking from local storage for trip: $tripId');
+        _isTracking = true;
+        _authToken = token;
+        _startLocationStream(token);
+        return true;
+      }
     }
     
     // Check location permission
@@ -98,26 +127,48 @@ class TripTrackingService {
     }
     
     _currentTripId = tripId;
+    _authToken = token;
     _gpsPoints.clear();
     _startTime = DateTime.now();
     _isTracking = true;
+    _syncCounter = 0;
+    
+    // Save initial state
+    await _saveState();
     
     debugPrint('[TripTracking] ========================================');
     debugPrint('[TripTracking] 🚗 Started tracking for trip: $tripId');
     debugPrint('[TripTracking] ========================================');
     
+    _startLocationStream(token);
+    
+    return true;
+  }
+
+  void _startLocationStream(String token) async {
     // Configure location settings for 10m updates
-    const locationSettings = LocationSettings(
+    final locationSettings = AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: distanceFilterMeters,
+      forceLocationManager: true,
+      intervalDuration: const Duration(seconds: 5),
+      // Background Notification Setup
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationTitle: "Trip in Progress",
+        notificationText: "Tracking location in background",
+        notificationIcon: AndroidResource(name: 'ic_launcher', defType: 'mipmap'),
+        enableWakeLock: true,
+      ),
     );
 
-    // Record initial position immediately
-    try {
-      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      _recordPosition(position, token);
-    } catch (e) {
-      debugPrint('[TripTracking] Error getting initial position: $e');
+    // Record initial position immediately if empty
+    if (_gpsPoints.isEmpty) {
+      try {
+        final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+        _recordPosition(position, token);
+      } catch (e) {
+        debugPrint('[TripTracking] Error getting initial position: $e');
+      }
     }
     
     // Start position stream
@@ -127,8 +178,6 @@ class TripTrackingService {
         }, onError: (e) {
            debugPrint('[TripTracking] Location stream error: $e');
         });
-    
-    return true;
   }
   
   /// Stop tracking and return results
@@ -141,6 +190,9 @@ class TripTrackingService {
     _positionStreamSubscription?.cancel();
     _positionStreamSubscription = null;
     _isTracking = false;
+    
+    // Clear persisted state
+    _clearState();
     
     final result = TripTrackingResult(
       tripId: _currentTripId ?? '',
@@ -163,6 +215,16 @@ class TripTrackingService {
     try {
       final point = GpsPoint.fromPosition(position);
       _gpsPoints.add(point);
+      
+      // Persist new state locally
+      _saveState();
+      
+      // Sync to server every N GPS points to ensure persistence across app kills
+      _syncCounter++;
+      if (_syncCounter >= _serverSyncInterval) {
+        _syncCounter = 0;
+        await _syncToServer(token);
+      }
       
       debugPrint('[TripTracking] 📍 GPS point #${_gpsPoints.length}: ${point.lat}, ${point.lng}');
       
@@ -238,7 +300,139 @@ class TripTrackingService {
   void clearData() {
     _gpsPoints.clear();
     _currentTripId = null;
+    _authToken = null;
     _startTime = null;
+    _syncCounter = 0;
+    _clearState();
+  }
+
+  // --- Server Sync Helpers ---
+
+  /// Sync GPS points to server for persistence
+  Future<void> _syncToServer(String token) async {
+    if (_currentTripId == null || _gpsPoints.isEmpty) return;
+    
+    try {
+      debugPrint('[TripTracking] 🔄 Syncing ${_gpsPoints.length} GPS points to server...');
+      
+      final result = await DriverApiClient().saveGpsPoints(
+        token: token,
+        tripId: _currentTripId!,
+        gpsPoints: getGpsPointsJson(),
+        gpsDistance: calculateDistance(),
+      );
+      
+      if (result.success) {
+        debugPrint('[TripTracking] ✅ GPS points synced to server successfully');
+      } else {
+        debugPrint('[TripTracking] ⚠️ Failed to sync GPS points: ${result.message}');
+      }
+    } catch (e) {
+      debugPrint('[TripTracking] ⚠️ Error syncing GPS points to server: $e');
+    }
+  }
+
+  /// Restore GPS points from server (most reliable across app kills)
+  Future<void> _restoreFromServer(String tripId, String token) async {
+    try {
+      debugPrint('[TripTracking] 📥 Attempting to restore GPS points from server for trip: $tripId');
+      
+      final result = await DriverApiClient().getGpsPoints(
+        token: token,
+        tripId: tripId,
+      );
+      
+      if (result.success && result.body['data'] != null) {
+        final data = result.body['data'];
+        final List<dynamic> serverPoints = data['gpsPoints'] ?? [];
+        
+        if (serverPoints.isNotEmpty) {
+          _currentTripId = tripId;
+          _gpsPoints.clear();
+          
+          for (var p in serverPoints) {
+            _gpsPoints.add(GpsPoint(
+              lat: (p['lat'] as num).toDouble(),
+              lng: (p['lng'] as num).toDouble(),
+              timestamp: DateTime.parse(p['timestamp']),
+            ));
+          }
+          
+          debugPrint('[TripTracking] ✅ Restored ${_gpsPoints.length} GPS points from server');
+        }
+      }
+    } catch (e) {
+      debugPrint('[TripTracking] ⚠️ Error restoring GPS points from server: $e');
+    }
+  }
+
+  // --- Persistence Helpers ---
+
+  static const String _kPrefTripId = 'tracking_trip_id';
+  static const String _kPrefPoints = 'tracking_points';
+  static const String _kPrefStartTime = 'tracking_start_time';
+
+  Future<void> _saveState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_currentTripId != null) {
+        await prefs.setString(_kPrefTripId, _currentTripId!);
+      }
+      if (_startTime != null) {
+        await prefs.setString(_kPrefStartTime, _startTime!.toIso8601String());
+      }
+      
+      // Serialize points
+      final pointsJson = jsonEncode(_gpsPoints.map((p) => p.toJson()).toList());
+      await prefs.setString(_kPrefPoints, pointsJson);
+      
+    } catch (e) {
+      debugPrint('[TripTracking] Error saving state: $e');
+    }
+  }
+
+  Future<void> _restoreState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedTripId = prefs.getString(_kPrefTripId);
+      
+      if (savedTripId != null) {
+        _currentTripId = savedTripId;
+        
+        final startTimeStr = prefs.getString(_kPrefStartTime);
+        if (startTimeStr != null) {
+          _startTime = DateTime.parse(startTimeStr);
+        }
+
+        final pointsStr = prefs.getString(_kPrefPoints);
+        if (pointsStr != null) {
+          final List<dynamic> pointsList = jsonDecode(pointsStr);
+          _gpsPoints.clear();
+          for (var p in pointsList) {
+             _gpsPoints.add(GpsPoint(
+               lat: p['lat'],
+               lng: p['lng'],
+               timestamp: DateTime.parse(p['timestamp']),
+             ));
+          }
+        }
+        
+        debugPrint('[TripTracking] Restored state: Trip $_currentTripId with ${_gpsPoints.length} points');
+      }
+    } catch (e) {
+      debugPrint('[TripTracking] Error restoring state: $e');
+    }
+  }
+
+  Future<void> _clearState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kPrefTripId);
+      await prefs.remove(_kPrefPoints);
+      await prefs.remove(_kPrefStartTime);
+    } catch (e) {
+      debugPrint('[TripTracking] Error clearing state: $e');
+    }
   }
 }
 
