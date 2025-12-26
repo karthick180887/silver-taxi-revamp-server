@@ -5,7 +5,7 @@ import sys
 def main():
     # Define paths
     # Assuming running from project root
-    helm_path = os.path.join(".", "deps", "windows-amd64", "helm.exe")
+    helm_path = os.path.join(".", "backend", "deps", "windows-amd64", "helm.exe")
     output_file = os.path.join("k8s", "cert-manager-filtered.yaml")
     
     print(f"Generating Cert Manager YAML...")
